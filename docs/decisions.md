@@ -63,6 +63,40 @@ to start if entities and tables disagree.
 Upstream MinIO stopped publishing images and was archived in 2026. The backend talks
 the S3 API, so switching servers later is a configuration change.
 
+**D14. Price is accepted as text and validated as a decimal, then stored as `double`.** (Ravi)
+Rules: a plain number, greater than 0, at most 2 decimal places, at most 10,000,000.
+Parsed with `BigDecimal` so "12.345" is rejected exactly; a JSON number is accepted too.
+Cost: a custom validator instead of a one-line annotation.
+
+**D15. Email uniqueness is enforced only by the database index.** (Ravi)
+The service inserts and translates a violation of `uq_users_email_lower` into 409.
+No "does it exist?" query first: that check-then-act is racy. Cost: the code has to
+recognise the constraint by name.
+
+**D16. Soft-deleted products are filtered by explicit repository methods.** (Ravi)
+`findByIdAndDeletedAtIsNull`, not a global `@SQLRestriction`. Visible at each call site;
+old orders and carts can still load a deleted product. Cost: a new query can forget it.
+
+**D17. The backend does not enforce the upload size; the signed policy does.**
+`sizeBytes` in the upload request is the client's claim and is only checked to be positive.
+Rejecting on it would stop honest clients and never a dishonest one. Confirm records the
+real size from `statObject`, and confirming an active image again just returns it.
+
+**D18. Deleting an image removes the row first, then the object.**
+If the object delete fails, the result is an invisible orphan file (costs storage), never a
+row pointing at a missing file (a broken image). Orphans join the Stage 8 cleanup job.
+
+**D19. Cart rules.**
+Stock is not checked when adding (it can change before checkout). Lines of deleted products
+are hidden, skipped at checkout and cleared by it, so the total shown is the total charged.
+At most 99 units per line. `GET /cart` never creates a cart. Removing a line is idempotent.
+
+**D20. Another user's order is 404, not 403.** Do not confirm that the ID exists.
+
+**D21. Product listing: newest first, size clamped to 1–100, three queries per page.**
+Products, then stock and thumbnails for the whole page in one query each (no N+1).
+The deliberate N+1 is kept for `GET /orders` (experiment 5).
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

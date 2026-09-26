@@ -1,17 +1,53 @@
-# Java / Maven
-backend/target/
+# ---------------------------------------------------------------- Java / Maven
+target/
 *.class
-*.log
+hs_err_pid*.log
+replay_pid*.log
+.mvn/wrapper/maven-wrapper.jar
 
-# Node / Vite
-frontend/node_modules/
-frontend/dist/
+# ---------------------------------------------------------------- Node / Vite
+node_modules/
+dist/
+dist-ssr/
+.vite/
+coverage/
+*.tsbuildinfo
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+# Test runner output
+playwright-report/
+test-results/
 
-# IDEs and OS
+# infra/ has no Node project; a stray `npm install` there creates these
+infra/package.json
+infra/package-lock.json
+
+# ---------------------------------------------------------------- Docker
+# Compose uses named volumes (outside the repo). These cover bind-mounted data dirs.
+infra/data/
+**/pgdata/
+**/minio-data/
+docker-compose.override.yml
+
+# ---------------------------------------------------------------- Secrets and local config
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ---------------------------------------------------------------- IDEs, OS, tools
 .idea/
 *.iml
 .vscode/
+*.swp
+*~
 .DS_Store
+Thumbs.db
+.claude/settings.local.json
 
-# Local secrets
-.env
+# ---------------------------------------------------------------- Logs
+*.log
+logs/
