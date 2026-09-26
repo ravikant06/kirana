@@ -1,0 +1,54 @@
+# Every value can be overridden with an environment variable (e.g. DB_HOST=...).
+# The defaults match infra/docker-compose.yml, so locally you override nothing.
+
+spring:
+  application:
+    name: kirana
+
+  datasource:
+    url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kirana}
+    username: ${DB_USER:kirana}
+    password: ${DB_PASSWORD:kirana}
+
+  jpa:
+    # Keep the DB session tied to the transaction, not the whole HTTP request.
+    # Lazy-loading outside a transaction will fail loudly instead of silently querying.
+    open-in-view: false
+    hibernate:
+      # Flyway creates and changes tables. Hibernate only checks entities match them.
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+
+  flyway:
+    locations: classpath:db/migration
+
+server:
+  port: 8080
+
+kirana:
+  storage:
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    access-key: ${STORAGE_ACCESS_KEY:minioadmin}
+    secret-key: ${STORAGE_SECRET_KEY:minioadmin}
+    bucket: ${STORAGE_BUCKET:product-images}
+    max-upload-bytes: 5242880   # 5 MB, enforced by the signed POST policy
+    upload-url-ttl: 10m
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: always
+
+logging:
+  level:
+    # Stage 1 observation: print every SQL statement Hibernate sends.
+    org.hibernate.SQL: DEBUG
+    # Uncomment to also see the bound parameter values (very noisy):
+    # org.hibernate.orm.jdbc.bind: TRACE
