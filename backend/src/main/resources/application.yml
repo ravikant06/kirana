@@ -36,6 +36,9 @@ kirana:
     bucket: ${STORAGE_BUCKET:product-images}
     max-upload-bytes: 5242880   # 5 MB, enforced by the signed POST policy
     upload-url-ttl: 10m
+  diagnostics:
+    # Stage 2: X-Query-Count / X-DB-Time-Ms headers and one log line per request.
+    query-metrics: true
 
 management:
   endpoints:

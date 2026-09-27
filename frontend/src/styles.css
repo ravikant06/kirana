@@ -250,7 +250,9 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .s-server, .s-fail { color: #ff8a80; }
 .req-method { color: var(--panel-muted); }
 .req-path { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.req-ms { color: var(--panel-muted); }
+.req-ms { color: var(--panel-muted); text-align: right; }
+.req-sql { display: block; font-size: 0.7rem; color: var(--panel-muted); white-space: nowrap; }
+.req-sql.is-hot { color: var(--marigold); font-weight: 600; }
 .req-note { padding: 0 20px 10px 72px; font-size: 0.78rem; color: var(--marigold); }
 .req-detail { padding: 4px 20px 16px; display: grid; gap: 6px; }
 .req-meta { font-size: 0.78rem; color: var(--panel-muted); }

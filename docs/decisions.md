@@ -97,6 +97,20 @@ At most 99 units per line. `GET /cart` never creates a cart. Removing a line is 
 Products, then stock and thumbnails for the whole page in one query each (no N+1).
 The deliberate N+1 is kept for `GET /orders` (experiment 5).
 
+## Stage 2
+
+**D22. Per-request SQL metrics in response headers.** `X-Query-Count` and `X-DB-Time-Ms`,
+from a JDK-proxy wrapper around the DataSource (`com.kirana.diagnostics`, a new package
+for measurement only) and a filter. Shown in the UI Requests panel. Cost: responses are
+buffered so headers can follow the body; on/off with `kirana.diagnostics.query-metrics`.
+
+**D23. The Stage 2 dataset lives in the everyday `kirana` database.** (Ravi)
+About 1M orders and 3M lines from `infra/seed/seed.sql`, so the UI shows the real effect.
+Cost: resetting to a small database means `docker compose down -v`.
+
+**D24. `pg_stat_statements` is preloaded in the compose Postgres.** Per-statement call
+counts and total time. Cost: a little overhead on every statement; fine locally.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

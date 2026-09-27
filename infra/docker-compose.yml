@@ -9,6 +9,10 @@ name: kirana
 services:
   postgres:
     image: postgres:17
+    # Stage 2: pg_stat_statements records every query's calls and total time.
+    # It must be preloaded at server start; the extension itself is created once with
+    # CREATE EXTENSION (see infra/seed/README.md).
+    command: ["postgres", "-c", "shared_preload_libraries=pg_stat_statements", "-c", "pg_stat_statements.track=all"]
     environment:
       POSTGRES_DB: kirana
       POSTGRES_USER: kirana

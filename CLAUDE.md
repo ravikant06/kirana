@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D13), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D24), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -72,33 +72,40 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 1 plan (current stage)
+## Stage 2 plan (current stage): database fundamentals
 
-Build in order. Stop after each milestone so Ravi can run it and discuss.
+Stage 1 is complete (all milestones and experiments; see `docs/concepts-learned.md` 1-8).
+Stage 2 fixes the problems it left, P1-P9, each measured before and after with
+`infra/perf/measure.py`. Results: "Kirana Query Ledger" artifact
+(https://claude.ai/artifact/4i8kUhpZqMbfSXVHCd2brD) and `docs/perf/*.json`.
+Build in order and stop after each milestone.
 
-- **1a.** Entities for User, Product, ProductImage, Inventory. Product CRUD with soft
-  delete. Creating a product creates its inventory row in the same transaction. Users
-  endpoints. Validation and the ProblemDetail error format.
-- **1b.** Image upload: POST policy, confirm, delete, read URLs.
-- **1c.** Inventory endpoints: get, set, adjust.
-- **1d.** Cart and CartItem endpoints.
-- **1e.** Order creation, written **naively on purpose**: read stock, check, subtract,
-  save. Mark it `// NAIVE: Stage 3 will break this`. Do not add locking; the race
-  condition is the lesson of Stage 3.
-- **Tests:** unit tests for pure logic, web-slice tests for validation and error shape,
-  Testcontainers integration tests for the order flow (including rollback on out-of-stock).
+- **2a. Measure first (P9).** Large dataset via `infra/seed/seed.sql` into the `kirana`
+  DB (about 50k users, 100k products, 1M orders, 3M lines). `pg_stat_statements` on.
+  `X-Query-Count` / `X-DB-Time-Ms` response headers, shown in the UI Requests panel.
+  Baseline the hot queries. No fixes yet.
+- **2b. Indexes (P1 unindexed FKs: `orders.user_id`, `product_images.product_id`, the
+  `product_id` columns; P2 order history sorts).** `V2__indexes.sql`.
+  Experiments: seq scan vs index scan, composite index removing the sort, an index
+  the planner ignores (low selectivity), expression index on `LOWER(email)`, write cost.
+- **2c. Pagination (P3 full scan + OFFSET + COUNT per page).** Partial index
+  `WHERE deleted_at IS NULL`. Experiments: OFFSET cost page 1 vs page 1000, COUNT cost.
+  Decision for Ravi: keep OFFSET or move to keyset (changes the contract).
+- **2d. N+1 fix (P4 `GET /orders`).** Compare `JOIN FETCH`, `@BatchSize`, two-query.
+  Decision for Ravi: which one stays.
+- **2e. Transactions and isolation (P7 page/count phantom, P8 lost update).** Two-session
+  experiments: dirty read (impossible in Postgres), non-repeatable read, phantom, lost
+  update at READ COMMITTED vs REPEATABLE READ. Show only; locking fixes are Stage 3.
+- **2f. Connection pool (P5 MinIO calls inside transactions, P6 default pool).**
+  Pause MinIO, load image confirm, watch unrelated endpoints fail. Move storage calls
+  out of transactions, size the pool from measurements. Decision for Ravi: load tool.
 
-### Stage 1 experiments (run with Ravi after 1e, predictions first)
+**Results:** each milestone adds before/after numbers to the Stage 2 report page
+(an Artifact), and live query counts show in the UI. Ravi prefers concise explanations
+over running experiments himself; run and measure, then explain.
 
-1. A cart of 3 items where item 3 is out of stock: what happens to stock of items 1 and 2,
-   with and without `@Transactional`?
-2. Out-of-stock as a *checked* exception inside `@Transactional`: does it roll back?
-3. Calling a `@Transactional` method from another method in the same class: is a
-   transaction applied?
-4. `GET /orders/{id}` mapping lazy `items` with open-in-view off: where does it fail, and
-   what are the fixes?
-5. `GET /orders` for a user with 10 orders: count SQL statements (N+1), then fix with
-   `JOIN FETCH` or an entity graph and count again.
+Known gaps left for later stages: checkout race and cart-creation race (Stage 3),
+`double` money (D3), orphan PENDING images (Stage 8), no idempotency on orders (Stage 7).
 
 ## Do not jump ahead
 

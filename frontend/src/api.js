@@ -74,7 +74,17 @@ async function request(method, path, body) {
       data = text
     }
   }
-  record({ ...entry, status: res.status, ms: Math.round(performance.now() - started), responseBody: data })
+  // Set by the backend's QueryMetricsFilter (Stage 2): SQL statements run and time spent in the DB.
+  const queries = res.headers.get('X-Query-Count')
+  const dbMs = res.headers.get('X-DB-Time-Ms')
+  record({
+    ...entry,
+    status: res.status,
+    ms: Math.round(performance.now() - started),
+    queries: queries === null ? null : Number(queries),
+    dbMs: dbMs === null ? null : Number(dbMs),
+    responseBody: data,
+  })
 
   if (!res.ok) {
     if (!text && res.status >= 500) {

@@ -1,6 +1,9 @@
 import { useEffect, useState } from 'react'
 import { clearLog, subscribe } from '../api.js'
 
+// A request running this many statements or more is highlighted: often an N+1.
+const SQL_WARN = 10
+
 function statusClass(s) {
   if (s === 0) return 's-fail'
   if (s < 300) return 's-ok'
@@ -37,7 +40,14 @@ export default function Inspector({ open, onClose }) {
                 <span className={`req-status ${statusClass(e.status)}`}>{e.status || 'ERR'}</span>
                 <span className="req-method">{e.method}</span>
                 <span className="req-path">{e.path}</span>
-                <span className="req-ms">{e.ms} ms</span>
+                <span className="req-ms">
+                  {e.ms} ms
+                  {e.queries != null && (
+                    <span className={`req-sql ${e.queries >= SQL_WARN ? 'is-hot' : ''}`}>
+                      {e.queries} SQL · {e.dbMs} ms DB
+                    </span>
+                  )}
+                </span>
               </button>
               {e.direct && <div className="req-note">Sent straight to MinIO. Spring Boot never saw this request.</div>}
               {expanded === e.id && (
@@ -45,6 +55,12 @@ export default function Inspector({ open, onClose }) {
                   <div className="req-meta">
                     {e.at.toLocaleTimeString()} {e.userId ? `as user ${e.userId}` : 'with no X-User-Id'}
                   </div>
+                  {e.queries != null && (
+                    <div className="req-meta">
+                      Backend ran {e.queries} SQL {e.queries === 1 ? 'statement' : 'statements'}, {e.dbMs} ms inside the
+                      database, out of {e.ms} ms for the whole request.
+                    </div>
+                  )}
                   {e.requestBody !== undefined && (
                     <>
                       <h3>Request body</h3>

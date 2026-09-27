@@ -48,6 +48,11 @@ field errors next to the matching form input.
 
 Money is displayed as INR. The UI accepts a JSON number or a numeric string.
 
+### Diagnostics headers (Stage 2)
+
+Every response carries `X-Query-Count` (SQL statements the request ran) and
+`X-DB-Time-Ms` (time spent inside them). The Requests panel shows both.
+
 ### Paged response (your own DTO, not Spring's `PageImpl`)
 
     { "content": [...], "page": 0, "size": 12, "totalElements": 40, "totalPages": 4 }

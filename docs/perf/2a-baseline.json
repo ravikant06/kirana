@@ -1,0 +1,278 @@
+{
+  "label": "2a-baseline",
+  "measured_at": "2026-09-27T07:01:50+00:00",
+  "table_rows": {
+    "users": 50105,
+    "products": 100510,
+    "orders": 1001002,
+    "order_items": 3004381,
+    "product_images": 1,
+    "inventory": 100510
+  },
+  "indexes": [
+    "cart_items_pkey",
+    "carts_pkey",
+    "carts_user_id_key",
+    "flyway_schema_history_pk",
+    "flyway_schema_history_s_idx",
+    "inventory_pkey",
+    "order_items_pkey",
+    "orders_pkey",
+    "product_images_object_key_key",
+    "product_images_pkey",
+    "products_pkey",
+    "uq_cart_items_cart_product",
+    "uq_order_items_order_product",
+    "uq_users_email_lower",
+    "users_pkey"
+  ],
+  "bulk_user_id": 43951,
+  "endpoints": [
+    {
+      "name": "Order history",
+      "path": "/orders",
+      "median_ms": 25.4,
+      "sql_statements": 22,
+      "db_ms": 19.1
+    },
+    {
+      "name": "One order",
+      "path": "/orders/12588901",
+      "median_ms": 3.0,
+      "sql_statements": 3,
+      "db_ms": 0.7
+    },
+    {
+      "name": "Products, first page",
+      "path": "/products?page=0&size=12",
+      "median_ms": 16.8,
+      "sql_statements": 4,
+      "db_ms": 12.4
+    },
+    {
+      "name": "Products, last page",
+      "path": "/products?page=8210&size=12",
+      "median_ms": 32.2,
+      "sql_statements": 4,
+      "db_ms": 27.8
+    }
+  ],
+  "queries": [
+    {
+      "name": "Orders of one user",
+      "why": "GET /orders. P1: orders.user_id has no index. P2: the result must be sorted.",
+      "sql": "select o.id, o.created_at, o.status, o.total, o.updated_at, o.user_id from orders o where o.user_id = 43951 order by o.created_at desc, o.id desc",
+      "execution_ms": 14.42,
+      "rows_returned": 20,
+      "rows_scanned": 1001004,
+      "buffers_hit": 14006,
+      "buffers_read": 4892,
+      "nodes": [
+        {
+          "node": "Gather Merge",
+          "relation": null,
+          "index": null,
+          "rows_out": 20,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "index": null,
+          "rows_out": 21,
+          "rows_removed_by_filter": 0,
+          "sort_method": "quicksort",
+          "sort_space_kb": 25
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "orders",
+          "index": null,
+          "rows_out": 21,
+          "rows_removed_by_filter": 1000983,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    },
+    {
+      "name": "Lines of one order",
+      "why": "Runs once per order in GET /orders (the N+1, P4). P1: order_items.order_id has no index.",
+      "sql": "select i.order_id, i.id, i.line_total, i.product_id, i.product_name, i.quantity, i.unit_price from order_items i where i.order_id = 12588901 order by i.id",
+      "execution_ms": 0.04,
+      "rows_returned": 4,
+      "rows_scanned": 4,
+      "buffers_hit": 10,
+      "buffers_read": 0,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "index": null,
+          "rows_out": 4,
+          "rows_removed_by_filter": 0,
+          "sort_method": "quicksort",
+          "sort_space_kb": 25
+        },
+        {
+          "node": "Index Scan",
+          "relation": "order_items",
+          "index": "uq_order_items_order_product",
+          "rows_out": 4,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    },
+    {
+      "name": "Products, first page",
+      "why": "GET /products?page=0. P3: no index matches the sort, so every live product is read and sorted.",
+      "sql": "select p.id, p.category, p.created_at, p.deleted_at, p.description, p.name, p.price, p.updated_at from products p where p.deleted_at is null order by p.created_at desc, p.id desc offset 0 rows fetch first 12 rows only",
+      "execution_ms": 8.65,
+      "rows_returned": 12,
+      "rows_scanned": 100508,
+      "buffers_hit": 1476,
+      "buffers_read": 0,
+      "nodes": [
+        {
+          "node": "Limit",
+          "relation": null,
+          "index": null,
+          "rows_out": 12,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        },
+        {
+          "node": "Gather Merge",
+          "relation": null,
+          "index": null,
+          "rows_out": 12,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "index": null,
+          "rows_out": 16,
+          "rows_removed_by_filter": 0,
+          "sort_method": "top-N heapsort",
+          "sort_space_kb": 26
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "products",
+          "index": null,
+          "rows_out": 98532,
+          "rows_removed_by_filter": 1976,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    },
+    {
+      "name": "Products, last page",
+      "why": "GET /products?page=last. P3: OFFSET reads and discards every row before the page.",
+      "sql": "select p.id, p.category, p.created_at, p.deleted_at, p.description, p.name, p.price, p.updated_at from products p where p.deleted_at is null order by p.created_at desc, p.id desc offset 98520 rows fetch first 12 rows only",
+      "execution_ms": 39.37,
+      "rows_returned": 12,
+      "rows_scanned": 100510,
+      "buffers_hit": 1438,
+      "buffers_read": 0,
+      "nodes": [
+        {
+          "node": "Limit",
+          "relation": null,
+          "index": null,
+          "rows_out": 12,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        },
+        {
+          "node": "Sort",
+          "relation": null,
+          "index": null,
+          "rows_out": 98532,
+          "rows_removed_by_filter": 0,
+          "sort_method": "external merge",
+          "sort_space_kb": 9832
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "products",
+          "index": null,
+          "rows_out": 98533,
+          "rows_removed_by_filter": 1977,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    },
+    {
+      "name": "Products, total count",
+      "why": "Runs on every product page to fill totalElements. P3.",
+      "sql": "select count(p.id) from products p where p.deleted_at is null",
+      "execution_ms": 8.66,
+      "rows_returned": 1,
+      "rows_scanned": 100510,
+      "buffers_hit": 1432,
+      "buffers_read": 0,
+      "nodes": [
+        {
+          "node": "Aggregate",
+          "relation": null,
+          "index": null,
+          "rows_out": 1,
+          "rows_removed_by_filter": 0,
+          "sort_method": null,
+          "sort_space_kb": null
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "products",
+          "index": null,
+          "rows_out": 98533,
+          "rows_removed_by_filter": 1977,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    },
+    {
+      "name": "Thumbnails for a page",
+      "why": "Runs on every product page. P1: product_images.product_id has no index (the table is nearly empty today).",
+      "sql": "select i.id, i.content_type, i.created_at, i.object_key, i.position, i.product_id, i.size_bytes, i.status, i.updated_at from product_images i where i.product_id in (4585451,4910851,2806301,1902201,3111601,1329751,4147051,1006501,4815051,457451,3933451,2270801) and i.status = 'ACTIVE' order by i.position, i.id",
+      "execution_ms": 0.03,
+      "rows_returned": 0,
+      "rows_scanned": 1,
+      "buffers_hit": 7,
+      "buffers_read": 0,
+      "nodes": [
+        {
+          "node": "Sort",
+          "relation": null,
+          "index": null,
+          "rows_out": 0,
+          "rows_removed_by_filter": 0,
+          "sort_method": "quicksort",
+          "sort_space_kb": 25
+        },
+        {
+          "node": "Seq Scan",
+          "relation": "product_images",
+          "index": null,
+          "rows_out": 0,
+          "rows_removed_by_filter": 1,
+          "sort_method": null,
+          "sort_space_kb": null
+        }
+      ]
+    }
+  ]
+}
