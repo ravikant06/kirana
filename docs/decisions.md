@@ -111,6 +111,42 @@ Cost: resetting to a small database means `docker compose down -v`.
 **D24. `pg_stat_statements` is preloaded in the compose Postgres.** Per-statement call
 counts and total time. Cost: a little overhead on every statement; fine locally.
 
+**D25. V2 indexes, each tied to a measured query.** (Ravi)
+`orders (user_id, created_at DESC, id DESC)`, `product_images (product_id)`, and a partial
+`products (created_at DESC, id DESC) WHERE deleted_at IS NULL`. Not indexed:
+`order_items.product_id`, `cart_items.product_id` (no query uses them; they would only
+slow inserts). Cost: plain `CREATE INDEX` blocks writes while it builds; production would
+use `CONCURRENTLY` in a non-transactional migration.
+
+**D26. Product listing keeps OFFSET pagination and the exact count.** (Ravi)
+Page numbers in the UI need OFFSET. Known cost, measured: the last page still walks every
+index entry before it (25 ms), and `count(*)` still reads all live products (8 ms) because
+counting 98% of a table is a full scan whichever path Postgres takes.
+
+**D27. `GET /users` is a bounded search: `?q=&limit=` (default 20, max 50), newest first.** (Ravi)
+Substring match on name or email, with LIKE wildcards escaped. The shopper dropdown became
+a search box. Cost: a leading `%` cannot use a B-tree index, so it scans users (fine at 50k).
+
+**D28. Order history and one order load their lines with `JOIN FETCH`.** (Ravi)
+One statement instead of 1 + N. Cost: cannot be paginated; switch to "IDs first, then
+lines" if order history is ever paged.
+
+**D29. `ProductService.list()` runs at REPEATABLE READ, read-only.** (Ravi)
+Page, count, stock and thumbnails come from one snapshot (fixes P7). Free in Postgres for
+read-only transactions.
+
+**D30. Lost updates (P8) stay until Stage 3.** (Ravi)
+`InventoryService.adjust`, `OrderService.place` and `CartService.add` read, compute in Java
+and write back. Demonstrated by `infra/perf/isolation_demo.py` (100 concurrent +1 → 9).
+
+**D31. No storage call runs inside a database transaction.** (Ravi)
+Image request and confirm use `TransactionTemplate`: short DB step, storage call with no
+connection held, short DB step. Cost: confirm is no longer one atomic unit; a concurrent
+confirm is handled by re-checking the status in the last step.
+
+**D32. Pool: 10 connections, 3 s connection timeout, 503 "Database busy" when exhausted.** (Ravi)
+Fails fast instead of a 30 s hang and a 500. Pool size can be overridden with `DB_POOL_SIZE`.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

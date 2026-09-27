@@ -27,9 +27,13 @@ import com.kirana.storage.ImageStorage.StoredObject;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
-/** The three-step upload (D7): request a policy, the browser uploads to MinIO, confirm. */
+/**
+ * The three-step upload (D7): request a policy, the browser uploads to MinIO, confirm.
+ * Uses TransactionTemplate instead of @Transactional so each database step is its own short
+ * transaction and no storage call ever runs while a connection is held.
+ */
 @Service
 public class ImageService {
 
@@ -39,45 +43,66 @@ public class ImageService {
     private final ProductImageRepository images;
     private final ProductRepository products;
     private final ImageStorage storage;
+    private final TransactionTemplate tx;
 
-    public ImageService(ProductImageRepository images, ProductRepository products, ImageStorage storage) {
+    public ImageService(ProductImageRepository images, ProductRepository products, ImageStorage storage,
+                        TransactionTemplate tx) {
         this.images = images;
         this.products = products;
         this.storage = storage;
+        this.tx = tx;
     }
 
     /**
      * Step 1. Records a PENDING row and signs a policy for a key we choose. The client never
      * picks the key, so it cannot overwrite another product's image.
+     *
+     * The row is written in its own short transaction and the storage call comes after it
+     * commits, so a slow MinIO never holds a database connection (P5). If signing fails,
+     * the PENDING row is left for the Stage 8 cleanup job.
      */
-    @Transactional
     public UploadTicket requestUpload(Long productId, UploadRequest req) {
-        Product product = requireLive(productId);
-        String key = "products/%d/%s%s".formatted(productId, UUID.randomUUID(), extension(req.fileName()));
-        ProductImage image = images.save(new ProductImage(product, key, req.contentType()));
-        SignedUpload signed = storage.signUpload(key, req.contentType());
-        return new UploadTicket(image.getId(), key, signed.expiresAt(), signed.uploadUrl(), signed.formFields());
+        ProductImage image = tx.execute(status -> {
+            Product product = requireLive(productId);
+            String key = "products/%d/%s%s".formatted(productId, UUID.randomUUID(), extension(req.fileName()));
+            return images.save(new ProductImage(product, key, req.contentType()));
+        });
+        SignedUpload signed = storage.signUpload(image.getObjectKey(), req.contentType());
+        return new UploadTicket(image.getId(), image.getObjectKey(), signed.expiresAt(), signed.uploadUrl(), signed.formFields());
     }
 
     /**
      * Step 3. Trusts storage, not the client: statObject tells us the object really exists and
      * its real size. Confirming an already active image just returns it.
+     *
+     * Three steps, and only the first and last touch the database, each in its own short
+     * transaction. The MinIO call in the middle holds no connection, so however long it
+     * hangs, other requests still get one (P5).
      */
-    @Transactional
     public ImageResponse confirm(Long productId, Long imageId) {
-        requireLive(productId);
-        ProductImage image = requireImage(productId, imageId);
-        if (image.getStatus() == ImageStatus.ACTIVE) {
-            return toResponse(image);
+        ProductImage pending = tx.execute(status -> {
+            requireLive(productId);
+            return requireImage(productId, imageId);
+        });
+        if (pending.getStatus() == ImageStatus.ACTIVE) {
+            return toResponse(pending);
         }
-        StoredObject stored = storage.stat(image.getObjectKey())
+
+        StoredObject stored = storage.stat(pending.getObjectKey())
                 .orElseThrow(() -> new ConflictException("Upload not found",
                         "Nothing has been uploaded for image %d yet. Upload the file, then confirm.".formatted(imageId)));
-        String contentType = stored.contentType() != null ? stored.contentType() : image.getContentType();
-        int position = images.findMaxPosition(productId, ImageStatus.ACTIVE) + 1;
-        image.activate(stored.sizeBytes(), contentType, position);
-        images.flush();
-        return toResponse(image);
+
+        ProductImage active = tx.execute(status -> {
+            ProductImage image = requireImage(productId, imageId);
+            if (image.getStatus() == ImageStatus.ACTIVE) {
+                return image; // confirmed by another request while we were asking storage
+            }
+            String contentType = stored.contentType() != null ? stored.contentType() : image.getContentType();
+            int position = images.findMaxPosition(productId, ImageStatus.ACTIVE) + 1;
+            image.activate(stored.sizeBytes(), contentType, position);
+            return image;
+        });
+        return toResponse(active);
     }
 
     /**

@@ -1,6 +1,7 @@
 package com.kirana.service;
 
 import java.util.List;
+import java.util.Locale;
 
 import com.kirana.dto.UserRequest;
 import com.kirana.dto.UserResponse;
@@ -10,7 +11,7 @@ import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.UserMapper;
 import com.kirana.repository.UserRepository;
 import org.springframework.dao.DataIntegrityViolationException;
-import org.springframework.data.domain.Sort;
+import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -25,9 +26,19 @@ public class UserService {
         this.users = users;
     }
 
+    static final int MAX_LIMIT = 50;
+
+    /**
+     * Newest shoppers first, optionally filtered by a substring of name or email. Always
+     * bounded: the unbounded Stage 1 list returned all 50k users (3.9 MB) on every page load.
+     */
     @Transactional(readOnly = true)
-    public List<UserResponse> list() {
-        return users.findAll(Sort.by("id")).stream().map(UserMapper::toResponse).toList();
+    public List<UserResponse> search(String query, int limit) {
+        Limit max = Limit.of(Math.clamp(limit, 1, MAX_LIMIT));
+        List<User> found = query == null || query.isBlank()
+                ? users.findByOrderByIdDesc(max)
+                : users.search("%" + escapeLike(query.trim().toLowerCase(Locale.ROOT)) + "%", max);
+        return found.stream().map(UserMapper::toResponse).toList();
     }
 
     /**
@@ -48,6 +59,11 @@ public class UserService {
             }
             throw e;
         }
+    }
+
+    /** % and _ are LIKE wildcards; a shopper searching for "50%" means the characters. */
+    private static String escapeLike(String s) {
+        return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
     }
 
     /** For other services: the user entity, or 404. */

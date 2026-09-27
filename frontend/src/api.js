@@ -151,7 +151,8 @@ const q = encodeURIComponent
 
 export const api = {
   users: {
-    list: () => request('GET', '/users'),
+    // Bounded search: newest shoppers first, filtered by name or email when q is given.
+    list: (q = '', limit = 20) => request('GET', `/users?limit=${limit}${q ? `&q=${q && encodeURIComponent(q)}` : ''}`),
     create: (body) => request('POST', '/users', body),
   },
   products: {

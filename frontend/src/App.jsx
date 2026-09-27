@@ -16,10 +16,21 @@ function readSavedUser() {
   }
 }
 
+function readSavedUserName() {
+  try {
+    return localStorage.getItem('kirana.userName') || null
+  } catch {
+    return null
+  }
+}
+
 export default function App() {
   const [view, setView] = useState({ name: 'shop' })
   const [users, setUsers] = useState([])
+  const [userQuery, setUserQuery] = useState('')
   const [userId, setUserId] = useState(readSavedUser)
+  // The chosen shopper may not be in the current search results, so remember their name too.
+  const [userName, setUserName] = useState(readSavedUserName)
   const [cartCount, setCartCount] = useState(0)
   const [inspectorOpen, setInspectorOpen] = useState(false)
   const [reqCount, setReqCount] = useState(0)
@@ -36,28 +47,41 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 3500)
   }, [])
 
-  const loadUsers = useCallback(async (selectId) => {
+  const chooseUser = useCallback((u) => {
+    setUserId(u ? u.id : null)
+    setUserName(u ? u.name : null)
+  }, [])
+
+  // GET /users is a bounded search (20 newest, or 20 matches), never the whole table.
+  const loadUsers = useCallback(async (selectId, q = '') => {
     try {
-      const list = await api.users.list()
-      setUsers(list || [])
-      if (selectId) setUserId(selectId)
-      else if (list?.length && !list.some((u) => u.id === readSavedUser())) setUserId(list[0].id)
+      const list = (await api.users.list(q)) || []
+      setUsers(list)
+      if (selectId) chooseUser(list.find((u) => u.id === selectId) || { id: selectId, name: `Shopper ${selectId}` })
+      else if (!readSavedUser() && list.length) chooseUser(list[0])
     } catch {
       setUsers([])
     }
-  }, [])
+  }, [chooseUser])
 
+  // Loads on mount (empty query), then searches as the person types, a quarter second after they stop.
   useEffect(() => {
-    loadUsers()
-  }, [loadUsers])
+    const t = setTimeout(() => loadUsers(undefined, userQuery), 250)
+    return () => clearTimeout(t)
+  }, [userQuery, loadUsers])
 
   useEffect(() => {
     try {
       if (userId) localStorage.setItem('kirana.userId', String(userId))
+      if (userName) localStorage.setItem('kirana.userName', userName)
     } catch {
       /* storage unavailable, fine */
     }
-  }, [userId])
+  }, [userId, userName])
+
+  const shopperOptions = userId && !users.some((u) => u.id === userId)
+    ? [{ id: userId, name: userName || `Shopper ${userId}` }, ...users]
+    : users
 
   const refreshCart = useCallback(async () => {
     if (!userId) return setCartCount(0)
@@ -96,9 +120,22 @@ export default function App() {
         <div className="topbar-right">
           <label className="who">
             <span>Shopping as</span>
-            <select value={userId ?? ''} onChange={(e) => setUserId(e.target.value ? Number(e.target.value) : null)}>
-              {users.length === 0 && <option value="">No shoppers yet</option>}
-              {users.map((u) => (
+            <input
+              id="shopper-search"
+              className="who-search"
+              type="search"
+              placeholder="Find shopper"
+              aria-label="Find shopper by name or email"
+              value={userQuery}
+              onChange={(e) => setUserQuery(e.target.value)}
+            />
+            <select
+              id="shopper-select"
+              value={userId ?? ''}
+              onChange={(e) => chooseUser(shopperOptions.find((u) => u.id === Number(e.target.value)) || null)}
+            >
+              {shopperOptions.length === 0 && <option value="">{userQuery ? 'No match' : 'No shoppers yet'}</option>}
+              {shopperOptions.map((u) => (
                 <option key={u.id} value={u.id}>{u.name}</option>
               ))}
             </select>

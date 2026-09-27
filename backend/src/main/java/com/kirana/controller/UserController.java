@@ -11,6 +11,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -24,9 +25,11 @@ public class UserController {
         this.users = users;
     }
 
+    /** Limit is clamped to 1..50. */
     @GetMapping
-    public List<UserResponse> list() {
-        return users.list();
+    public List<UserResponse> search(@RequestParam(required = false) String q,
+                                     @RequestParam(defaultValue = "20") int limit) {
+        return users.search(q, limit);
     }
 
     @PostMapping

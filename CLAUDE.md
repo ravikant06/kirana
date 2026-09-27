@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D24), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D32), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -99,6 +99,9 @@ Build in order and stop after each milestone.
 - **2f. Connection pool (P5 MinIO calls inside transactions, P6 default pool).**
   Pause MinIO, load image confirm, watch unrelated endpoints fail. Move storage calls
   out of transactions, size the pool from measurements. Decision for Ravi: load tool.
+
+**Status (2026-09-27):** 2a–2f done in two commits. Fixed: P1, P2, P4, P5, P6, P7, users
+list. Measured but left: deep OFFSET pages and `count(*)` (D26), lost updates (D30, Stage 3).
 
 **Results:** each milestone adds before/after numbers to the Stage 2 report page
 (an Artifact), and live query counts show in the UI. Ravi prefers concise explanations

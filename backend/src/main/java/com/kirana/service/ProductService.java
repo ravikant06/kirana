@@ -19,6 +19,7 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
@@ -36,8 +37,13 @@ public class ProductService {
         this.images = images;
     }
 
-    /** Three queries per page, however many products: products, their stock, their thumbnails. */
-    @Transactional(readOnly = true)
+    /**
+     * Four statements per page, however many products: page, count, stock, thumbnails.
+     * REPEATABLE READ makes all four read one snapshot, so totalElements always matches the
+     * page and the stock shown is from the same moment (P7). Free in Postgres for a
+     * read-only transaction: no locks, and no serialization errors.
+     */
+    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResponse<ProductSummary> list(int page, int size) {
         PageRequest request = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE),
                 Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));

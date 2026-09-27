@@ -4,6 +4,7 @@ import java.util.List;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.dao.DataAccessResourceFailureException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -11,6 +12,7 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -49,6 +51,17 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail storage(StorageException ex) {
         log.error("Object storage call failed", ex);
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "Storage unavailable", ex.getMessage());
+    }
+
+    /**
+     * No pooled connection became free within hikari.connection-timeout (P6), or the database
+     * is unreachable. 503 tells the client to retry later; the default would have been a 500.
+     */
+    @ExceptionHandler({CannotCreateTransactionException.class, DataAccessResourceFailureException.class})
+    public ProblemDetail databaseUnavailable(Exception ex) {
+        log.warn("Database unavailable: {}", ex.getMessage());
+        return problem(HttpStatus.SERVICE_UNAVAILABLE, "Database busy",
+                "No database connection was available. Try again in a moment.");
     }
 
     /** A constraint the service did not anticipate. Never echo the SQL back to the client. */

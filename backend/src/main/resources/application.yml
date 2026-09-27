@@ -9,6 +9,12 @@ spring:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kirana}
     username: ${DB_USER:kirana}
     password: ${DB_PASSWORD:kirana}
+    hikari:
+      # Stage 2f (P6): chosen, not inherited. 10 is plenty for one laptop instance: a
+      # connection is busy only while a transaction runs, and ours take a few ms.
+      maximum-pool-size: ${DB_POOL_SIZE:10}
+      # Fail in 3 s with a 503 instead of the default 30 s wait.
+      connection-timeout: 3000
 
   jpa:
     # Keep the DB session tied to the transaction, not the whole HTTP request.

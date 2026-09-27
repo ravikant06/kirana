@@ -22,6 +22,7 @@ import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.transaction.CannotCreateTransactionException;
 
 /** Web slice: controller + validation + GlobalExceptionHandler, with the service mocked. */
 @WebMvcTest(ProductController.class)
@@ -68,6 +69,17 @@ class ProductControllerTest {
         mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON).content("{bad"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Malformed request"));
+    }
+
+    @Test
+    void exhaustedPoolIs503ProblemDetail() throws Exception {
+        when(products.list(0, 12)).thenThrow(new CannotCreateTransactionException(
+                "Could not open JPA EntityManager for transaction",
+                new java.sql.SQLTransientConnectionException("HikariPool-1 - Connection is not available")));
+
+        mvc.perform(get("/products"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.title").value("Database busy"));
     }
 
     @Test

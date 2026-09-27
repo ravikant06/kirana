@@ -61,10 +61,14 @@ Every response carries `X-Query-Count` (SQL statements the request ran) and
 
 | Method | Path   | Body              | Returns      |
 |--------|--------|-------------------|--------------|
-| GET    | /users |                   | `[User]`     |
+| GET    | /users | `?q=&limit=`      | `[User]`     |
 | POST   | /users | `{ name, email }` | `User` (201) |
 
 `User = { id, name, email }`
+
+`GET /users` is a bounded search, newest first: `q` matches part of the name or email
+(case-insensitive), `limit` defaults to 20 and is clamped to 1–50. Without `q` it returns
+the newest shoppers. It never returns the whole table.
 
 ### Products
 

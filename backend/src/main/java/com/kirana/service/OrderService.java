@@ -74,25 +74,19 @@ public class OrderService {
         return OrderMapper.toResponse(order);
     }
 
-    /**
-     * N+1 on purpose (experiment 5): one query for the orders, then mapping touches each
-     * order's lazy items and fires one more query per order.
-     */
+    /** Two statements whatever the number of orders: the user check, then orders with their lines. */
     @Transactional(readOnly = true)
     public List<OrderResponse> list(Long userId) {
         users.require(userId);
-        return orders.findByUserIdOrderByCreatedAtDescIdDesc(userId).stream().map(OrderMapper::toResponse).toList();
+        return orders.findWithItemsByUserId(userId).stream().map(OrderMapper::toResponse).toList();
     }
 
-    /**
-     * Mapping happens here, inside the transaction, while items can still be lazy-loaded.
-     * Move it to the controller and open-in-view=false makes it fail (experiment 4).
-     */
+    /** Lines are fetched with the order, so mapping no longer depends on lazy loading. */
     @Transactional(readOnly = true)
     public OrderResponse get(Long userId, Long orderId) {
         users.require(userId);
         // Someone else's order is "not found", not "forbidden": don't confirm it exists.
-        return orders.findByIdAndUserId(orderId, userId)
+        return orders.findWithItemsByIdAndUserId(orderId, userId)
                 .map(OrderMapper::toResponse)
                 .orElseThrow(() -> new NotFoundException("Order %d not found".formatted(orderId)));
     }
