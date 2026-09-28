@@ -9,6 +9,9 @@ import java.util.UUID;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import com.kirana.cache.CacheAside;
+import com.kirana.cache.CacheKeys;
+import com.kirana.cache.ProductSnapshot;
 import com.kirana.dto.ImageResponse;
 import com.kirana.dto.UploadRequest;
 import com.kirana.dto.UploadTicket;
@@ -44,13 +47,15 @@ public class ImageService {
     private final ProductRepository products;
     private final ImageStorage storage;
     private final TransactionTemplate tx;
+    private final CacheAside cache;
 
     public ImageService(ProductImageRepository images, ProductRepository products, ImageStorage storage,
-                        TransactionTemplate tx) {
+                        TransactionTemplate tx, CacheAside cache) {
         this.images = images;
         this.products = products;
         this.storage = storage;
         this.tx = tx;
+        this.cache = cache;
     }
 
     /**
@@ -95,6 +100,7 @@ public class ImageService {
         // R6: lock the product row first, so confirms for one product run one at a time and
         // each reads the true max position. Other products are not blocked.
         ProductImage active = tx.execute(status -> {
+            cache.evictAfterCommit(CacheKeys.product(productId)); // the product page shows its images
             products.lockLive(productId)
                     .orElseThrow(() -> new NotFoundException("Product %d not found".formatted(productId)));
             ProductImage image = requireImage(productId, imageId);
@@ -118,11 +124,22 @@ public class ImageService {
         requireLive(productId);
         ProductImage image = requireImage(productId, imageId);
         images.delete(image);
+        cache.evict(CacheKeys.product(productId));
         try {
             storage.delete(image.getObjectKey());
         } catch (StorageException e) {
             log.warn("Image {} row deleted but object {} was not; it is now an orphan", imageId, image.getObjectKey(), e);
         }
+    }
+
+    /** Confirmed images of one product as entities (no URLs), for the product cache snapshot. */
+    public List<ProductImage> activeImageRows(Long productId) {
+        return images.findByProductIdAndStatusOrderByPositionAscIdAsc(productId, ImageStatus.ACTIVE);
+    }
+
+    /** A cached image with a freshly signed read URL. */
+    public ImageResponse signed(ProductSnapshot.Image image) {
+        return ProductMapper.toImage(image, storage.readUrl(image.objectKey()));
     }
 
     /** Confirmed images of one product, in display order, with fresh read URLs. */

@@ -180,6 +180,37 @@ needs a read (max position) and a subquery takes no lock; traffic is tiny.
 `synchronized`/`ReentrantLock` fail across instances and release before the proxy commits;
 covered in discussion. Concurrency tests use `ExecutorService` + `CountDownLatch`.
 
+## Stage 4
+
+**D39. Redis 8 in compose, host port 6380, no persistence, allkeys-lru at 256 MB.** (Ravi)
+Everything in Redis can be rebuilt from Postgres. Port 6380 because a local Redis on 6379
+silently captured the app's traffic during the build. `valkey/valkey:8` is a drop-in swap.
+
+**D40. Explicit cache-aside for product details (`product:v1:{id}`, 10 min ± 20%).** (Ravi)
+Hand-written with `StringRedisTemplate`, not `@Cacheable`. Cached: product fields and image
+object keys. Not cached: stock (one fresh PK read) and signed URLs (they expire in 1 h).
+Evicted after commit on create/update/delete and image confirm/delete. Single-flight lock
+on a miss (stampede), "not found" cached 60 s (penetration). Reads run outside transactions.
+
+**D41. Product list pages are cached whole for 30 s, TTL-only.** (Ravi)
+One new product shifts every page, so precise eviction is impractical. A new or edited
+product, and list stock, can be 30 s stale; the product page and checkout are always fresh.
+
+**D42. Redis failures fail open.** (Ravi)
+200 ms command timeout; any error means "no answer": serve from Postgres, allow the request,
+skip the flash-sale gate. `X-Cache: BYPASS` shows it. The shop stays up without Redis.
+
+**D43. Token-bucket rate limits per shopper on writes.** (Ravi)
+`POST /orders` 5 per minute, cart writes 20 per 10 s, as Lua scripts (atomic across
+instances). 429 with `Retry-After`. Fixed and sliding window are kept only as comparisons.
+
+**D44. Flash-sale gate: Redis decides winners, Postgres confirms them.** (Ravi)
+Admin arms a sale per product (`POST /products/{id}/flash-sale`), copying DB stock to
+`flash:stock:{id}`. Checkout takes units with an atomic Lua check-and-decrement before any
+transaction; refused buyers cost one cart query. The Stage 3 conditional UPDATE stays the
+final guard, and units are given back if the database refuses. The gate can only be stricter
+than the database (restocks need a re-arm), never looser.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

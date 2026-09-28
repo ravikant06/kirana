@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D38), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D44), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -36,7 +36,7 @@ introduced only when the application has a real problem that motivates it.
 
     backend/    Spring Boot 4.0.x, Java 21, Maven, Hibernate 7, Flyway, Postgres 17, MinIO SDK
     frontend/   React + Vite (done; change only if the contract changes)
-    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork)
+    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork) + Redis 8 (port 6380)
     docs/       decisions, API contract, concepts learned
 
 Packages are organized **by layer** (decision D10) under `com.kirana`: `controller`,
@@ -72,24 +72,25 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 3 (current stage): concurrency and locking — done
+## Stage 4 (current stage): Redis — done
 
-Stage 2 is complete (see the "Kirana Query Ledger" artifact, docs/perf, D22–D32).
-Stage 3 fixed the six read-then-write races (D33–D38), chosen by user behaviour:
+Stages 1–3 are complete (D1–D38). Stage 4 added Redis (D39–D44), port 6380:
 
-- **R1 stock adjust:** atomic `quantity + :delta` (InventoryRepository.adjustIfValid).
-- **R2 checkout oversell:** atomic conditional decrement per line, product-id order.
-- **R3 stale product form:** `@Version`, required in PUT, 409 on mismatch, no auto-retry.
-- **R4/R5 cart add and creation:** native upserts (`ON CONFLICT`).
-- **R6 image position:** `FOR UPDATE` on the product row + partial unique index.
-- **Tests:** ConcurrencyIntegrationTest fires each race with a latch start gate.
+- **Cache-aside** for product details and list pages (`com.kirana.cache.CacheAside`):
+  single-flight on a miss, negative caching, TTL jitter, evict after commit, fail open.
+  Stock and signed URLs are never cached. `X-Cache` header in the Requests panel.
+- **Rate limiter** (`com.kirana.ratelimit`): fixed window, sliding window, token bucket as
+  Lua scripts; token bucket applied per shopper to checkout and cart writes (429).
+- **Flash-sale gate** (`FlashSaleCounter`, `/products/{id}/flash-sale`): Redis picks
+  winners before any transaction; Postgres's atomic UPDATE stays the final guard.
+- Tests: CacheIntegrationTest, RateLimiterIntegrationTest, FlashSaleIntegrationTest,
+  RedisDownIntegrationTest. Shared Testcontainers configs (PostgresContainerConfig,
+  RedisContainerConfig).
 
-Ravi chose explanation over reproduction for this stage (no load experiments, no
-synchronized/ReentrantLock trials). Known limits carried forward: a hot product still
-serialises on one row lock (flash-sale patterns: Redis, queues, buckets in later stages);
-deep OFFSET pages and count(*) (D26); no MinIO timeouts (Stage 5).
+Ravi skipped the load measurement for this stage. Known limits: list pages and list stock
+up to 30 s stale; the gate needs a re-arm after a restock; no timeouts on MinIO (Stage 5).
 
-Next per the process below: wrap up, then plan Stage 4 (Redis) with Ravi.
+Next per the process below: wrap up, then plan Stage 5 (resilience) with Ravi.
 
 ## Do not jump ahead
 

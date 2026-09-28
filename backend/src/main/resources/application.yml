@@ -31,6 +31,15 @@ spring:
   flyway:
     locations: classpath:db/migration
 
+  data:
+    redis:
+      host: ${REDIS_HOST:localhost}
+      port: ${REDIS_PORT:6380}   # compose maps Kirana's Redis to 6380 (see docker-compose.yml)
+      # Redis answers in well under a millisecond. If it does not answer in 200 ms, treat it as
+      # down and fall back to Postgres (fail open, D42) instead of hanging the request.
+      timeout: 200ms
+      connect-timeout: 500ms
+
 server:
   port: 8080
 
@@ -42,6 +51,20 @@ kirana:
     bucket: ${STORAGE_BUCKET:product-images}
     max-upload-bytes: 5242880   # 5 MB, enforced by the signed POST policy
     upload-url-ttl: 10m
+  cache:
+    product-ttl: 10m        # product detail; +-20% jitter so keys cached together expire apart
+    list-ttl: 30s           # product list pages: TTL-only, a new product shows within 30 s (D41)
+    negative-ttl: 60s       # "product does not exist", against cache penetration
+    lock-ttl: 3s            # single-flight rebuild lock, against cache stampede
+    lock-wait: 200ms        # how long other requests wait for the rebuilder before going to the DB
+  rate-limit:
+    # Token buckets per shopper (D43): "limit per window" = burst size and sustained rate.
+    orders:
+      limit: 5
+      window: 1m
+    cart:
+      limit: 20
+      window: 10s
   diagnostics:
     # Stage 2: X-Query-Count / X-DB-Time-Ms headers and one log line per request.
     query-metrics: true

@@ -48,10 +48,18 @@ field errors next to the matching form input.
 
 Money is displayed as INR. The UI accepts a JSON number or a numeric string.
 
-### Diagnostics headers (Stage 2)
+### Diagnostics headers (Stage 2, 4)
 
 Every response carries `X-Query-Count` (SQL statements the request ran) and
-`X-DB-Time-Ms` (time spent inside them). The Requests panel shows both.
+`X-DB-Time-Ms` (time spent inside them). Requests that used the cache also carry
+`X-Cache`: `HIT` (answered by Redis), `MISS` (loaded from Postgres), `BYPASS` (Redis
+unavailable). The Requests panel shows all three.
+
+### Rate limits (Stage 4)
+
+`POST /orders` and cart writes are limited per shopper (`X-User-Id`). Responses carry
+`X-RateLimit-Remaining`. Over the limit: 429 ProblemDetail `"Too many requests"` with a
+`Retry-After` header in seconds.
 
 ### Paged response (your own DTO, not Spring's `PageImpl`)
 
@@ -117,6 +125,18 @@ Soft-deleted products return 404 from every product endpoint and are left out of
 | POST   | /products/{id}/inventory/adjustments | `{ delta }`    | `Inventory` |
 
 `Inventory = { productId, quantity, updatedAt }`
+
+### Flash-sale gate (Stage 4, admin)
+
+| Method | Path                           | Returns          |
+|--------|--------------------------------|------------------|
+| GET    | /products/{id}/flash-sale      | `FlashSale`      |
+| POST   | /products/{id}/flash-sale      | `FlashSale` (arms it, or re-syncs it from current stock) |
+| DELETE | /products/{id}/flash-sale      | 204              |
+
+`FlashSale = { productId, active, remaining }` (`remaining` is null when not active).
+While active, checkout refuses buyers once the gate's units run out, with the usual
+409 "Out of stock".
 
 ### Cart (needs X-User-Id)
 

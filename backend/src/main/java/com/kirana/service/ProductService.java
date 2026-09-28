@@ -5,6 +5,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
+import com.kirana.cache.CacheAside;
+import com.kirana.cache.CacheKeys;
+import com.kirana.cache.ProductSnapshot;
+import com.kirana.config.CacheProperties;
+import com.kirana.dto.ImageResponse;
 import com.kirana.dto.PageResponse;
 import com.kirana.dto.ProductDetail;
 import com.kirana.dto.ProductRequest;
@@ -21,34 +26,62 @@ import org.springframework.data.domain.Page;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Isolation;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
+import tools.jackson.core.type.TypeReference;
 
 @Service
 public class ProductService {
 
     static final int MAX_PAGE_SIZE = 100;
 
+    private static final TypeReference<PageResponse<ProductSummary>> PAGE = new TypeReference<>() { };
+    private static final TypeReference<ProductSnapshot> SNAPSHOT = new TypeReference<>() { };
+
     private final ProductRepository products;
     private final InventoryRepository inventory;
     private final ImageService images;
+    private final CacheAside cache;
+    private final CacheProperties cacheProps;
+    private final TransactionTemplate readTx;
+    private final TransactionTemplate snapshotReadTx;
 
-    public ProductService(ProductRepository products, InventoryRepository inventory, ImageService images) {
+    public ProductService(ProductRepository products, InventoryRepository inventory, ImageService images,
+                          CacheAside cache, CacheProperties cacheProps, PlatformTransactionManager txManager) {
         this.products = products;
         this.inventory = inventory;
         this.images = images;
+        this.cache = cache;
+        this.cacheProps = cacheProps;
+        this.readTx = new TransactionTemplate(txManager);
+        this.readTx.setReadOnly(true);
+        // P7 (D29): page, count, stock and thumbnails from one snapshot.
+        this.snapshotReadTx = new TransactionTemplate(txManager);
+        this.snapshotReadTx.setReadOnly(true);
+        this.snapshotReadTx.setIsolationLevel(TransactionDefinition.ISOLATION_REPEATABLE_READ);
     }
 
     /**
-     * Four statements per page, however many products: page, count, stock, thumbnails.
-     * REPEATABLE READ makes all four read one snapshot, so totalElements always matches the
-     * page and the stock shown is from the same moment (P7). Free in Postgres for a
-     * read-only transaction: no locks, and no serialization errors.
+     * Product list pages are cached whole for a short TTL (D41): a new or edited product shows
+     * up within kirana.cache.list-ttl. Precise eviction is impractical, because one new product
+     * shifts every page. Stock shown in the list can be that old too; the product page and
+     * checkout always read it fresh.
+     *
+     * Not @Transactional: the Redis lookup must not hold a database connection. Only a miss
+     * opens a transaction, a read-only REPEATABLE READ one so the page and its count agree (P7).
      */
-    @Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
     public PageResponse<ProductSummary> list(int page, int size) {
-        PageRequest request = PageRequest.of(Math.max(page, 0), Math.clamp(size, 1, MAX_PAGE_SIZE),
-                Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
+        int p = Math.max(page, 0);
+        int s = Math.clamp(size, 1, MAX_PAGE_SIZE);
+        return cache.getOrLoad(CacheKeys.productPage(p, s), cacheProps.listTtl(), PAGE,
+                () -> snapshotReadTx.execute(status -> loadPage(p, s)));
+    }
+
+    /** Four statements per page, however many products: page, count, stock, thumbnails. */
+    private PageResponse<ProductSummary> loadPage(int page, int size) {
+        PageRequest request = PageRequest.of(page, size, Sort.by(Sort.Order.desc("createdAt"), Sort.Order.desc("id")));
         Page<Product> result = products.findAllByDeletedAtIsNull(request);
 
         List<Long> ids = result.map(Product::getId).toList();
@@ -62,10 +95,22 @@ public class ProductService {
         return PageResponse.of(result, content);
     }
 
-    @Transactional(readOnly = true)
+    /**
+     * Cache-aside (D40). Product fields and image keys come from Redis when cached; stock is
+     * always one fresh primary-key read, so a sold-out product never shows as available.
+     * A missing or deleted product is cached as "not found" for a minute (penetration).
+     * Not @Transactional, for the same reason as list().
+     */
     public ProductDetail get(Long id) {
-        Product product = requireLive(id);
-        return ProductMapper.toDetail(product, stockOf(id), images.activeImages(id));
+        ProductSnapshot p = cache.getOrLoad(CacheKeys.product(id), cacheProps.productTtl(), SNAPSHOT,
+                () -> readTx.execute(status -> products.findByIdAndDeletedAtIsNull(id)
+                        .map(product -> ProductMapper.toSnapshot(product, images.activeImageRows(id)))
+                        .orElse(null)));
+        if (p == null) {
+            throw notFound(id);
+        }
+        List<ImageResponse> signed = p.images().stream().map(images::signed).toList();
+        return ProductMapper.toDetail(p, stockOf(id), signed);
     }
 
     /**
@@ -78,6 +123,8 @@ public class ProductService {
         inventory.save(new Inventory(product));
         // Run the INSERTs now so the generated timestamps are in the response.
         products.flush();
+        // A bot may have asked for this id before it existed; drop the cached "not found".
+        cache.evictAfterCommit(CacheKeys.product(product.getId()));
         return ProductMapper.toDetail(product, 0, List.of());
     }
 
@@ -96,6 +143,7 @@ public class ProductService {
         if (product.getVersion() != req.version()) {
             throw productChanged();
         }
+        cache.evictAfterCommit(CacheKeys.product(id));
         product.update(req.name().trim(), blankToNull(req.description()), req.priceValue());
         products.flush();
         return ProductMapper.toDetail(product, stockOf(id), images.activeImages(id));
@@ -105,6 +153,7 @@ public class ProductService {
     @Transactional
     public void delete(Long id) {
         requireLive(id).softDelete(Instant.now());
+        cache.evictAfterCommit(CacheKeys.product(id));
     }
 
     static ConflictException productChanged() {
@@ -114,8 +163,11 @@ public class ProductService {
 
     /** For other services: a live product, or 404 (deleted counts as missing). */
     public Product requireLive(Long id) {
-        return products.findByIdAndDeletedAtIsNull(id)
-                .orElseThrow(() -> new NotFoundException("Product %d not found".formatted(id)));
+        return products.findByIdAndDeletedAtIsNull(id).orElseThrow(() -> notFound(id));
+    }
+
+    private static NotFoundException notFound(Long id) {
+        return new NotFoundException("Product %d not found".formatted(id));
     }
 
     private int stockOf(Long productId) {

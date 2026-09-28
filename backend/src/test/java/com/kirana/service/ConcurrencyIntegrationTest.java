@@ -32,25 +32,20 @@ import com.kirana.storage.ImageStorage.StoredObject;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.kirana.PostgresContainerConfig;
+import com.kirana.RedisContainerConfig;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Stage 3: each test fires many requests at the same instant (a CountDownLatch start gate)
  * against a real Postgres. Every one of them failed on the Stage 1 read-then-write code.
  */
 @SpringBootTest
-@Testcontainers
+@Import({PostgresContainerConfig.class, RedisContainerConfig.class})
 class ConcurrencyIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
     @MockitoBean MinioClient minio;
     @MockitoBean ImageStorage storage;

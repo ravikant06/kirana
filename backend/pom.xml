@@ -52,6 +52,12 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- Stage 4: Redis for caching, rate limiting and the flash-sale gate (Lettuce client) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis</artifactId>
+        </dependency>
+
         <!-- Object storage: MinIO's S3 client (works with any S3-compatible server) -->
         <dependency>
             <groupId>io.minio</groupId>
@@ -85,6 +91,11 @@
         <dependency>
             <groupId>org.testcontainers</groupId>
             <artifactId>testcontainers-postgresql</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-data-redis-test</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

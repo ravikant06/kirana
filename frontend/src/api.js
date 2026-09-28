@@ -77,12 +77,15 @@ async function request(method, path, body) {
   // Set by the backend's QueryMetricsFilter (Stage 2): SQL statements run and time spent in the DB.
   const queries = res.headers.get('X-Query-Count')
   const dbMs = res.headers.get('X-DB-Time-Ms')
+  // Stage 4: HIT (answered by Redis), MISS (went to Postgres), BYPASS (Redis unavailable).
+  const cache = res.headers.get('X-Cache')
   record({
     ...entry,
     status: res.status,
     ms: Math.round(performance.now() - started),
     queries: queries === null ? null : Number(queries),
     dbMs: dbMs === null ? null : Number(dbMs),
+    cache,
     responseBody: data,
   })
 
@@ -177,6 +180,11 @@ export const api = {
     add: (productId, quantity) => request('POST', '/cart/items', { productId, quantity }),
     update: (productId, quantity) => request('PUT', `/cart/items/${q(productId)}`, { quantity }),
     remove: (productId) => request('DELETE', `/cart/items/${q(productId)}`),
+  },
+  flashSale: {
+    status: (productId) => request('GET', `/products/${q(productId)}/flash-sale`),
+    start: (productId) => request('POST', `/products/${q(productId)}/flash-sale`),
+    stop: (productId) => request('DELETE', `/products/${q(productId)}/flash-sale`),
   },
   orders: {
     place: () => request('POST', '/orders'),

@@ -1,5 +1,6 @@
 package com.kirana.repository;
 
+import java.util.List;
 import java.util.Optional;
 
 import com.kirana.entity.Cart;
@@ -17,6 +18,13 @@ public interface CartRepository extends JpaRepository<Cart, Long> {
             where c.user.id = :userId
             """)
     Optional<Cart> findWithItemsByUserId(Long userId);
+
+    @Query("""
+            select new com.kirana.repository.CartLineView(p.id, p.name, i.quantity)
+            from CartItem i join i.cart c join i.product p
+            where c.user.id = :userId and p.deletedAt is null
+            """)
+    List<CartLineView> findLiveLines(Long userId);
 
     @Query("select c.id from Cart c where c.user.id = :userId")
     Optional<Long> findIdByUserId(Long userId);

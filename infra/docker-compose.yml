@@ -42,6 +42,22 @@ services:
     volumes:
       - minio-data:/data
 
+  redis:
+    # Stage 4: cache, rate limiter and flash-sale gate. Redis 8 is AGPL/RSAL/SSPL-licensed;
+    # valkey/valkey:8 is the BSD fork with the same protocol, so switching is config only.
+    image: redis:8
+    # No persistence: everything in Redis can be rebuilt from Postgres (cache-aside).
+    command: ["redis-server", "--save", "", "--appendonly", "no", "--maxmemory", "256mb", "--maxmemory-policy", "allkeys-lru"]
+    ports:
+      # Host port 6380, not 6379: a locally installed Redis often already owns 6379, and the
+      # app would silently talk to that one instead (it happened while building Stage 4).
+      - "6380:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
 volumes:
   pgdata:
   minio-data:

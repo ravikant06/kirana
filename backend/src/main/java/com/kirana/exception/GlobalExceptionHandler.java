@@ -2,6 +2,7 @@ package com.kirana.exception;
 
 import java.util.List;
 
+import com.kirana.ratelimit.RateLimitedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -52,6 +53,14 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail storage(StorageException ex) {
         log.error("Object storage call failed", ex);
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "Storage unavailable", ex.getMessage());
+    }
+
+    /** 429 with Retry-After, so well-behaved clients know when to come back. */
+    @ExceptionHandler(RateLimitedException.class)
+    public ResponseEntity<ProblemDetail> rateLimited(RateLimitedException ex) {
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS)
+                .header(HttpHeaders.RETRY_AFTER, Long.toString(ex.getRetryAfterSeconds()))
+                .body(problem(HttpStatus.TOO_MANY_REQUESTS, "Too many requests", ex.getMessage()));
     }
 
     /**

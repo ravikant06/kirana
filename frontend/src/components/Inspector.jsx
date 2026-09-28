@@ -44,7 +44,7 @@ export default function Inspector({ open, onClose }) {
                   {e.ms} ms
                   {e.queries != null && (
                     <span className={`req-sql ${e.queries >= SQL_WARN ? 'is-hot' : ''}`}>
-                      {e.queries} SQL · {e.dbMs} ms DB
+                      {e.queries} SQL · {e.dbMs} ms DB{e.cache ? ` · ${e.cache}` : ''}
                     </span>
                   )}
                 </span>
@@ -59,6 +59,9 @@ export default function Inspector({ open, onClose }) {
                     <div className="req-meta">
                       Backend ran {e.queries} SQL {e.queries === 1 ? 'statement' : 'statements'}, {e.dbMs} ms inside the
                       database, out of {e.ms} ms for the whole request.
+                      {e.cache === 'HIT' && ' Answered from the Redis cache.'}
+                      {e.cache === 'MISS' && ' Cache miss: loaded from Postgres and stored in Redis.'}
+                      {e.cache === 'BYPASS' && ' Redis was unavailable, so Postgres answered directly.'}
                     </div>
                   )}
                   {e.requestBody !== undefined && (

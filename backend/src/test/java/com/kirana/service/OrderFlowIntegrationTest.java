@@ -11,24 +11,19 @@ import com.kirana.exception.OutOfStockException;
 import io.minio.MinioClient;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import com.kirana.PostgresContainerConfig;
+import com.kirana.RedisContainerConfig;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.testcontainers.service.connection.ServiceConnection;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
-import org.testcontainers.junit.jupiter.Container;
-import org.testcontainers.junit.jupiter.Testcontainers;
-import org.testcontainers.postgresql.PostgreSQLContainer;
 
 /**
  * Real Postgres (Testcontainers), real Flyway migration, real transactions. Only MinIO is mocked,
  * since no images are involved. Needs Docker.
  */
 @SpringBootTest
-@Testcontainers
+@Import({PostgresContainerConfig.class, RedisContainerConfig.class})
 class OrderFlowIntegrationTest {
-
-    @Container
-    @ServiceConnection
-    static PostgreSQLContainer postgres = new PostgreSQLContainer("postgres:17");
 
     @MockitoBean
     MinioClient minio;

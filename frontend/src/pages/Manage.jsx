@@ -158,10 +158,63 @@ function ProductEditor({ id, notify, onChanged, onDeleted }) {
         }}
       />
       <Stock productId={id} notify={notify} onChanged={onChanged} />
+      <FlashSale productId={id} notify={notify} />
       <Images product={p} notify={notify} onChanged={() => { reload(); onChanged() }} />
       <div className="danger">
         <button className="btn-danger" onClick={del}>Delete product</button>
       </div>
+    </div>
+  )
+}
+
+// Stage 4 flash-sale gate: while active, Redis decides who gets the remaining units and
+// turns everyone else away before checkout touches the database.
+function FlashSale({ productId, notify }) {
+  const { data, error, reload } = useLoad(() => api.flashSale.status(productId), [productId])
+  const [busy, setBusy] = useState(false)
+
+  const run = async (fn, msg) => {
+    setBusy(true)
+    try {
+      await fn()
+      await reload()
+      notify(msg)
+    } catch (e) {
+      notify(e.message, 'error')
+    } finally {
+      setBusy(false)
+    }
+  }
+
+  return (
+    <div className="form">
+      <h2>Flash sale</h2>
+      {error && <Problem error={error} compact />}
+      {data && (
+        <>
+          <p className="muted">
+            {data.active
+              ? `Gate on: ${data.remaining} units left in Redis. Buyers beyond that are refused before checkout reaches the database.`
+              : 'Gate off: checkout goes straight to the database.'}
+          </p>
+          <div className="stock-actions">
+            {data.active ? (
+              <>
+                <button className="btn-quiet" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Gate re-synced from stock')}>
+                  Re-sync from stock
+                </button>
+                <button className="btn-quiet" disabled={busy} onClick={() => run(() => api.flashSale.stop(productId), 'Flash-sale gate stopped')}>
+                  Stop gate
+                </button>
+              </>
+            ) : (
+              <button className="btn" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Flash-sale gate started')}>
+                Start flash-sale gate
+              </button>
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }

@@ -2,8 +2,11 @@ package com.kirana.service;
 
 import java.time.Instant;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
+import com.kirana.cache.FlashSaleCounter;
 import com.kirana.dto.OrderResponse;
 import com.kirana.entity.Cart;
 import com.kirana.entity.CartItem;
@@ -15,11 +18,13 @@ import com.kirana.exception.ConflictException;
 import com.kirana.exception.NotFoundException;
 import com.kirana.exception.OutOfStockException;
 import com.kirana.mapper.OrderMapper;
+import com.kirana.repository.CartLineView;
 import com.kirana.repository.CartRepository;
 import com.kirana.repository.InventoryRepository;
 import com.kirana.repository.OrderRepository;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class OrderService {
@@ -28,17 +33,52 @@ public class OrderService {
     private final CartRepository carts;
     private final InventoryRepository inventory;
     private final UserService users;
+    private final FlashSaleCounter flashSale;
+    private final TransactionTemplate tx;
 
-    public OrderService(OrderRepository orders, CartRepository carts, InventoryRepository inventory, UserService users) {
+    public OrderService(OrderRepository orders, CartRepository carts, InventoryRepository inventory, UserService users,
+                        FlashSaleCounter flashSale, TransactionTemplate tx) {
         this.orders = orders;
         this.carts = carts;
         this.inventory = inventory;
         this.users = users;
+        this.flashSale = flashSale;
+        this.tx = tx;
     }
 
     /**
-     * Checkout: turn the cart into an order, subtract stock, empty the cart. All in one
-     * transaction, so an out-of-stock line undoes the stock already subtracted for earlier lines.
+     * Checkout, in two phases (D44):
+     *
+     * 1. Flash-sale gate, before any transaction. For products with an armed sale, Redis hands
+     *    out units atomically. A buyer who gets none is refused here, after one light cart query
+     *    and one Redis call, without opening a transaction or queueing on the stock row.
+     * 2. The database checkout (placeInDb), in one transaction. If it fails for any reason,
+     *    units taken at the gate are given back (compensation), because Redis is not part of
+     *    the database transaction and a rollback cannot undo it.
+     *
+     * Not @Transactional itself: Redis calls must not hold a database connection (Stage 2f).
+     */
+    public OrderResponse place(Long userId) {
+        Map<Long, Integer> taken = new LinkedHashMap<>();
+        try {
+            for (CartLineView line : carts.findLiveLines(userId)) {
+                switch (flashSale.take(line.productId(), line.quantity())) {
+                    case TAKEN -> taken.put(line.productId(), line.quantity());
+                    case SOLD_OUT -> throw new OutOfStockException(line.productName(),
+                            (int) flashSale.remaining(line.productId()).orElse(0), line.quantity());
+                    case NOT_ARMED -> { } // no sale, or Redis down: Postgres decides, as in Stage 3
+                }
+            }
+            return tx.execute(status -> placeInDb(userId, taken));
+        } catch (RuntimeException e) {
+            taken.forEach(flashSale::giveBack);
+            throw e;
+        }
+    }
+
+    /**
+     * Turn the cart into an order, subtract stock, empty the cart. All in one transaction, so an
+     * out-of-stock line undoes the stock already subtracted for earlier lines.
      *
      * R2: stock is taken with one atomic conditional UPDATE per line, so two buyers can never
      * both get the last unit, across any number of app instances. Concurrent buyers of one
@@ -47,8 +87,7 @@ public class OrderService {
      * together would otherwise each lock one row and wait for the other (a deadlock).
      * Stock is taken after the order is built, so each row stays locked only until the commit.
      */
-    @Transactional
-    public OrderResponse place(Long userId) {
+    private OrderResponse placeInDb(Long userId, Map<Long, Integer> takenAtGate) {
         User user = users.require(userId);
         Cart cart = carts.findWithItemsByUserId(userId).orElse(null);
         List<CartItem> lines = cart == null ? List.of()
@@ -56,6 +95,15 @@ public class OrderService {
         if (lines.isEmpty()) {
             throw new ConflictException("Cart is empty", "Add something to your cart before placing an order");
         }
+
+        // The gate counted the cart as it was a moment ago. If it changed since (another tab),
+        // stop: the units taken would not match what is being bought.
+        takenAtGate.forEach((productId, qty) -> {
+            boolean same = lines.stream().anyMatch(l -> l.getProduct().getId().equals(productId) && l.getQuantity() == qty);
+            if (!same) {
+                throw new ConflictException("Cart changed", "Your cart changed during checkout. Please try again.");
+            }
+        });
 
         List<CartItem> byProductId = lines.stream()
                 .sorted(Comparator.comparing((CartItem i) -> i.getProduct().getId()))

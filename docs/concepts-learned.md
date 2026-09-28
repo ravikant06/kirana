@@ -45,4 +45,17 @@
    work, with timeouts. JVM locks never protect shared database state.
 15. **Lock ordering and lock duration.** Lock rows in one global order (product id) to avoid
    deadlocks, and take locks as late as possible: a row lock lasts until commit.
+16. **Cache-aside and invalidation.** Read cache, else load and store. Evict after commit,
+   not before, or a concurrent reader re-caches the old row. TTL is the safety net. Cache
+   what changes rarely; read fast-changing values (stock) fresh; never cache what expires
+   sooner than the entry (signed URLs).
+17. **Stampede and penetration.** Stampede: a hot key expires and every request rebuilds it
+   at once; fix with single-flight locks and TTL jitter. Penetration: requests for keys
+   that never exist always miss; fix with negative caching or a Bloom filter.
+18. **Rate-limit algorithms.** Fixed window is cheap but allows 2x bursts at the boundary;
+   sliding window log is exact but stores every request; token bucket allows a bounded
+   burst then a steady rate with two numbers per key. Do it atomically (Lua) in Redis.
+19. **Gate in front of the database.** Decide winners in Redis (atomic Lua), let the
+   database confirm them with its own guard, compensate when the database refuses, and
+   make the gate only ever stricter than the source of truth. Fail open when it is down.
 
