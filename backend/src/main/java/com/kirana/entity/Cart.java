@@ -21,7 +21,10 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-/** Cart header (D4). One per user for life; checkout empties it but keeps the row. */
+/**
+ * Cart header (D4). One per user for life; checkout empties it but keeps the row.
+ * Created only by CartRepository.createIfAbsent (insert-if-absent), never with new.
+ */
 @Entity
 @Table(name = "carts")
 public class Cart {
@@ -52,18 +55,8 @@ public class Cart {
         // for JPA
     }
 
-    public Cart(User user) {
-        this.user = user;
-    }
-
     public Optional<CartItem> findItem(Long productId) {
         return items.stream().filter(i -> i.getProduct().getId().equals(productId)).findFirst();
-    }
-
-    public CartItem addItem(Product product, int quantity) {
-        CartItem item = new CartItem(this, product, quantity);
-        items.add(item);
-        return item;
     }
 
     public void removeItem(CartItem item) {

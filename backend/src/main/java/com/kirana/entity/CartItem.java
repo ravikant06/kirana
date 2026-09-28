@@ -15,7 +15,10 @@ import jakarta.persistence.Table;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
-/** One cart line. No price: the cart always shows the product's current price (D4). */
+/**
+ * One cart line. No price: the cart always shows the product's current price (D4).
+ * Created only by CartRepository.addOrIncrement (an atomic upsert), never with new.
+ */
 @Entity
 @Table(name = "cart_items")
 public class CartItem {
@@ -46,12 +49,6 @@ public class CartItem {
 
     protected CartItem() {
         // for JPA
-    }
-
-    CartItem(Cart cart, Product product, int quantity) {
-        this.cart = cart;
-        this.product = product;
-        this.quantity = quantity;
     }
 
     public Long getId() { return id; }

@@ -92,7 +92,11 @@ public class ImageService {
                 .orElseThrow(() -> new ConflictException("Upload not found",
                         "Nothing has been uploaded for image %d yet. Upload the file, then confirm.".formatted(imageId)));
 
+        // R6: lock the product row first, so confirms for one product run one at a time and
+        // each reads the true max position. Other products are not blocked.
         ProductImage active = tx.execute(status -> {
+            products.lockLive(productId)
+                    .orElseThrow(() -> new NotFoundException("Product %d not found".formatted(productId)));
             ProductImage image = requireImage(productId, imageId);
             if (image.getStatus() == ImageStatus.ACTIVE) {
                 return image; // confirmed by another request while we were asking storage

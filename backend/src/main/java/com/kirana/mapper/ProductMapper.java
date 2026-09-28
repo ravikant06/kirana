@@ -20,7 +20,7 @@ public final class ProductMapper {
 
     public static ProductDetail toDetail(Product p, int stock, List<ImageResponse> images) {
         return new ProductDetail(p.getId(), p.getName(), p.getDescription(), p.getPrice(), stock,
-                images, p.getCreatedAt(), p.getUpdatedAt());
+                images, p.getCreatedAt(), p.getUpdatedAt(), p.getVersion());
     }
 
     public static ImageResponse toImage(ProductImage img, String url) {

@@ -147,6 +147,39 @@ confirm is handled by re-checking the status in the last step.
 **D32. Pool: 10 connections, 3 s connection timeout, 503 "Database busy" when exhausted.** (Ravi)
 Fails fast instead of a 30 s hang and a 500. Pool size can be overridden with `DB_POOL_SIZE`.
 
+## Stage 3
+
+Rule used for every fix: atomic when the database can decide from one row; optimistic when
+the conflict spans requests; pessimistic when code must read, then decide, and traffic is low.
+
+**D33. Stock adjustment is one atomic statement (R1).** (Ravi)
+`quantity = quantity + :delta WHERE quantity + :delta >= 0`; 0 rows → 409. Concurrent
+adjustments all apply (100 concurrent +1 → 100; was 9). `set` stays last-writer-wins by design.
+
+**D34. Checkout takes stock with an atomic conditional decrement per line (R2).** (Ravi)
+`quantity = quantity - :q WHERE quantity >= :q`, lines in product-id order (no deadlocks),
+after the order is built (short lock hold). Not optimistic: under contention buyers would
+fail while stock remains. Cost: bypasses the persistence context; a hot product still
+serialises on its row lock, which flash-sale designs move off the row (later stages).
+
+**D35. Product edits use optimistic locking with a client-held version (R3).** (Ravi)
+`products.version` (V3), returned in `ProductDetail`, required in PUT. Stale → 409
+"Product changed", never retried automatically: a retry would re-apply the stale form.
+
+**D36. Cart add is an atomic upsert; cart creation is insert-if-absent (R4, R5).** (Ravi)
+`INSERT ... ON CONFLICT DO UPDATE SET quantity = quantity + excluded.quantity` (max 99), and
+`INSERT INTO carts ... ON CONFLICT (user_id) DO NOTHING`. Cost: native SQL; nextval() runs
+even when nothing is inserted, so IDs have gaps.
+
+**D37. Image confirm locks the product row; a unique index guards positions (R6).** (Ravi)
+`SELECT ... FOR UPDATE` on the product before choosing the next position, plus
+`UNIQUE (product_id, position) WHERE status = 'ACTIVE'`. Pessimistic because the choice
+needs a read (max position) and a subquery takes no lock; traffic is tiny.
+
+**D38. Stage 3 Java-lock experiments were explained, not run.** (Ravi)
+`synchronized`/`ReentrantLock` fail across instances and release before the proxy commits;
+covered in discussion. Concurrency tests use `ExecutorService` + `CountDownLatch`.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

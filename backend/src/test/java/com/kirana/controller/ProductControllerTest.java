@@ -53,7 +53,7 @@ class ProductControllerTest {
     @Test
     void numericPriceIsAcceptedAsWellAsString() throws Exception {
         when(products.create(any())).thenReturn(new ProductDetail(7L, "Tea", null, 80.0, 0, List.of(),
-                Instant.EPOCH, Instant.EPOCH));
+                Instant.EPOCH, Instant.EPOCH, 0));
 
         mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON)
                         .content("""

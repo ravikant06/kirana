@@ -34,3 +34,15 @@
 12. **Keep slow I/O out of transactions.** A transaction holds a pooled connection for its
    whole duration; a slow network call inside it can exhaust the pool and fail unrelated
    requests. Short transactions plus a fail-fast pool timeout contain the damage.
+13. **Atomic conditional update.** Put the rule in the WHERE and compute from the current
+   value (`quantity = quantity - :q WHERE quantity >= :q`). A second writer waits for the
+   row lock, then Postgres re-checks the WHERE on the newest row; 0 rows = rule failed.
+   Correct across instances, no retries; a hot row still serialises writers.
+14. **Optimistic vs pessimistic.** Optimistic (`@Version`) detects conflicts at write time
+   and needs a retry or a 409; it is the only tool when the conflict spans requests (a
+   stale form), and collapses under contention (~N²/2 attempts). Pessimistic
+   (`FOR UPDATE`) makes others wait, holding connections; use it for short read-then-decide
+   work, with timeouts. JVM locks never protect shared database state.
+15. **Lock ordering and lock duration.** Lock rows in one global order (product id) to avoid
+   deadlocks, and take locks as late as possible: a row lock lasts until commit.
+

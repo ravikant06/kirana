@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D32), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D38), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -72,43 +72,24 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 2 plan (current stage): database fundamentals
+## Stage 3 (current stage): concurrency and locking — done
 
-Stage 1 is complete (all milestones and experiments; see `docs/concepts-learned.md` 1-8).
-Stage 2 fixes the problems it left, P1-P9, each measured before and after with
-`infra/perf/measure.py`. Results: "Kirana Query Ledger" artifact
-(https://claude.ai/artifact/4i8kUhpZqMbfSXVHCd2brD) and `docs/perf/*.json`.
-Build in order and stop after each milestone.
+Stage 2 is complete (see the "Kirana Query Ledger" artifact, docs/perf, D22–D32).
+Stage 3 fixed the six read-then-write races (D33–D38), chosen by user behaviour:
 
-- **2a. Measure first (P9).** Large dataset via `infra/seed/seed.sql` into the `kirana`
-  DB (about 50k users, 100k products, 1M orders, 3M lines). `pg_stat_statements` on.
-  `X-Query-Count` / `X-DB-Time-Ms` response headers, shown in the UI Requests panel.
-  Baseline the hot queries. No fixes yet.
-- **2b. Indexes (P1 unindexed FKs: `orders.user_id`, `product_images.product_id`, the
-  `product_id` columns; P2 order history sorts).** `V2__indexes.sql`.
-  Experiments: seq scan vs index scan, composite index removing the sort, an index
-  the planner ignores (low selectivity), expression index on `LOWER(email)`, write cost.
-- **2c. Pagination (P3 full scan + OFFSET + COUNT per page).** Partial index
-  `WHERE deleted_at IS NULL`. Experiments: OFFSET cost page 1 vs page 1000, COUNT cost.
-  Decision for Ravi: keep OFFSET or move to keyset (changes the contract).
-- **2d. N+1 fix (P4 `GET /orders`).** Compare `JOIN FETCH`, `@BatchSize`, two-query.
-  Decision for Ravi: which one stays.
-- **2e. Transactions and isolation (P7 page/count phantom, P8 lost update).** Two-session
-  experiments: dirty read (impossible in Postgres), non-repeatable read, phantom, lost
-  update at READ COMMITTED vs REPEATABLE READ. Show only; locking fixes are Stage 3.
-- **2f. Connection pool (P5 MinIO calls inside transactions, P6 default pool).**
-  Pause MinIO, load image confirm, watch unrelated endpoints fail. Move storage calls
-  out of transactions, size the pool from measurements. Decision for Ravi: load tool.
+- **R1 stock adjust:** atomic `quantity + :delta` (InventoryRepository.adjustIfValid).
+- **R2 checkout oversell:** atomic conditional decrement per line, product-id order.
+- **R3 stale product form:** `@Version`, required in PUT, 409 on mismatch, no auto-retry.
+- **R4/R5 cart add and creation:** native upserts (`ON CONFLICT`).
+- **R6 image position:** `FOR UPDATE` on the product row + partial unique index.
+- **Tests:** ConcurrencyIntegrationTest fires each race with a latch start gate.
 
-**Status (2026-09-27):** 2a–2f done in two commits. Fixed: P1, P2, P4, P5, P6, P7, users
-list. Measured but left: deep OFFSET pages and `count(*)` (D26), lost updates (D30, Stage 3).
+Ravi chose explanation over reproduction for this stage (no load experiments, no
+synchronized/ReentrantLock trials). Known limits carried forward: a hot product still
+serialises on one row lock (flash-sale patterns: Redis, queues, buckets in later stages);
+deep OFFSET pages and count(*) (D26); no MinIO timeouts (Stage 5).
 
-**Results:** each milestone adds before/after numbers to the Stage 2 report page
-(an Artifact), and live query counts show in the UI. Ravi prefers concise explanations
-over running experiments himself; run and measure, then explain.
-
-Known gaps left for later stages: checkout race and cart-creation race (Stage 3),
-`double` money (D3), orphan PENDING images (Stage 8), no idempotency on orders (Stage 7).
+Next per the process below: wrap up, then plan Stage 4 (Redis) with Ravi.
 
 ## Do not jump ahead
 

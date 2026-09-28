@@ -77,12 +77,16 @@ the newest shoppers. It never returns the whole table.
 | GET    | /products      | `?page=&size=`                 | `Page<ProductSummary>` |
 | GET    | /products/{id} |                                | `ProductDetail`        |
 | POST   | /products      | `{ name, description, price }` | `ProductDetail` (201)  |
-| PUT    | /products/{id} | `{ name, description, price }` | `ProductDetail`        |
+| PUT    | /products/{id} | `{ name, description, price, version }` | `ProductDetail` |
 | DELETE | /products/{id} |                                | 204                    |
 
     ProductSummary = { id, name, price, stock, thumbnailUrl }
     ProductDetail  = { id, name, description, price, stock,
-                       images: [Image], createdAt, updatedAt }
+                       images: [Image], createdAt, updatedAt, version }
+
+`PUT /products/{id}` must include `version`: the one the client loaded (400 without it).
+If someone saved the product since, the answer is 409 `"Product changed"`; reload and
+edit again. `POST /products` ignores `version`.
     Image          = { id, url, contentType, sizeBytes, position }
 
 The form sends `price` exactly as typed, as a string. Deciding how to parse and

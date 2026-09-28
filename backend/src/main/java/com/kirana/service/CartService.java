@@ -8,8 +8,6 @@ import com.kirana.dto.CartLimits;
 import com.kirana.dto.CartResponse;
 import com.kirana.entity.Cart;
 import com.kirana.entity.CartItem;
-import com.kirana.entity.Product;
-import com.kirana.entity.User;
 import com.kirana.exception.InvalidFieldException;
 import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.CartMapper;
@@ -43,23 +41,24 @@ public class CartService {
         return carts.findWithItemsByUserId(userId).map(this::toResponse).orElseGet(CartService::empty);
     }
 
-    /** Adds to the existing quantity if the product is already in the cart. */
+    /**
+     * Adds to the existing quantity if the product is already in the cart.
+     * R4/R5: two statements that each decide in the database, no read-then-write in Java:
+     * create the cart if absent, then insert the line or add to it. A double click, or two
+     * tabs, now add twice, and a shopper's first two clicks no longer collide on the cart.
+     */
     @Transactional
     public CartResponse add(Long userId, Long productId, int quantity) {
-        User user = users.require(userId);
-        Product product = products.requireLive(productId);
-        // Two first-ever adds at the same moment can both create a cart; the unique index on
-        // carts.user_id rejects the second. A concurrency problem, left for Stage 3.
-        Cart cart = carts.findWithItemsByUserId(userId).orElseGet(() -> carts.save(new Cart(user)));
-        cart.findItem(productId).ifPresentOrElse(item -> {
-            int next = item.getQuantity() + quantity;
-            if (next > CartLimits.MAX_QUANTITY) {
-                throw new InvalidFieldException("quantity", "cart already has %d; at most %d per product"
-                        .formatted(item.getQuantity(), CartLimits.MAX_QUANTITY));
-            }
-            item.setQuantity(next);
-        }, () -> cart.addItem(product, quantity));
-        return toResponse(cart);
+        users.require(userId);
+        products.requireLive(productId);
+        carts.createIfAbsent(userId);
+        Long cartId = carts.findIdByUserId(userId)
+                .orElseThrow(() -> new IllegalStateException("Cart missing right after creation for user " + userId));
+        if (carts.addOrIncrement(cartId, productId, quantity, CartLimits.MAX_QUANTITY) == 0) {
+            throw new InvalidFieldException("quantity", "at most %d of one product per cart".formatted(CartLimits.MAX_QUANTITY));
+        }
+        return carts.findWithItemsByUserId(userId).map(this::toResponse)
+                .orElseThrow(() -> new IllegalStateException("Cart missing for user " + userId));
     }
 
     @Transactional

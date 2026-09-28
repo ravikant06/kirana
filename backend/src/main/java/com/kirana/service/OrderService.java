@@ -1,5 +1,7 @@
 package com.kirana.service;
 
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 
 import com.kirana.dto.OrderResponse;
@@ -37,6 +39,13 @@ public class OrderService {
     /**
      * Checkout: turn the cart into an order, subtract stock, empty the cart. All in one
      * transaction, so an out-of-stock line undoes the stock already subtracted for earlier lines.
+     *
+     * R2: stock is taken with one atomic conditional UPDATE per line, so two buyers can never
+     * both get the last unit, across any number of app instances. Concurrent buyers of one
+     * product queue briefly on its row lock and still succeed while stock lasts.
+     * Lines are processed in product-id order: carts (Tea, Rice) and (Rice, Tea) checking out
+     * together would otherwise each lock one row and wait for the other (a deadlock).
+     * Stock is taken after the order is built, so each row stays locked only until the commit.
      */
     @Transactional
     public OrderResponse place(Long userId) {
@@ -48,27 +57,23 @@ public class OrderService {
             throw new ConflictException("Cart is empty", "Add something to your cart before placing an order");
         }
 
+        List<CartItem> byProductId = lines.stream()
+                .sorted(Comparator.comparing((CartItem i) -> i.getProduct().getId()))
+                .toList();
+
         Order order = new Order(user);
-        for (CartItem line : lines) {
+        byProductId.forEach(line -> order.addLine(line.getProduct(), line.getQuantity()));
+        orders.save(order);
+
+        Instant now = Instant.now();
+        for (CartItem line : byProductId) {
             Product product = line.getProduct();
-
-            // NAIVE: Stage 3 will break this.
-            // Read stock, check it, subtract, write. Nothing stops another checkout from reading
-            // the same stock between our read and our write, so two buyers can both get the last unit.
-            Inventory stock = inventory.findById(product.getId())
-                    .orElseThrow(() -> new IllegalStateException("No inventory row for product " + product.getId()));
-            if (stock.getQuantity() < line.getQuantity()) {
-                throw new OutOfStockException(product.getName(), stock.getQuantity(), line.getQuantity());
+            if (inventory.decrementIfAvailable(product.getId(), line.getQuantity(), now) == 0) {
+                int available = inventory.findById(product.getId()).map(Inventory::getQuantity).orElse(0);
+                throw new OutOfStockException(product.getName(), available, line.getQuantity());
             }
-            stock.setQuantity(stock.getQuantity() - line.getQuantity());
-            // Redundant inside a transaction (dirty checking writes it at commit). Kept explicit so
-            // experiment 1 "without @Transactional" really writes each line's stock as it goes.
-            inventory.save(stock);
-
-            order.addLine(product, line.getQuantity());
         }
 
-        orders.save(order);
         cart.clear(); // D4: checkout deletes the lines, keeps the cart row
         orders.flush();
         return OrderMapper.toResponse(order);

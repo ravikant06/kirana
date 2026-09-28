@@ -74,7 +74,7 @@ export default function Manage({ notify, onUsersChanged, users }) {
   )
 }
 
-function ProductForm({ product, onSaved }) {
+function ProductForm({ product, onSaved, onReload }) {
   const [form, setForm] = useState({
     name: product?.name || '',
     description: product?.description || '',
@@ -89,7 +89,8 @@ function ProductForm({ product, onSaved }) {
     setBusy(true)
     setError(null)
     // Price is sent exactly as typed (a string). Decide in the backend how to parse it.
-    const body = { name: form.name, description: form.description, price: form.price }
+    // version: the one this form loaded. If someone saved since, the backend answers 409.
+    const body = { name: form.name, description: form.description, price: form.price, version: product?.version }
     try {
       const saved = product ? await api.products.update(product.id, body) : await api.products.create(body)
       onSaved(saved)
@@ -119,6 +120,9 @@ function ProductForm({ product, onSaved }) {
         {fieldErr('price') && <em className="field-err">{fieldErr('price')}</em>}
       </label>
       {error && !error.problem?.errors?.length && <Problem error={error} compact />}
+      {error?.status === 409 && onReload && (
+        <button type="button" className="btn-quiet" onClick={onReload}>Reload product (your edits here will be replaced)</button>
+      )}
       <button className="btn" disabled={busy}>{busy ? 'Saving…' : product ? 'Save changes' : 'Create product'}</button>
     </form>
   )
@@ -144,7 +148,9 @@ function ProductEditor({ id, notify, onChanged, onDeleted }) {
   return (
     <div className="editor">
       <ProductForm
+        key={p.version}
         product={p}
+        onReload={reload}
         onSaved={(saved) => {
           notify(`Saved ${saved.name}`)
           reload()

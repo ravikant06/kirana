@@ -9,6 +9,7 @@ import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
+import jakarta.persistence.Version;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -49,6 +50,12 @@ public class Product {
     // D8: soft delete. NULL means live.
     private Instant deletedAt;
 
+    // R3 optimistic locking: every UPDATE is "... WHERE id = ? AND version = ?" and bumps it.
+    // If another save got there first, 0 rows match and Hibernate throws.
+    @Version
+    @Column(nullable = false)
+    private long version;
+
     protected Product() {
         // for JPA
     }
@@ -77,4 +84,5 @@ public class Product {
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
     public Instant getDeletedAt() { return deletedAt; }
+    public long getVersion() { return version; }
 }

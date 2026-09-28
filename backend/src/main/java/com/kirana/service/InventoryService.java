@@ -1,5 +1,7 @@
 package com.kirana.service;
 
+import java.time.Instant;
+
 import com.kirana.dto.InventoryResponse;
 import com.kirana.entity.Inventory;
 import com.kirana.exception.ConflictException;
@@ -25,6 +27,7 @@ public class InventoryService {
         return InventoryMapper.toResponse(require(productId));
     }
 
+    /** "Set" means overwrite: when two admins set stock at once, the last one wins, by design. */
     @Transactional
     public InventoryResponse set(Long productId, int quantity) {
         Inventory inv = require(productId);
@@ -34,24 +37,25 @@ public class InventoryService {
     }
 
     /**
-     * Read, add in Java, write back. Two adjustments at the same moment can both read 10 and
-     * both write 11, losing one. Left as is: concurrency is Stage 3.
+     * R1: one atomic statement, quantity = quantity + delta, so concurrent adjustments all count.
+     * (Stage 2 measured the old read-add-write version losing 91 of 100 concurrent +1s.)
      */
     @Transactional
     public InventoryResponse adjust(Long productId, int delta) {
-        Inventory inv = require(productId);
-        int next = inv.getQuantity() + delta;
-        if (next < 0) {
+        products.requireLive(productId);
+        if (inventory.adjustIfValid(productId, delta, Instant.now()) == 0) {
             throw new ConflictException("Insufficient stock",
-                    "Stock is %d, so it cannot be adjusted by %d".formatted(inv.getQuantity(), delta));
+                    "Stock is %d, so it cannot be adjusted by %d".formatted(read(productId).getQuantity(), delta));
         }
-        inv.setQuantity(next);
-        inventory.flush();
-        return InventoryMapper.toResponse(inv);
+        return InventoryMapper.toResponse(read(productId));
     }
 
     private Inventory require(Long productId) {
         products.requireLive(productId);
+        return read(productId);
+    }
+
+    private Inventory read(Long productId) {
         return inventory.findById(productId)
                 .orElseThrow(() -> new IllegalStateException("No inventory row for product " + productId));
     }

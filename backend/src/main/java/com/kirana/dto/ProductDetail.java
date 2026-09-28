@@ -11,5 +11,6 @@ public record ProductDetail(
         int stock,
         List<ImageResponse> images,
         Instant createdAt,
-        Instant updatedAt) {
+        Instant updatedAt,
+        long version) {
 }

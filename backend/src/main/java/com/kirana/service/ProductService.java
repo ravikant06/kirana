@@ -11,6 +11,8 @@ import com.kirana.dto.ProductRequest;
 import com.kirana.dto.ProductSummary;
 import com.kirana.entity.Inventory;
 import com.kirana.entity.Product;
+import com.kirana.exception.ConflictException;
+import com.kirana.exception.InvalidFieldException;
 import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.ProductMapper;
 import com.kirana.repository.InventoryRepository;
@@ -79,9 +81,21 @@ public class ProductService {
         return ProductMapper.toDetail(product, 0, List.of());
     }
 
+    /**
+     * R3: the client must send the version it loaded. An older version means someone saved in
+     * between, so we refuse instead of overwriting their change, and do not retry: retrying
+     * would re-apply the stale form. Two saves with the same version at the same instant both
+     * pass this check; Hibernate's "WHERE version = ?" then rejects the second at flush.
+     */
     @Transactional
     public ProductDetail update(Long id, ProductRequest req) {
+        if (req.version() == null) {
+            throw new InvalidFieldException("version", "is required: send the version you loaded");
+        }
         Product product = requireLive(id);
+        if (product.getVersion() != req.version()) {
+            throw productChanged();
+        }
         product.update(req.name().trim(), blankToNull(req.description()), req.priceValue());
         products.flush();
         return ProductMapper.toDetail(product, stockOf(id), images.activeImages(id));
@@ -91,6 +105,11 @@ public class ProductService {
     @Transactional
     public void delete(Long id) {
         requireLive(id).softDelete(Instant.now());
+    }
+
+    static ConflictException productChanged() {
+        return new ConflictException("Product changed",
+                "Someone else saved this product after you opened it. Reload to see their changes.");
     }
 
     /** For other services: a live product, or 404 (deleted counts as missing). */

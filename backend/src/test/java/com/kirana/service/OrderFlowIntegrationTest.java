@@ -79,7 +79,7 @@ class OrderFlowIntegrationTest {
         assertThat(cart.items()).isEmpty();
 
         // D2: changing the product afterwards does not rewrite the order.
-        products.update(tea, new ProductRequest("Green tea", null, "150"));
+        products.update(tea, new ProductRequest("Green tea", null, "150", products.get(tea).version()));
         OrderResponse reloaded = orders.get(user, order.id());
         assertThat(reloaded.items()).anySatisfy(line -> {
             assertThat(line.productName()).isEqualTo("Tea");
