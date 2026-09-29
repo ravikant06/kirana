@@ -1,7 +1,11 @@
 package com.kirana.cache;
 
 import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import java.util.OptionalLong;
 
 import org.slf4j.Logger;
@@ -53,10 +57,35 @@ public class FlashSaleCounter {
 
     public void arm(Long productId, int units) {
         redis.opsForValue().set(CacheKeys.flashStock(productId), Integer.toString(units), ARMED_FOR);
+        redis.opsForSet().add(CacheKeys.FLASH_ACTIVE, productId.toString());
     }
 
     public void disarm(Long productId) {
         redis.delete(CacheKeys.flashStock(productId));
+        redis.opsForSet().remove(CacheKeys.FLASH_ACTIVE, productId.toString());
+    }
+
+    /**
+     * Armed sales and their units left, in one MGET. IDs whose counter is gone (expired after
+     * 24 h, evicted, or Redis restarted) are dropped from the set: the key is the truth.
+     */
+    public Map<Long, Long> active() {
+        Set<String> ids = redis.opsForSet().members(CacheKeys.FLASH_ACTIVE);
+        if (ids == null || ids.isEmpty()) {
+            return Map.of();
+        }
+        List<String> idList = new ArrayList<>(ids);
+        List<String> left = redis.opsForValue().multiGet(idList.stream().map(id -> CacheKeys.flashStock(Long.valueOf(id))).toList());
+        Map<Long, Long> result = new LinkedHashMap<>();
+        for (int i = 0; i < idList.size(); i++) {
+            String v = left == null ? null : left.get(i);
+            if (v == null) {
+                redis.opsForSet().remove(CacheKeys.FLASH_ACTIVE, idList.get(i));
+            } else {
+                result.put(Long.valueOf(idList.get(i)), Long.parseLong(v));
+            }
+        }
+        return result;
     }
 
     /** Units left at the gate, or empty when no sale is armed. */

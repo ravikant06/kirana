@@ -34,16 +34,21 @@ export class ApiError extends Error {
   }
 }
 
-async function request(method, path, body) {
+// opts.userId: act as a different shopper for this call (the rush simulator uses it).
+// opts.quiet:  leave it out of the Requests panel (background polling).
+// opts.meta:   never throw; return { ok, status, data, queries, ms } instead.
+async function request(method, path, body, opts = {}) {
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  if (currentUserId) headers['X-User-Id'] = String(currentUserId)
+  const userId = opts.userId ?? currentUserId
+  if (userId) headers['X-User-Id'] = String(userId)
+  const log = opts.quiet ? () => {} : record
 
   const entry = {
     id: crypto.randomUUID(),
     method,
     path,
-    userId: currentUserId,
+    userId,
     requestBody: body,
     at: new Date(),
   }
@@ -61,7 +66,8 @@ async function request(method, path, body) {
       title: 'Backend not reachable',
       detail: 'The request never got a response. Is Spring Boot running on port 8080?',
     }
-    record({ ...entry, status: 0, ms: Math.round(performance.now() - started), responseBody: problem })
+    log({ ...entry, status: 0, ms: Math.round(performance.now() - started), responseBody: problem })
+    if (opts.meta) return { ok: false, status: 0, data: problem, queries: null, ms: 0 }
     throw new ApiError(0, problem)
   }
 
@@ -79,16 +85,20 @@ async function request(method, path, body) {
   const dbMs = res.headers.get('X-DB-Time-Ms')
   // Stage 4: HIT (answered by Redis), MISS (went to Postgres), BYPASS (Redis unavailable).
   const cache = res.headers.get('X-Cache')
-  record({
+  const ms = Math.round(performance.now() - started)
+  log({
     ...entry,
     status: res.status,
-    ms: Math.round(performance.now() - started),
+    ms,
     queries: queries === null ? null : Number(queries),
     dbMs: dbMs === null ? null : Number(dbMs),
     cache,
     responseBody: data,
   })
 
+  if (opts.meta) {
+    return { ok: res.ok, status: res.status, data, queries: queries === null ? null : Number(queries), ms }
+  }
   if (!res.ok) {
     if (!text && res.status >= 500) {
       throw new ApiError(res.status, {
@@ -182,9 +192,16 @@ export const api = {
     remove: (productId) => request('DELETE', `/cart/items/${q(productId)}`),
   },
   flashSale: {
-    status: (productId) => request('GET', `/products/${q(productId)}/flash-sale`),
+    active: () => request('GET', '/flash-sales', undefined, { quiet: true }),
+    status: (productId, quiet = false) => request('GET', `/products/${q(productId)}/flash-sale`, undefined, { quiet }),
     start: (productId) => request('POST', `/products/${q(productId)}/flash-sale`),
     stop: (productId) => request('DELETE', `/products/${q(productId)}/flash-sale`),
+  },
+  // The rush simulator: set up throwaway shoppers quietly, then check out as each of them.
+  rush: {
+    createShopper: (name, email) => request('POST', '/users', { name, email }, { quiet: true }),
+    addToCart: (userId, productId) => request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true }),
+    checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true }),
   },
   orders: {
     place: () => request('POST', '/orders'),

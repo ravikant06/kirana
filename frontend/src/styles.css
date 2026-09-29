@@ -282,3 +282,31 @@ code { font-family: var(--mono); font-size: 0.85em; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* Stage 4: flash sale */
+.badge-flash { background: var(--marigold); color: var(--ink); }
+.flash-strip { background: var(--ink); color: #fff; border-radius: 14px; padding: 18px; margin-bottom: 20px; display: grid; gap: 14px; }
+.flash-strip-head { display: grid; gap: 2px; }
+.flash-strip-head h2 { color: var(--marigold); }
+.flash-strip-head p { color: var(--panel-muted); font-size: 0.9rem; max-width: 60ch; }
+.flash-cards { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 12px; }
+.flash-card { background: var(--surface); color: var(--ink); border-radius: 12px; padding: 12px; display: grid; gap: 8px; border: 2px solid var(--marigold); }
+.flash-card.is-sold-out { border-color: var(--line); opacity: 0.75; }
+.flash-left { font-size: 0.9rem; color: var(--muted); }
+.flash-left strong { font: 800 1.6rem var(--display); color: var(--marigold-deep); margin-right: 4px; font-variant-numeric: tabular-nums; }
+.flash-card.is-sold-out .flash-left strong { color: var(--chili); font-size: 1.1rem; }
+.flash-banner { display: grid; gap: 2px; background: var(--marigold-wash); border-left: 4px solid var(--marigold); border-radius: 8px; padding: 10px 12px; font-size: 0.9rem; }
+.flash-banner strong { color: var(--marigold-deep); }
+.flash-banner.is-sold-out { background: var(--chili-wash); border-left-color: var(--chili); }
+.flash-banner.is-sold-out strong { color: var(--chili); }
+.flash-panel { border: 1px solid var(--line); border-radius: 12px; padding: 16px; }
+.flash-panel.is-on { border: 2px solid var(--marigold); background: var(--marigold-wash); }
+.flash-panel-head { display: flex; align-items: center; gap: 10px; }
+.rush { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; display: grid; gap: 10px; }
+.rush h3 { font: 700 1rem var(--display); margin: 0; }
+.rush input { width: 80px; }
+.rush-result { width: 100%; border-collapse: collapse; font-size: 0.9rem; background: var(--surface); border-radius: 8px; overflow: hidden; }
+.rush-result th, .rush-result td { text-align: left; padding: 8px 10px; border-top: 1px solid var(--line); }
+.rush-result tr:first-child th, .rush-result tr:first-child td { border-top: 0; }
+.rush-result td:nth-child(2) { font: 800 1.1rem var(--display); font-variant-numeric: tabular-nums; }
+

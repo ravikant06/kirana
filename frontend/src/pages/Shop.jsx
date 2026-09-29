@@ -1,6 +1,6 @@
 import { useState } from 'react'
 import { api, money } from '../api.js'
-import { useLoad } from '../hooks.js'
+import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import Pager from '../components/Pager.jsx'
@@ -12,10 +12,44 @@ export function StockLabel({ stock }) {
   return <span className="stock stock-ok">{stock} in stock</span>
 }
 
+// Live strip of armed flash sales. Units left come straight from Redis, refreshed every 3 s.
+function FlashStrip({ sales, userId, onOpen, onAdd, adding }) {
+  if (!sales?.length) return null
+  return (
+    <section className="flash-strip" aria-labelledby="flash-title">
+      <div className="flash-strip-head">
+        <h2 id="flash-title">Flash sale</h2>
+        <p>Units are handed out by Redis first, so the rush never reaches the database. Live count, every 3 seconds.</p>
+      </div>
+      <ul className="flash-cards">
+        {sales.map((s) => (
+          <li key={s.productId} className={`flash-card ${s.remaining <= 0 ? 'is-sold-out' : ''}`}>
+            <button className="tile-name" onClick={() => onOpen(s.productId)}>{s.name}</button>
+            <span className="price">{money(s.price)}</span>
+            <span className="flash-left">
+              {s.remaining > 0 ? <><strong>{s.remaining}</strong> left</> : <strong>Sold out</strong>}
+            </span>
+            <button
+              className="btn btn-block"
+              disabled={!userId || s.remaining <= 0 || adding === s.productId}
+              title={!userId ? 'Pick a shopper in the top bar first' : undefined}
+              onClick={() => onAdd({ id: s.productId, name: s.name })}
+            >
+              {adding === s.productId ? 'Adding…' : 'Add to cart'}
+            </button>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )
+}
+
 export default function Shop({ userId, onOpen, onCartChanged, notify, goManage }) {
   const [page, setPage] = useState(0)
   const { data, error, loading, reload } = useLoad(() => api.products.list(page, 12), [page])
   const [adding, setAdding] = useState(null)
+  const sales = usePoll(() => api.flashSale.active(), 3000, [])
+  const onSale = new Map((sales || []).map((s) => [s.productId, s]))
 
   const add = async (p) => {
     setAdding(p.id)
@@ -38,6 +72,8 @@ export default function Shop({ userId, onOpen, onCartChanged, notify, goManage }
         <h1>The shelf</h1>
         <p>A practice shop for your backend. Open Requests in the top bar to watch each call land.</p>
       </header>
+
+      <FlashStrip sales={sales} userId={userId} onOpen={onOpen} onAdd={add} adding={adding} />
 
       {error && (
         <div className="stack">
@@ -62,6 +98,9 @@ export default function Shop({ userId, onOpen, onCartChanged, notify, goManage }
               <Thumb src={p.thumbnailUrl} alt={p.name} className="tile-img" />
             </button>
             <div className="tile-body">
+              {onSale.has(p.id) && (
+                <span className="badge badge-flash">Flash sale · {onSale.get(p.id).remaining} left</span>
+              )}
               <button className="tile-name" onClick={() => onOpen(p.id)}>{p.name}</button>
               <div className="tile-row">
                 <span className="price">{money(p.price)}</span>

@@ -130,11 +130,13 @@ Soft-deleted products return 404 from every product endpoint and are left out of
 
 | Method | Path                           | Returns          |
 |--------|--------------------------------|------------------|
+| GET    | /flash-sales                   | `[FlashSaleSummary]` (every armed sale; the Shop polls it) |
 | GET    | /products/{id}/flash-sale      | `FlashSale`      |
 | POST   | /products/{id}/flash-sale      | `FlashSale` (arms it, or re-syncs it from current stock) |
 | DELETE | /products/{id}/flash-sale      | 204              |
 
 `FlashSale = { productId, active, remaining }` (`remaining` is null when not active).
+`FlashSaleSummary = { productId, name, price, remaining }` (`remaining` live from Redis).
 While active, checkout refuses buyers once the gate's units run out, with the usual
 409 "Out of stock".
 

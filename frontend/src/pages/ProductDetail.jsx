@@ -1,12 +1,13 @@
 import { useState } from 'react'
 import { api, money, when } from '../api.js'
-import { useLoad } from '../hooks.js'
+import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import { StockLabel } from './Shop.jsx'
 
 export default function ProductDetail({ id, userId, onBack, onCartChanged, notify }) {
   const { data: p, error, loading } = useLoad(() => api.products.get(id), [id])
+  const flash = usePoll(() => api.flashSale.status(id, true), 2000, [id])
   const [active, setActive] = useState(0)
   const [qty, setQty] = useState(1)
   const [busy, setBusy] = useState(false)
@@ -51,6 +52,15 @@ export default function ProductDetail({ id, userId, onBack, onCartChanged, notif
           <div className="detail-info">
             <h1>{p.name}</h1>
             <div className="detail-price">{money(p.price)}</div>
+            {flash?.active && (
+              <div className={`flash-banner ${flash.remaining <= 0 ? 'is-sold-out' : ''}`} role="status">
+                <strong>Flash sale</strong>
+                <span>
+                  {flash.remaining > 0 ? `${flash.remaining} left right now` : 'Sold out in this flash sale'}
+                  . Checkout asks Redis for a unit first; if none are left you are turned away before the database.
+                </span>
+              </div>
+            )}
             <StockLabel stock={p.stock} />
             {p.description && <p className="detail-desc">{p.description}</p>}
             <div className="buy-row">

@@ -17,6 +17,9 @@ public final class CacheKeys {
         return "products:page:v1:" + page + ":" + size;
     }
 
+    /** Set of product IDs with an armed flash sale, so active sales can be listed without KEYS. */
+    public static final String FLASH_ACTIVE = "flash:active";
+
     public static String flashStock(Long productId) {
         return "flash:stock:" + productId;
     }

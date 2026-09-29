@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { api, money, uploadToStorage } from '../api.js'
-import { useLoad } from '../hooks.js'
+import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import Pager from '../components/Pager.jsx'
@@ -11,12 +11,14 @@ export default function Manage({ notify, onUsersChanged, users }) {
   const [selected, setSelected] = useState(null) // null = nothing, 'new' = create form, id = edit
 
   const refresh = () => list.reload()
+  const sales = usePoll(() => api.flashSale.active(), 3000, [])
+  const onSale = new Set((sales || []).map((s) => s.productId))
 
   return (
     <section>
       <header className="page-head">
         <h1>Manage</h1>
-        <p>Admin tools for products, stock, images and shoppers.</p>
+        <p>Admin tools for products, stock, flash sales, images and shoppers. To run a flash sale, pick a product.</p>
       </header>
 
       <div className="manage">
@@ -32,7 +34,9 @@ export default function Manage({ notify, onUsersChanged, users }) {
               <li key={p.id}>
                 <button className={`plist-row ${selected === p.id ? 'is-active' : ''}`} onClick={() => setSelected(p.id)}>
                   <Thumb src={p.thumbnailUrl} alt={p.name} className="plist-img" />
-                  <span className="plist-name">{p.name}</span>
+                  <span className="plist-name">
+                    {onSale.has(p.id) && <span className="badge badge-flash">Flash</span>} {p.name}
+                  </span>
                   <span className="muted">{money(p.price)}</span>
                   <span className="plist-stock">{p.stock ?? '—'}</span>
                 </button>
@@ -157,8 +161,8 @@ function ProductEditor({ id, notify, onChanged, onDeleted }) {
           onChanged()
         }}
       />
+      <FlashSale productId={id} productName={p.name} notify={notify} onChanged={onChanged} />
       <Stock productId={id} notify={notify} onChanged={onChanged} />
-      <FlashSale productId={id} notify={notify} />
       <Images product={p} notify={notify} onChanged={() => { reload(); onChanged() }} />
       <div className="danger">
         <button className="btn-danger" onClick={del}>Delete product</button>
@@ -167,17 +171,19 @@ function ProductEditor({ id, notify, onChanged, onDeleted }) {
   )
 }
 
-// Stage 4 flash-sale gate: while active, Redis decides who gets the remaining units and
-// turns everyone else away before checkout touches the database.
-function FlashSale({ productId, notify }) {
-  const { data, error, reload } = useLoad(() => api.flashSale.status(productId), [productId])
+// Stage 4 flash-sale gate. While on, Redis decides who gets the remaining units and turns
+// everyone else away before checkout touches the database.
+function FlashSale({ productId, productName, notify, onChanged }) {
+  const [status, setStatus] = useState(null)
   const [busy, setBusy] = useState(false)
+  const live = usePoll(() => api.flashSale.status(productId, true), 2000, [productId, status])
+  const s = live || status
 
   const run = async (fn, msg) => {
     setBusy(true)
     try {
-      await fn()
-      await reload()
+      setStatus(await fn())
+      onChanged()
       notify(msg)
     } catch (e) {
       notify(e.message, 'error')
@@ -187,33 +193,105 @@ function FlashSale({ productId, notify }) {
   }
 
   return (
-    <div className="form">
-      <h2>Flash sale</h2>
-      {error && <Problem error={error} compact />}
-      {data && (
+    <div className={`form flash-panel ${s?.active ? 'is-on' : ''}`}>
+      <div className="flash-panel-head">
+        <h2>Flash sale</h2>
+        {s && <span className={`badge ${s.active ? 'badge-flash' : ''}`}>{s.active ? 'On' : 'Off'}</span>}
+      </div>
+      {s?.active ? (
         <>
+          <div className="stock-now">
+            <strong>{s.remaining}</strong> units left at the gate (live from Redis)
+          </div>
           <p className="muted">
-            {data.active
-              ? `Gate on: ${data.remaining} units left in Redis. Buyers beyond that are refused before checkout reaches the database.`
-              : 'Gate off: checkout goes straight to the database.'}
+            Shoppers see this product in the Shop's flash-sale strip. Buyers beyond these units get "Out of stock"
+            after one cart query, with no database transaction.
           </p>
           <div className="stock-actions">
-            {data.active ? (
-              <>
-                <button className="btn-quiet" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Gate re-synced from stock')}>
-                  Re-sync from stock
-                </button>
-                <button className="btn-quiet" disabled={busy} onClick={() => run(() => api.flashSale.stop(productId), 'Flash-sale gate stopped')}>
-                  Stop gate
-                </button>
-              </>
-            ) : (
-              <button className="btn" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Flash-sale gate started')}>
-                Start flash-sale gate
-              </button>
-            )}
+            <button className="btn-quiet" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Gate re-synced from stock')}>
+              Re-sync from stock
+            </button>
+            <button className="btn-quiet" disabled={busy} onClick={() => run(async () => { await api.flashSale.stop(productId); return { active: false } }, 'Flash sale stopped')}>
+              Stop flash sale
+            </button>
           </div>
+          <Rush productId={productId} productName={productName} notify={notify} onDone={onChanged} />
         </>
+      ) : (
+        <>
+          <p className="muted">
+            Starting copies this product's current stock into Redis. Tip: set stock low (say 5) to watch it sell out.
+          </p>
+          <button className="btn" disabled={busy} onClick={() => run(() => api.flashSale.start(productId), 'Flash sale started')}>
+            Start flash sale
+          </button>
+        </>
+      )}
+    </div>
+  )
+}
+
+// Simulates many shoppers checking out at the same moment: creates throwaway shoppers, puts one
+// unit in each cart, then fires every checkout at once. Each checkout also shows in Requests.
+function Rush({ productId, productName, notify, onDone }) {
+  const [buyers, setBuyers] = useState(20)
+  const [phase, setPhase] = useState(null)
+  const [result, setResult] = useState(null)
+
+  const go = async () => {
+    setResult(null)
+    try {
+      const n = Math.min(Math.max(Number(buyers) || 1, 1), 50)
+      const run = Date.now().toString(36)
+      setPhase(`Creating ${n} shoppers and filling their carts…`)
+      const ids = []
+      for (let i = 1; i <= n; i++) {
+        const u = await api.rush.createShopper(`Rush buyer ${run}-${i}`, `rush-${run}-${i}@kirana.test`)
+        await api.rush.addToCart(u.id, productId)
+        ids.push(u.id)
+      }
+      setPhase(`${n} checkouts at once…`)
+      const started = performance.now()
+      const outcomes = await Promise.all(ids.map((id) => api.rush.checkout(id)))
+      const took = Math.round(performance.now() - started)
+      const won = outcomes.filter((o) => o.status === 201)
+      const refusedAtGate = outcomes.filter((o) => o.status === 409 && (o.queries ?? 99) <= 1)
+      const refusedByDb = outcomes.filter((o) => o.status === 409 && (o.queries ?? 0) > 1)
+      const other = outcomes.filter((o) => o.status !== 201 && o.status !== 409)
+      const avgSql = (list) => (list.length ? (list.reduce((t, o) => t + (o.queries || 0), 0) / list.length).toFixed(1) : '–')
+      setResult({ n, took, won, refusedAtGate, refusedByDb, other, avgSql })
+      notify(`Rush done: ${won.length} of ${n} bought ${productName}`)
+      onDone()
+    } catch (e) {
+      notify(e.message, 'error')
+    } finally {
+      setPhase(null)
+    }
+  }
+
+  return (
+    <div className="rush">
+      <h3>Simulate a rush</h3>
+      <div className="stock-actions">
+        <label className="inline">
+          <span>Buyers</span>
+          <input id="rush-buyers" type="number" min="1" max="50" value={buyers} onChange={(e) => setBuyers(e.target.value)} />
+        </label>
+        <button className="btn" disabled={!!phase} onClick={go}>{phase ? 'Running…' : 'Start rush'}</button>
+      </div>
+      {phase && <p className="muted">{phase}</p>}
+      {result && (
+        <table className="rush-result">
+          <tbody>
+            <tr><th>Bought</th><td>{result.won.length}</td><td className="muted">avg {result.avgSql(result.won)} SQL each: the full checkout</td></tr>
+            <tr><th>Refused at the Redis gate</th><td>{result.refusedAtGate.length}</td><td className="muted">avg {result.avgSql(result.refusedAtGate)} SQL each: one cart read, no transaction</td></tr>
+            <tr><th>Refused by the database</th><td>{result.refusedByDb.length}</td><td className="muted">passed the gate, stopped by the final guard (gate out of sync)</td></tr>
+            {result.other.length > 0 && (
+              <tr><th>Other errors</th><td>{result.other.length}</td><td className="muted">statuses {[...new Set(result.other.map((o) => o.status))].join(', ')}</td></tr>
+            )}
+            <tr><th>All {result.n} checkouts</th><td>{result.took} ms</td><td className="muted">browsers send about 6 requests at a time to one host, so this is a gentle rush</td></tr>
+          </tbody>
+        </table>
       )}
     </div>
   )

@@ -77,6 +77,19 @@ class FlashSaleIntegrationTest {
     }
 
     @Test
+    void activeSalesAreListedWithUnitsLeft() {
+        long tea = newProduct("Listed flash tea", 7);
+        flashSales.arm(tea);
+        assertThat(flashSales.active()).anySatisfy(s -> {
+            assertThat(s.productId()).isEqualTo(tea);
+            assertThat(s.remaining()).isEqualTo(7);
+        });
+
+        flashSales.disarm(tea);
+        assertThat(flashSales.active()).noneMatch(s -> s.productId().equals(tea));
+    }
+
+    @Test
     void aBuyerRefusedAtTheGateCostsOneQuery() throws Exception {
         long tea = newProduct("Sold-out tea", 0);
         flashSales.arm(tea);
