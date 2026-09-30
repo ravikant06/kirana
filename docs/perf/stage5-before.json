@@ -1,0 +1,56 @@
+{
+  "label": "before",
+  "resilience_enabled": false,
+  "measured_at": "2026-09-30T23:08:36",
+  "results": [
+    {
+      "scenario": "payment-slow",
+      "requests": 20,
+      "concurrency": 10,
+      "min_ms": 8026,
+      "p50_ms": 8097,
+      "p95_ms": 8098,
+      "max_ms": 8098,
+      "mean_ms": 8064,
+      "under_100ms": 0,
+      "outcomes": {
+        "payment_started": 20,
+        "order_held_pay_later": 0,
+        "checkout_busy_503": 0,
+        "error": 0
+      }
+    },
+    {
+      "scenario": "payment-hang",
+      "requests": 20,
+      "concurrency": 10,
+      "min_ms": 30037,
+      "p50_ms": 30056,
+      "p95_ms": 30057,
+      "max_ms": 30057,
+      "mean_ms": 30047,
+      "under_100ms": 0,
+      "outcomes": {
+        "payment_started": 0,
+        "order_held_pay_later": 20,
+        "checkout_busy_503": 0,
+        "error": 0
+      }
+    },
+    {
+      "scenario": "redis-frozen",
+      "requests": 100,
+      "concurrency": 10,
+      "min_ms": 210,
+      "p50_ms": 223,
+      "p95_ms": 251,
+      "max_ms": 253,
+      "mean_ms": 224,
+      "under_100ms": 0,
+      "outcomes": {
+        "ok_200": 100,
+        "error": 0
+      }
+    }
+  ]
+}

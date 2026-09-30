@@ -140,6 +140,34 @@ Soft-deleted products return 404 from every product endpoint and are left out of
 While active, checkout refuses buyers once the gate's units run out, with the usual
 409 "Out of stock".
 
+### Checkout and payment (Stage 5, needs X-User-Id)
+
+| Method | Path                          | Body                                       | Returns            |
+|--------|-------------------------------|--------------------------------------------|--------------------|
+| POST   | /orders                       | optional `{ paymentProvider }`             | `Checkout` (201)   |
+| POST   | /orders/{id}/payment          | optional `{ paymentProvider }`             | `PaymentSession`   |
+| POST   | /orders/{id}/payment/verify   | `{ gatewayOrderId, paymentId, signature }` | `Order`            |
+| POST   | /orders/{id}/cancel           |                                            | `Order`            |
+| GET    | /payments/providers           |                                            | `[Provider]`       |
+
+    Checkout       = { order: Order, payment: PaymentSession | null, paymentProblem: string | null }
+    PaymentSession = { provider, orderId, gatewayOrderId, amountPaise, currency, keyId, checkoutUrl }
+    Provider       = { id: "mock" | "razorpay", label, available, isDefault }
+
+`POST /orders` holds the stock and returns an order with status `CREATED` (awaiting payment,
+until `paymentDueAt`). If the gateway is unavailable, `payment` is null and `paymentProblem`
+says so; pay later with `POST /orders/{id}/payment`. Verify accepts only a valid gateway
+signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
+(`closedReason` says why). 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
+`Retry-After`.
+
+### Resilience lab (Stage 5, dev)
+
+`GET /system/status` (breaker states, checkout slots, payment-mock mode, network faults),
+`POST /system/breakers/{name}/reset`, `POST /system/chaos/payment` `{ mode, delayMs, failureRate }`,
+`POST /system/chaos/network/{redis|minio|payment}` `{ fault: normal|latency|hang|down, latencyMs }`
+(network faults need the `chaos` profile).
+
 ### Cart (needs X-User-Id)
 
 | Method | Path                    | Body                      | Returns |
@@ -162,7 +190,8 @@ While active, checkout refuses buyers once the gate's units run out, with the us
 | GET    | /orders      |      | `[Order]`     |
 | GET    | /orders/{id} |      | `Order`       |
 
-    Order     = { id, status, total, createdAt, items: [OrderItem] }
+    Order     = { id, status, total, createdAt, items: [OrderItem],
+                  paymentProvider, paymentDueAt, paidAt, closedReason }
     OrderItem = { productId, productName, unitPrice, quantity, lineTotal }
 
 `GET /orders` returns items inline on purpose. It is the endpoint for the N+1 experiment.

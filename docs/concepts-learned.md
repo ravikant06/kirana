@@ -58,4 +58,21 @@
 19. **Gate in front of the database.** Decide winners in Redis (atomic Lua), let the
    database confirm them with its own guard, compensate when the database refuses, and
    make the gate only ever stricter than the source of truth. Fail open when it is down.
+20. **Saga and compensation.** A business operation across systems that cannot share one
+   transaction becomes steps, each with an undo. Make every step idempotent (conditional
+   state transitions), so retries and duplicate events are harmless, and let only the step
+   that wins the transition run its side effects.
+21. **Unknown is not failed.** A timeout does not tell you whether the other side acted.
+   Record the uncertainty, reconcile with the source of truth later, and handle the
+   late surprise (paid after cancel → refund). Never trust a client's "success" without a
+   signature the server can verify.
+22. **Timeouts, retries, backoff and jitter.** Every remote call needs a timeout chosen from
+   the dependency's real latency. Retry only idempotent calls, a few times, with exponential
+   backoff plus jitter so clients do not retry in lockstep; retries sit outside the breaker.
+23. **Circuit breaker.** Closed → open when recent calls fail or are slow → half-open trials →
+   closed. Open means failing in microseconds instead of waiting, which saves threads and
+   gives the dependency room to recover. Slow counts as failure.
+24. **Bulkhead and graceful degradation.** Cap the resources one feature can take so its
+   trouble cannot sink the others, and decide per page what still works when each
+   dependency is down.
 

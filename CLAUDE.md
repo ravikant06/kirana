@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D44), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D54), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -36,7 +36,7 @@ introduced only when the application has a real problem that motivates it.
 
     backend/    Spring Boot 4.0.x, Java 21, Maven, Hibernate 7, Flyway, Postgres 17, MinIO SDK
     frontend/   React + Vite (done; change only if the contract changes)
-    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork) + Redis 8 (port 6380)
+    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork) + Redis 8 (port 6380) + payment-mock (8090) + Toxiproxy (8474)
     docs/       decisions, API contract, concepts learned
 
 Packages are organized **by layer** (decision D10) under `com.kirana`: `controller`,
@@ -72,25 +72,26 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 4 (current stage): Redis — done
+## Stage 5 (current stage): resilience — done
 
-Stages 1–3 are complete (D1–D38). Stage 4 added Redis (D39–D44), port 6380:
+Stages 1–4 are complete (D1–D44). Stage 5 (D45–D54), on branch `stage-5-resilience`:
 
-- **Cache-aside** for product details and list pages (`com.kirana.cache.CacheAside`):
-  single-flight on a miss, negative caching, TTL jitter, evict after commit, fail open.
-  Stock and signed URLs are never cached. `X-Cache` header in the Requests panel.
-- **Rate limiter** (`com.kirana.ratelimit`): fixed window, sliding window, token bucket as
-  Lua scripts; token bucket applied per shopper to checkout and cart writes (429).
-- **Flash-sale gate** (`FlashSaleCounter`, `/products/{id}/flash-sale`): Redis picks
-  winners before any transaction; Postgres's atomic UPDATE stays the final guard.
-- Tests: CacheIntegrationTest, RateLimiterIntegrationTest, FlashSaleIntegrationTest,
-  RedisDownIntegrationTest. Shared Testcontainers configs (PostgresContainerConfig,
-  RedisContainerConfig).
+- **Payments:** `PaymentGateway` port; one Razorpay-style client for Razorpay test mode
+  (keys in `backend/.env`) and `payment-mock/` (FastAPI, fault switch). HMAC signatures.
+- **Checkout saga** (`CheckoutSaga`): reserve → request payment → verify / cancel / expire,
+  conditional status transitions, stock released once; reconciler and expiry in
+  `PaymentJobs`; `OrderEvents` seam for Stage 6.
+- **Resilience** (`com.kirana.resilience.Resilience`, Resilience4j functional API):
+  timeouts, retries with backoff+jitter (idempotent only), breakers for payment / Redis /
+  MinIO, checkout bulkhead. Toxiproxy + `chaos` profile; Resilience lab in Manage.
+- Measured (docs/perf/stage5-*.json): hung gateway 30 s → 2 s then ~25 ms once the breaker
+  opens; frozen Redis 224 ms → 26 ms mean.
 
-Ravi skipped the load measurement for this stage. Known limits: list pages and list stock
-up to 30 s stale; the gate needs a re-arm after a restock; no timeouts on MinIO (Stage 5).
+Known limits: a gateway slower than the 2 s timeout now fails instead of succeeding slowly;
+jobs run on every instance (Stage 8); events are in-process and can be lost on a crash
+(Stage 6 outbox); no idempotency key on POST /orders yet (Stage 7).
 
-Next per the process below: wrap up, then plan Stage 5 (resilience) with Ravi.
+Next per the process below: wrap up, then plan Stage 6 (Kafka) with Ravi.
 
 ## Do not jump ahead
 

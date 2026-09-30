@@ -211,6 +211,57 @@ transaction; refused buyers cost one cart query. The Stage 3 conditional UPDATE 
 final guard, and units are given back if the database refuses. The gate can only be stricter
 than the database (restocks need a re-arm), never looser.
 
+## Stage 5
+
+**D45. Payments go through a `PaymentGateway` port; one Razorpay-style client serves both
+Razorpay test mode and payment-mock.** (Ravi) The mock imitates Razorpay's Orders API, hosts a
+checkout page and can be made slow, down, flaky or hanging. Razorpay keys live in
+`backend/.env` (git-ignored). The browser pays; the server verifies the HMAC-SHA256
+signature in constant time, so a forged "success" is rejected.
+
+**D46. Checkout is a saga; an order is a state machine.** (Ravi) `CREATED` means "awaiting
+payment, stock held" for 10 minutes; then `PAID`, `CANCELLED` (shopper) or `FAILED`
+(window expired). Every move out of `CREATED` is one conditional UPDATE, so each step is
+idempotent and concurrent settlers cannot double-apply. Only the caller that closes an
+order releases its stock. A declined payment does not close the order: the shopper may
+retry until it expires. (Refines the Stage 5 plan's "declined → FAILED".)
+
+**D47. Unknown is not failed: a reconciler and an expiry job settle unpaid orders.** Every
+30 s, orders unpaid for over a minute are checked with the gateway; expired ones are checked
+once more, then released. A payment arriving after an order closed is flagged
+(`PaymentAfterClose`) for a refund. Gap: with many instances each runs the jobs (Stage 8).
+
+**D48. Order events go through an `OrderEvents` seam, in-process after commit for now.**
+Stage 6 swaps the implementation for an outbox relayed to Kafka. Orchestration vs
+choreography for the Kafka saga is decided in Stage 6 (hybrid recommended).
+
+**D49. Explicit timeouts on every remote call.** Payment connect 1 s / read 2 s, MinIO
+connect 1 s / read 5 s (SDK default: 5 minutes), Redis 200 ms, DB pool 3 s. URL signing
+uses a separate MinIO client with a fixed region, so it needs no network. Measured cost: a
+gateway slower than 2 s now fails ("pay later") where it used to succeed slowly. Set the
+timeout from the dependency's measured p99, not a guess.
+
+**D50. Retries only for idempotent calls, with exponential backoff and jitter, outside the
+breaker.** Payment `createOrder`/`fetchStatus` (keyed by our order id): 3 attempts,
+~200 ms then ~400 ms, ±50%. MinIO stat/delete: 2 attempts. Redis: none (fail open).
+
+**D51. Circuit breakers per dependency (Resilience4j functional API).** Payment per provider
+(slow calls count as failures; 5 of 10 opens it for 15 s), Redis (time-based; an open breaker
+looks like "Redis down" so fail-open paths skip the 200 ms wait), MinIO. States are visible in
+`/system/status` and the Resilience lab.
+
+**D52. Checkout bulkhead: 20 concurrent checkouts, the 21st gets 503 "Checkout busy".**
+Protects browsing from a checkout pile-up. `kirana.resilience.enabled=false` turns D50–D52 off
+for measurements.
+
+**D53. Chaos tooling is dev-only.** Toxiproxy in compose; the `chaos` profile routes the
+backend's Redis, MinIO and payment traffic through it. The Resilience lab (Manage) drives
+payment-mock's mode and Toxiproxy faults and resets breakers.
+
+**D54. Money becomes paise with `BigDecimal` at the gateway boundary.** `double` (D3) stays
+inside Kirana for now; `120.10 × 100` in floating point is `12009.99…`, so the conversion goes
+through the decimal string with HALF_UP rounding.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.
