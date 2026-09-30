@@ -1,0 +1,26 @@
+{
+  "family": "policy_questions",
+  "description": "Questions a shopper would type about Kirana's store policies. Mix of paraphrases (dense should do well) and exact numbers or terms (BM25 should help).",
+  "gold_rule": "a chunk is relevant if its text contains `gold_substring` (case-insensitive)",
+  "provenance": "hand-written together with the seed documents, so the wording is closer to the documents than real shoppers' questions would be. Replace with real chat logs once Phase 1 records them.",
+  "cases": [
+    {"id": "q01", "query": "Can I return a pack of rice after opening it?", "gold_substring": "Opened packaged staples cannot be returned"},
+    {"id": "q02", "query": "my bananas came bruised, what can I do", "gold_substring": "bruised, overripe or short in weight"},
+    {"id": "q03", "query": "How long do I have to return shampoo?", "gold_substring": "Household and personal care | 7 days"},
+    {"id": "q04", "query": "Can I return ice cream?", "gold_substring": "Frozen food and ice cream | Not returnable"},
+    {"id": "q05", "query": "Until when can I cancel my order for free?", "gold_substring": "cancel an order free of charge while its status is **Created**"},
+    {"id": "q06", "query": "restocking fee when refusing delivery", "gold_substring": "restocking fee of ₹30"},
+    {"id": "q07", "query": "Can I remove one item from an order I already placed?", "gold_substring": "cannot remove a single item"},
+    {"id": "q08", "query": "How much is express delivery?", "gold_substring": "Within 30 minutes, 7 am to 10 pm | ₹49"},
+    {"id": "q09", "query": "minimum order for free standard delivery", "gold_substring": "free on orders of ₹499 or more"},
+    {"id": "q10", "query": "What happens if I am not home when the delivery arrives?", "gold_substring": "waits\n10 minutes"},
+    {"id": "q11", "query": "my express order was 20 minutes late", "gold_substring": "more than 15 minutes late"},
+    {"id": "q12", "query": "How long does a card refund take?", "gold_substring": "Debit or credit card | 5 to 7 business days"},
+    {"id": "q13", "query": "money was deducted but the order failed", "gold_substring": "reversed automatically by your bank"},
+    {"id": "q14", "query": "Is cash on delivery available for big orders?", "gold_substring": "orders up to ₹2,000"},
+    {"id": "q15", "query": "how many days of shelf life should paneer have", "gold_substring": "Paneer and fresh cheese | 3 days"},
+    {"id": "q16", "query": "NPOP certified organic", "gold_substring": "National\nProgramme for Organic Production"},
+    {"id": "q17", "query": "How many units can I buy in a flash sale?", "gold_substring": "limit of 2 units per customer"},
+    {"id": "q18", "query": "support phone number", "gold_substring": "1800-000-0000"}
+  ]
+}

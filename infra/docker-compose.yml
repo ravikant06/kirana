@@ -1,4 +1,4 @@
-# Local dependencies only: Postgres and MinIO.
+# Local dependencies only: Postgres, MinIO, Redis, and Qdrant (AI track, kirana-ai/).
 # Our own app (backend, frontend) runs directly on your machine in Stage 1.
 # Containerizing the app itself is Stage 10.
 #
@@ -58,6 +58,20 @@ services:
       timeout: 3s
       retries: 10
 
+  qdrant:
+    # AI track (kirana-ai/): vector store for the assistant's knowledge base.
+    # Pinned: Qdrant upgrades its on-disk format in place, and an older image may not
+    # read data written by a newer one.
+    image: qdrant/qdrant:v1.19.1
+    ports:
+      # Host ports 6335/6336, not 6333/6334: the standalone rag-project container owns
+      # those, and both can run side by side (same reason Redis is on 6380).
+      - "6335:6333"   # REST + dashboard: http://localhost:6335/dashboard
+      - "6336:6334"   # gRPC
+    volumes:
+      - qdrant-data:/qdrant/storage
+
 volumes:
   pgdata:
   minio-data:
+  qdrant-data:

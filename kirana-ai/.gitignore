@@ -1,0 +1,10 @@
+# Python (the repo root .gitignore already covers .env and IDE files)
+__pycache__/
+*.py[cod]
+*.egg-info/
+build/
+.venv/
+.pytest_cache/
+
+# Eval runs are local measurements; commit one on purpose with `git add -f`
+eval/results/

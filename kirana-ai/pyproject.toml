@@ -1,0 +1,26 @@
+[project]
+name = "kirana-ai"
+version = "0.1.0"
+description = "Kirana's AI assistant: RAG, agent and tools, as a separate service"
+requires-python = ">=3.11"
+dependencies = [
+    "google-genai>=1.30.0",
+    "qdrant-client>=1.12.0",
+    "python-dotenv>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Other LLM providers, only needed when LLM_PROVIDER selects them.
+openai = ["openai>=1.40"]
+anthropic = ["anthropic>=0.40"]
+dev = ["pytest>=8"]
+
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["kirana_ai", "kirana_ai.llm"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
