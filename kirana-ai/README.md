@@ -30,7 +30,10 @@ python -m kirana_ai.cli ask -t "..."            # trace every step
 python -m kirana_ai.cli chat --user 7           # saved conversation, with history
 python -m kirana_ai.cli threads --user 7        # that shopper's threads
 
-# 5. Measure and test
+# 5. The API (what Kirana's frontend calls, via the Vite proxy at /ai)
+uvicorn kirana_ai.api:app --reload --port 8000   # docs: http://localhost:8000/docs
+
+# 6. Measure and test
 python -m eval.run_retrieval --compare          # dense vs hybrid recall@k
 pytest                                          # no API key needed; DB tests need Docker
 ```
@@ -44,6 +47,7 @@ pytest                                          # no API key needed; DB tests ne
 | `kirana_ai/{loader,chunker,embeddings,sparse,vector_store,filters}.py` | Ingestion and retrieval |
 | `kirana_ai/chat.py` | One chat turn: thread, history, agent, saved messages |
 | `kirana_ai/usage.py` | One `ai.llm_calls` row per LLM call, with cost from `pricing.yaml` |
+| `kirana_ai/api.py`, `schemas.py` | FastAPI routes, Pydantic request/response models, ProblemDetail errors |
 | `kirana_ai/cli.py` | `ingest`, `ask`, `chat`, `threads` |
 | `kirana_ai/db/` | SQLAlchemy models and sessions (schema `ai`) |
 | `migrations/` | Alembic migrations (owns schema `ai`) |

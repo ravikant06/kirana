@@ -29,7 +29,10 @@ the agent loop with a bounded budget, the LLM adapter pattern, hybrid BM25 + den
       chat.py         one chat turn: thread, history, agent, messages (3 steps, no tx across the LLM)
       usage.py        CallRecorder: one ai.llm_calls row per LLM call; cost from pricing.yaml
       loader.py, chunker.py, embeddings.py, sparse.py, vector_store.py, filters.py
-      cli.py          ingest / ask / chat, until the HTTP API exists
+      api.py          FastAPI routes + ProblemDetail error handlers (uvicorn kirana_ai.api:app --port 8000)
+      schemas.py      Pydantic DTOs for the API; never return db rows directly
+      errors.py       UpstreamUnavailable (Qdrant / embeddings / empty KB) -> 503
+      cli.py          ingest / ask / chat / threads
       db/             SQLAlchemy models + session_scope()
       config.py       every tunable, overridable by env / .env
     migrations/       Alembic (schema `ai`)
@@ -51,6 +54,8 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
 - **Scope and identity are injected by the server, never tool parameters.**
 - **Embed descriptions, fetch live facts.** Price, stock and order status never go in Qdrant.
 - **The AI service never reads Kirana's tables.** Kirana data comes over REST only.
+- **No SystemExit in the request path** (it ends a server, not a request): raise LLMError or
+  UpstreamUnavailable. One LLM adapter per turn; SDK clients are cached per process.
 - Tests need no network and no API key. Postgres tests use Testcontainers (Docker), like
   Kirana's. Anything that needs Qdrant or an LLM is an eval or a manual run, not a test.
 - **Database:** SQLAlchemy 2.0 ORM (AD2), everything in schema `ai`, role `kirana_ai`.

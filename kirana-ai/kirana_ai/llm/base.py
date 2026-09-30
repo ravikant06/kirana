@@ -44,6 +44,11 @@ class LLMAdapter(ABC):
 
         This is how cost recording plugs in (kirana_ai/usage.py) without the
         LLM layer knowing anything about the database.
+
+        Listeners belong to this instance, so an adapter must never be shared by
+        concurrent turns: one turn's recorder would record the other's calls.
+        get_adapter() is cheap (the SDK client underneath is cached per process),
+        so each turn gets its own.
         """
         self._listeners.append(listener)
 

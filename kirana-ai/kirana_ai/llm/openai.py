@@ -7,12 +7,19 @@ Mismatches absorbed here:
   - tool results are their own message role, correlated by tool_call_id
 """
 import json
+from functools import cache
 from collections.abc import Sequence
 from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
 from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
+
+
+@cache
+def _sdk_client(cls: type, api_key: str) -> Any:
+    """One SDK client (and its HTTP connection pool) per process, shared by all adapters."""
+    return cls(api_key=api_key)
 
 
 @register
@@ -28,7 +35,7 @@ class OpenAIAdapter(LLMAdapter):
                 "The openai package is not installed. `pip install openai` "
                 "or set LLM_PROVIDER=gemini."
             ) from exc
-        self._client = OpenAI(api_key=api_key)
+        self._client = _sdk_client(OpenAI, api_key)
 
     def _to_messages(self, messages: Sequence[Message], system: str | None) -> list[dict]:
         out: list[dict] = []

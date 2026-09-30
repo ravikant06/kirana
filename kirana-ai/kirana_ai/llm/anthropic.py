@@ -8,6 +8,7 @@ Mismatches absorbed here:
   - `max_tokens` is required, not optional
 """
 from collections.abc import Sequence
+from functools import cache
 from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
@@ -15,6 +16,12 @@ from kirana_ai.llm.registry import register
 from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
 
 MAX_TOKENS = 2048
+
+
+@cache
+def _sdk_client(cls: type, api_key: str) -> Any:
+    """One SDK client (and its HTTP connection pool) per process, shared by all adapters."""
+    return cls(api_key=api_key)
 
 
 @register
@@ -30,7 +37,7 @@ class AnthropicAdapter(LLMAdapter):
                 "The anthropic package is not installed. `pip install anthropic` "
                 "or set LLM_PROVIDER=gemini."
             ) from exc
-        self._client = Anthropic(api_key=api_key)
+        self._client = _sdk_client(Anthropic, api_key)
 
     def _to_messages(self, messages: Sequence[Message]) -> list[dict]:
         out: list[dict] = []

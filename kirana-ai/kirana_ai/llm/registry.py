@@ -27,6 +27,8 @@ def get_adapter(provider: str | None = None, model: str | None = None) -> LLMAda
 
     Credentials and model default come from config, so callers say
     `get_adapter()` and get whatever the environment is configured for.
+
+    Returns a new adapter every time: one per chat turn (see LLMAdapter.add_listener).
     """
     from kirana_ai import config  # local import keeps this module import-cheap
 

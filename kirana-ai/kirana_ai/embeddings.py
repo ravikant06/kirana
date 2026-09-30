@@ -10,6 +10,7 @@ from google import genai
 from google.genai import types
 
 from kirana_ai import config, trace
+from kirana_ai.errors import UpstreamUnavailable
 
 # Gemini lets you tell the model what the embedding is for. Documents and
 # queries get slightly different treatment, which improves retrieval.
@@ -47,7 +48,7 @@ def _embed(texts: list[str], task_type: str) -> list[list[float]]:
                     ),
                 )
             except Exception as exc:  # network / auth / quota problems
-                raise SystemExit(f"Gemini embedding call failed: {exc}") from exc
+                raise UpstreamUnavailable("embeddings", f"Gemini embedding call failed: {exc}") from exc
 
         batch_vectors = [e.values for e in response.embeddings]
         if trace.is_on() and batch_vectors:

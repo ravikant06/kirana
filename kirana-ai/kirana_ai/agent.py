@@ -108,13 +108,6 @@ LIST_DOCUMENTS = ToolSpec(
 TOOLS = [SEARCH_DOCS, LIST_DOCUMENTS]
 
 
-def _client_or_die():
-    client = vector_store.get_client()
-    if not client.collection_exists(config.COLLECTION_NAME):
-        raise SystemExit("Collection is empty. Run `python -m kirana_ai.cli ingest` first.")
-    return client
-
-
 def _run_list(args: dict, tenant_id: str | None) -> list[dict]:
     """Enumerate matching documents. tenant_id comes from us, as ever."""
     where = {k: v for k, v in args.items() if v}
@@ -124,7 +117,7 @@ def _run_list(args: dict, tenant_id: str | None) -> list[dict]:
         trace.kv("tenant injected", tenant_id)
 
     query_filter = filters.build_filter(tenant_id=tenant_id, **where)
-    return vector_store.list_documents(_client_or_die(), query_filter)
+    return vector_store.list_documents(vector_store.get_client(), query_filter)
 
 
 def _run_search(args: dict, tenant_id: str | None, top_k: int) -> list[dict]:
@@ -139,7 +132,7 @@ def _run_search(args: dict, tenant_id: str | None, top_k: int) -> list[dict]:
         trace.kv("tenant injected", tenant_id)
 
     query_filter = filters.build_filter(tenant_id=tenant_id, **where)
-    client = _client_or_die()
+    client = vector_store.get_client()
     query_vector = embeddings.embed_text(query)
     sparse_vector = sparse.encode_query(query) if config.HYBRID_SEARCH else None
     return vector_store.search(

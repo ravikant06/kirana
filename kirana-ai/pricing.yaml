@@ -6,6 +6,8 @@
 # A model missing here, or with a null price, is recorded with cost_usd = NULL,
 # which means "unknown", never "free". Thinking tokens are billed as output.
 #
+# Read once per process: restart the API after editing (uvicorn --reload watches .py only).
+#
 # These are the Paid tier, Standard prices. On the Free tier the calls cost nothing,
 # so cost_usd then shows what the same traffic would cost once you pay for it.
 checked_on: 2026-09-30   # ai.google.dev/gemini-api/docs/pricing

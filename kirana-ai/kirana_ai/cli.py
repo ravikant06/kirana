@@ -19,7 +19,8 @@ from datetime import datetime, timezone
 import uuid as uuid_mod
 
 from kirana_ai import agent, chat, chunker, config, embeddings, loader, sparse, trace, vector_store
-from kirana_ai.llm import get_adapter
+from kirana_ai.errors import UpstreamUnavailable
+from kirana_ai.llm import LLMError, get_adapter
 
 
 def ingest(recreate: bool) -> None:
@@ -112,6 +113,13 @@ def _threads(user_id: int) -> None:
 
 
 def main() -> None:
+    try:
+        _main()
+    except (UpstreamUnavailable, LLMError) as exc:
+        raise SystemExit(f"error: {exc}") from exc   # fine here: this is the CLI's exit
+
+
+def _main() -> None:
     parser = argparse.ArgumentParser(prog="kirana_ai.cli", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)

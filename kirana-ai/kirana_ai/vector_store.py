@@ -11,23 +11,37 @@ Payload fields used in filters get an index. Without one Qdrant still
 filters correctly, but by scanning rather than by lookup.
 """
 import uuid
+from functools import cache
 
 from qdrant_client import QdrantClient
 from qdrant_client.http import models
+from qdrant_client.http.exceptions import UnexpectedResponse
 
 from kirana_ai import config, trace
+from kirana_ai.errors import UpstreamUnavailable
 
 
+@cache
 def get_client() -> QdrantClient:
-    client = QdrantClient(url=config.QDRANT_URL)
-    try:
-        client.get_collections()  # cheap call to confirm Qdrant is reachable
-    except Exception as exc:
-        raise SystemExit(
-            f"Cannot reach Qdrant at {config.QDRANT_URL}. Is Docker running?\n"
-            "Start it with:  cd infra && docker compose up -d qdrant"
-        ) from exc
-    return client
+    """
+    One client per process. Creating it makes no network call; a Qdrant that
+    is down shows up on the first real request, as UpstreamUnavailable.
+    """
+    return QdrantClient(url=config.QDRANT_URL, timeout=5)
+
+
+def _unavailable(exc: Exception) -> UpstreamUnavailable:
+    if isinstance(exc, UnexpectedResponse) and exc.status_code == 404:
+        return UpstreamUnavailable(
+            "knowledge base",
+            f"collection {config.COLLECTION_NAME!r} does not exist. "
+            "Run `python -m kirana_ai.cli ingest` first.",
+        )
+    return UpstreamUnavailable(
+        "qdrant",
+        f"cannot reach Qdrant at {config.QDRANT_URL} ({type(exc).__name__}). "
+        "Is it running?  cd infra && docker compose up -d qdrant",
+    )
 
 
 # How deep each branch searches before fusion. Fusion needs candidates
@@ -129,6 +143,39 @@ def upsert_chunks(
     return len(points)
 
 
+def _query(client, query_vector, top_k, query_filter, sparse_vector):
+    """The Qdrant call behind search(), dense or hybrid."""
+    if sparse_vector is None:
+        # Dense only: one similarity search over the meaning vectors.
+        result = client.query_points(
+            collection_name=config.COLLECTION_NAME,
+            query=query_vector,
+            using=DENSE,
+            limit=top_k,
+            query_filter=query_filter,
+            with_payload=True,
+        )
+    else:
+        # Hybrid: run both searches, then let Qdrant fuse the two ranked
+        # lists with Reciprocal Rank Fusion. Each branch fetches deeper
+        # than top_k so fusion has something to work with, and the filter
+        # is applied to BOTH — a filter that leaked on one branch would be
+        # a tenancy bug, not just a quality issue.
+        result = client.query_points(
+            collection_name=config.COLLECTION_NAME,
+            prefetch=[
+                models.Prefetch(query=query_vector, using=DENSE,
+                                limit=PREFETCH_LIMIT, filter=query_filter),
+                models.Prefetch(query=sparse_vector, using=SPARSE,
+                                limit=PREFETCH_LIMIT, filter=query_filter),
+            ],
+            query=models.FusionQuery(fusion=models.Fusion.RRF),
+            limit=top_k,
+            with_payload=True,
+        )
+    return result
+
+
 def search(
     client: QdrantClient,
     query_vector: list[float],
@@ -155,34 +202,10 @@ def search(
         trace.bullets("filter (must)", trace.describe_filter(query_filter))
 
     with trace.timed() as elapsed:
-        if sparse_vector is None:
-            # Dense only: one similarity search over the meaning vectors.
-            result = client.query_points(
-                collection_name=config.COLLECTION_NAME,
-                query=query_vector,
-                using=DENSE,
-                limit=top_k,
-                query_filter=query_filter,
-                with_payload=True,
-            )
-        else:
-            # Hybrid: run both searches, then let Qdrant fuse the two ranked
-            # lists with Reciprocal Rank Fusion. Each branch fetches deeper
-            # than top_k so fusion has something to work with, and the filter
-            # is applied to BOTH — a filter that leaked on one branch would be
-            # a tenancy bug, not just a quality issue.
-            result = client.query_points(
-                collection_name=config.COLLECTION_NAME,
-                prefetch=[
-                    models.Prefetch(query=query_vector, using=DENSE,
-                                    limit=PREFETCH_LIMIT, filter=query_filter),
-                    models.Prefetch(query=sparse_vector, using=SPARSE,
-                                    limit=PREFETCH_LIMIT, filter=query_filter),
-                ],
-                query=models.FusionQuery(fusion=models.Fusion.RRF),
-                limit=top_k,
-                with_payload=True,
-            )
+        try:
+            result = _query(client, query_vector, top_k, query_filter, sparse_vector)
+        except Exception as exc:
+            raise _unavailable(exc) from exc
 
     chunks = [{**hit.payload, "score": hit.score} for hit in result.points]
     if trace.is_on():
@@ -223,13 +246,16 @@ def list_documents(
         trace.bullets("filter (must)", trace.describe_filter(query_filter))
 
     with trace.timed() as elapsed:
-        points, _ = client.scroll(
-            collection_name=config.COLLECTION_NAME,
-            scroll_filter=query_filter,
-            limit=limit,
-            with_payload=True,
-            with_vectors=False,
-        )
+        try:
+            points, _ = client.scroll(
+                collection_name=config.COLLECTION_NAME,
+                scroll_filter=query_filter,
+                limit=limit,
+                with_payload=True,
+                with_vectors=False,
+            )
+        except Exception as exc:
+            raise _unavailable(exc) from exc
 
     documents: dict[str, dict] = {}
     for point in points:

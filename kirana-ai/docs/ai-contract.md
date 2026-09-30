@@ -1,4 +1,4 @@
-# ai-contract.md: Kirana ⇄ Kirana AI (v0.3)
+# ai-contract.md: Kirana ⇄ Kirana AI (v0.4)
 
 The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every change.
 **(Pn)** = added in phase n of `AI-PLAN.md`. Build only what the current phase needs.
@@ -7,8 +7,9 @@ The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every chan
 
 - The browser reaches the AI service through the Vite proxy: `/ai/*` → `http://localhost:8000/*`
   (the prefix is stripped, as with `/api`). No CORS on either service.
-- Errors are RFC 7807 `ProblemDetail`, the same shape as Kirana:
-  `{ type, title, status, detail, code?, errors? }`. `code` is a stable machine string
+- Errors are RFC 7807 `ProblemDetail`, the same shape as Kirana, with media type
+  `application/problem+json`: `{ type, title, status, detail, instance, code?, errors? }`.
+  Validation failures are **400** (not FastAPI's default 422) with `errors: [{field, message}]`. `code` is a stable machine string
   (`RATE_LIMITED`, `UPSTREAM_UNAVAILABLE`, `UNAUTHENTICATED`, `BUDGET_EXCEEDED`).
 - Ids are strings in JSON. Timestamps are ISO-8601 UTC.
 - Money from Kirana is a JSON number today (D3). The AI service **never computes money**;
@@ -35,15 +36,24 @@ The request body and tool arguments **never** contain a user id.
 | P6 | `POST /v1/approvals/{approval_id}` | `{decision: "confirm" \| "reject"}` → SSE continuing the turn |
 | P9 | `POST /v1/messages/{message_id}/feedback` | `{rating: "up" \| "down", comment?}` → 204 |
 
-    ChatReply     = { thread_id, message_id, reply, citations: [Citation], steps: [Step],
-                      usage: { llm_calls, input_tokens, output_tokens, cost_usd, latency_ms } }
-    Citation      = { document_id, title, page?, chunk_id }
-    Step          = { tool, arguments, result_count, latency_ms }     // shown in the Requests panel
+    ChatRequest   = { thread_id?, message }          // message 1–2000 chars after trimming; unknown fields → 400
+    ChatReply     = { thread_id, message_id, reply, citations: [Citation], steps: [Step], usage: Usage }
+    Usage         = { llm_calls, input_tokens, output_tokens, latency_ms,
+                      cost_usd }                      // decimal string "0.004170", or null = unknown price
+    Citation      = { source, doc_id, title? }       // P3 adds page and chunk_id
+    Step          = { tool, query, where, count }    // one tool call: filters the model chose, hits returned
     ThreadSummary = { id, title, updated_at }
-    Thread        = { id, title, messages: [{ id, role, content, citations, steps, created_at }] }
+    Thread        = { id, title, created_at, updated_at,
+                      messages: [{ id, role, content, citations, steps, created_at }] }
 
-Response headers (P1): `X-AI-LLM-Calls`, `X-AI-Tokens`, `X-AI-Cost-USD`, so the Requests
-panel shows AI cost the same way it shows `X-Query-Count`.
+Status codes: 200 · 204 (delete) · 400 (validation, missing `X-User-Id`) · 404 (no such thread
+*for this shopper*: missing and someone else's look the same) · 503 `UPSTREAM_UNAVAILABLE`
+(LLM, Qdrant, embeddings or Postgres down — title `Assistant unavailable` or `Database busy`; the
+underlying message is logged, never returned) · 500.
+
+Response headers on `POST /v1/chat` (P1): `X-AI-LLM-Calls`, `X-AI-Input-Tokens`,
+`X-AI-Output-Tokens`, `X-AI-Cost-USD` (left out when the price is unknown), so the Requests
+panel shows AI cost the same way it shows `X-Query-Count`. `GET /health` → `{status: "ok"}`.
 
 ## 3. SSE events (AI → Browser), from P3
 

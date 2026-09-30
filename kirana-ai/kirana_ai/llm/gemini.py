@@ -13,6 +13,7 @@ Absorbs three mismatches between our neutral types and Gemini's API:
      rides along as ToolCall.provider_state, opaque to every caller.
 """
 import itertools
+from functools import cache
 from collections.abc import Sequence
 from typing import Any
 
@@ -44,13 +45,19 @@ def _to_gemini_schema(node: Any) -> Any:
     return out
 
 
+@cache
+def _sdk_client(api_key: str) -> genai.Client:
+    """One SDK client (and its HTTP connection pool) per process, shared by all adapters."""
+    return genai.Client(api_key=api_key)
+
+
 @register
 class GeminiAdapter(LLMAdapter):
     provider = "gemini"
 
     def __init__(self, model: str, api_key: str) -> None:
         super().__init__(model, api_key)
-        self._client = genai.Client(api_key=api_key)
+        self._client = _sdk_client(api_key)
         self._ids = itertools.count(1)
 
     # --- translation: ours -> Gemini -------------------------------------

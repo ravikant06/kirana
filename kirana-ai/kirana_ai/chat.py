@@ -64,9 +64,7 @@ def send(
             session.add(thread)
             session.flush()                       # INSERT now: the id default is applied at flush
         else:
-            thread = session.get(Thread, thread_id)
-            if thread is None or thread.user_id != user_id:
-                raise ThreadNotFound(str(thread_id))
+            thread = _owned(session, user_id, thread_id)
         history = load_history(session, thread.id, config.HISTORY_TURNS)
         session.add(MessageRow(thread_id=thread.id, role=RowRole.USER, content=text))
         thread_id = thread.id
@@ -145,6 +143,30 @@ def list_threads(user_id: int, limit: int = 50) -> list[Thread]:
             select(Thread).where(Thread.user_id == user_id)
             .order_by(Thread.updated_at.desc()).limit(limit)
         ))
+
+
+def get_thread(user_id: int, thread_id: uuid.UUID) -> tuple[Thread, list[MessageRow]]:
+    """A thread and all its messages: two queries, both explicit (relationships are lazy="raise")."""
+    with session_scope() as session:
+        thread = _owned(session, user_id, thread_id)
+        messages = list(session.scalars(
+            select(MessageRow).where(MessageRow.thread_id == thread_id)
+            .order_by(MessageRow.created_at)
+        ))
+        return thread, messages
+
+
+def delete_thread(user_id: int, thread_id: uuid.UUID) -> None:
+    """Messages go with it (ON DELETE CASCADE); its llm_calls rows stay, as cost history."""
+    with session_scope() as session:
+        session.delete(_owned(session, user_id, thread_id))
+
+
+def _owned(session: Session, user_id: int, thread_id: uuid.UUID) -> Thread:
+    thread = session.get(Thread, thread_id)
+    if thread is None or thread.user_id != user_id:
+        raise ThreadNotFound(str(thread_id))
+    return thread
 
 
 def _title(text: str) -> str:
