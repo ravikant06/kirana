@@ -6,6 +6,7 @@ import java.util.Map;
 
 import com.kirana.config.PaymentProperties;
 import com.kirana.exception.InvalidFieldException;
+import com.kirana.resilience.Resilience;
 import org.springframework.stereotype.Component;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -16,9 +17,11 @@ public class PaymentGateways {
     private final Map<String, PaymentGateway> byId = new LinkedHashMap<>();
     private final String defaultId;
 
-    public PaymentGateways(PaymentProperties props, JsonMapper json) {
-        register(new RazorpayStyleGateway("mock", "Kirana test gateway", props.mock(), props.http(), json));
-        register(new RazorpayStyleGateway("razorpay", "Razorpay (test mode)", props.razorpay(), props.http(), json));
+    public PaymentGateways(PaymentProperties props, JsonMapper json, Resilience resilience) {
+        register(new ResilientPaymentGateway(
+                new RazorpayStyleGateway("mock", "Kirana test gateway", props.mock(), props.http(), json), resilience));
+        register(new ResilientPaymentGateway(
+                new RazorpayStyleGateway("razorpay", "Razorpay (test mode)", props.razorpay(), props.http(), json), resilience));
         this.defaultId = props.defaultProvider();
     }
 

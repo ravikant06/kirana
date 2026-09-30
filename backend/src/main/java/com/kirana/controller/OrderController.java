@@ -8,6 +8,7 @@ import com.kirana.dto.CheckoutResponse;
 import com.kirana.dto.OrderResponse;
 import com.kirana.dto.VerifyPaymentRequest;
 import com.kirana.payment.PaymentSession;
+import com.kirana.resilience.Resilience;
 import com.kirana.service.CheckoutSaga;
 import com.kirana.service.OrderService;
 import jakarta.validation.Valid;
@@ -26,17 +27,20 @@ public class OrderController {
 
     private final OrderService orders;
     private final CheckoutSaga checkout;
+    private final Resilience resilience;
 
-    public OrderController(OrderService orders, CheckoutSaga checkout) {
+    public OrderController(OrderService orders, CheckoutSaga checkout, Resilience resilience) {
         this.orders = orders;
         this.checkout = checkout;
+        this.resilience = resilience;
     }
 
     /** Places the order (stock held) and starts payment. Body optional: {"paymentProvider": "mock"}. */
     @PostMapping
     public ResponseEntity<CheckoutResponse> place(@RequestHeader(Headers.USER_ID) Long userId,
                                                   @RequestBody(required = false) CheckoutRequest req) {
-        CheckoutResponse result = checkout.start(userId, req == null ? null : req.paymentProvider());
+        // Stage 5 bulkhead: at most 20 checkouts at once; the 21st gets 503 "Checkout busy" at once.
+        CheckoutResponse result = resilience.checkout(() -> checkout.start(userId, req == null ? null : req.paymentProvider()));
         return ResponseEntity.created(URI.create("/orders/" + result.order().id())).body(result);
     }
 

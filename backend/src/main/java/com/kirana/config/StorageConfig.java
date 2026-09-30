@@ -2,6 +2,7 @@ package com.kirana.config;
 
 import io.minio.BucketExistsArgs;
 import io.minio.MakeBucketArgs;
+import com.kirana.storage.MinioSigner;
 import io.minio.MinioClient;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -14,12 +15,31 @@ public class StorageConfig {
 
     private static final Logger log = LoggerFactory.getLogger(StorageConfig.class);
 
+    /**
+     * For the backend's own calls to MinIO (stat, delete, bucket check). Explicit timeouts
+     * (Stage 5): the SDK's defaults are 5 minutes, long enough for a hung MinIO to hold
+     * request threads until the server stops answering.
+     */
     @Bean
     public MinioClient minioClient(StorageProperties props) {
-        return MinioClient.builder()
-                .endpoint(props.endpoint())
+        MinioClient client = MinioClient.builder()
+                .endpoint(props.apiEndpointOrDefault())
+                .region(props.region())
                 .credentials(props.accessKey(), props.secretKey())
                 .build();
+        long read = props.readTimeout().toMillis();
+        client.setTimeout(props.connectTimeout().toMillis(), read, read);
+        return client;
+    }
+
+    /** For signing browser URLs only: public endpoint, fixed region, no network needed. */
+    @Bean
+    public MinioSigner minioSigner(StorageProperties props) {
+        return new MinioSigner(MinioClient.builder()
+                .endpoint(props.endpoint())
+                .region(props.region())
+                .credentials(props.accessKey(), props.secretKey())
+                .build());
     }
 
     /**

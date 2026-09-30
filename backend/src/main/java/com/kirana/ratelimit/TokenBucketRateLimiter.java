@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 
 import org.springframework.context.annotation.Primary;
+import com.kirana.resilience.Resilience;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -38,14 +39,16 @@ public class TokenBucketRateLimiter implements RateLimiter {
             """);
 
     private final StringRedisTemplate redis;
+    private final Resilience resilience;
 
-    public TokenBucketRateLimiter(StringRedisTemplate redis) {
+    public TokenBucketRateLimiter(StringRedisTemplate redis, Resilience resilience) {
         this.redis = redis;
+        this.resilience = resilience;
     }
 
     @Override
     public Decision tryAcquire(String key, int limit, Duration window, long nowMillis) {
         double refillPerMs = (double) limit / window.toMillis();
-        return RedisScripts.run(redis, SCRIPT, key + ":tb", limit, refillPerMs, nowMillis);
+        return RedisScripts.run(redis, resilience, SCRIPT, key + ":tb", limit, refillPerMs, nowMillis);
     }
 }

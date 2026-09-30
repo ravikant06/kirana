@@ -8,6 +8,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.OptionalLong;
 
+import com.kirana.resilience.Resilience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -50,9 +51,11 @@ public class FlashSaleCounter {
     public enum Take { TAKEN, SOLD_OUT, NOT_ARMED }
 
     private final StringRedisTemplate redis;
+    private final Resilience resilience;
 
-    public FlashSaleCounter(StringRedisTemplate redis) {
+    public FlashSaleCounter(StringRedisTemplate redis, Resilience resilience) {
         this.redis = redis;
+        this.resilience = resilience;
     }
 
     public void arm(Long productId, int units) {
@@ -70,7 +73,7 @@ public class FlashSaleCounter {
      * 24 h, evicted, or Redis restarted) are dropped from the set: the key is the truth.
      */
     public Map<Long, Long> active() {
-        Set<String> ids = redis.opsForSet().members(CacheKeys.FLASH_ACTIVE);
+        Set<String> ids = resilience.redis(() -> redis.opsForSet().members(CacheKeys.FLASH_ACTIVE));
         if (ids == null || ids.isEmpty()) {
             return Map.of();
         }
@@ -90,13 +93,13 @@ public class FlashSaleCounter {
 
     /** Units left at the gate, or empty when no sale is armed. */
     public OptionalLong remaining(Long productId) {
-        String v = redis.opsForValue().get(CacheKeys.flashStock(productId));
+        String v = resilience.redis(() -> redis.opsForValue().get(CacheKeys.flashStock(productId)));
         return v == null ? OptionalLong.empty() : OptionalLong.of(Long.parseLong(v));
     }
 
     public Take take(Long productId, int qty) {
         try {
-            Long r = redis.execute(TAKE, List.of(CacheKeys.flashStock(productId)), Integer.toString(qty));
+            Long r = resilience.redis(() -> redis.execute(TAKE, List.of(CacheKeys.flashStock(productId)), Integer.toString(qty)));
             if (r == null || r == -2) {
                 return Take.NOT_ARMED;
             }
@@ -110,7 +113,7 @@ public class FlashSaleCounter {
     /** Compensation: the database refused after the gate said yes. */
     public void giveBack(Long productId, int qty) {
         try {
-            redis.execute(GIVE_BACK, List.of(CacheKeys.flashStock(productId)), Integer.toString(qty));
+            resilience.redis(() -> redis.execute(GIVE_BACK, List.of(CacheKeys.flashStock(productId)), Integer.toString(qty)));
         } catch (DataAccessException e) {
             // The counter now shows fewer units than the database has: the gate is too strict,
             // never too loose. Re-arming the sale resyncs it from Postgres.

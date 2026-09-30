@@ -1,0 +1,16 @@
+# Stage 5 chaos profile: mvn spring-boot:run -Dspring-boot.run.profiles=chaos
+# Routes the backend's own traffic to Redis, MinIO and payment-mock through Toxiproxy, so
+# network faults can be injected from the chaos panel. Browsers still talk to MinIO and the
+# mock's checkout page directly.
+spring:
+  data:
+    redis:
+      port: 26379
+kirana:
+  storage:
+    api-endpoint: http://localhost:29000
+  payment:
+    mock:
+      api-url: http://localhost:28090
+  chaos:
+    enabled: true

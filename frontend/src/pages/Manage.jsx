@@ -4,6 +4,7 @@ import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import Pager from '../components/Pager.jsx'
+import ResilienceLab from '../components/ResilienceLab.jsx'
 
 export default function Manage({ notify, onUsersChanged, users }) {
   const [page, setPage] = useState(0)
@@ -72,6 +73,8 @@ export default function Manage({ notify, onUsersChanged, users }) {
           )}
         </div>
       </div>
+
+      <ResilienceLab notify={notify} />
 
       <Users users={users} onChanged={onUsersChanged} notify={notify} />
     </section>

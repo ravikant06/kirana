@@ -67,6 +67,21 @@ services:
     ports:
       - "8090:8090"   # API + hosted checkout page: http://localhost:8090/docs
 
+  toxiproxy:
+    # Stage 5: a TCP proxy that injects network faults (latency, timeouts, dropped
+    # connections) between the backend and Redis, MinIO and payment-mock. Only used when the
+    # backend runs with the "chaos" profile; otherwise the backend talks to them directly.
+    image: ghcr.io/shopify/toxiproxy:2.12.0
+    command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
+    volumes:
+      - ./toxiproxy/toxiproxy.json:/config/toxiproxy.json:ro
+    ports:
+      - "8474:8474"     # control API
+      - "26379:26379"   # -> redis
+      - "29000:29000"   # -> minio
+      - "28090:28090"   # -> payment-mock
+    depends_on: [redis, minio, payment-mock]
+
   qdrant:
     # AI track (kirana-ai/): vector store for the assistant's knowledge base.
     # Pinned: Qdrant upgrades its on-disk format in place, and an older image may not

@@ -48,7 +48,11 @@ server:
 
 kirana:
   storage:
-    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}
+    endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}          # what browsers use (signed URLs)
+    api-endpoint: ${STORAGE_API_ENDPOINT:}                       # what the backend calls; empty = endpoint
+    region: us-east-1
+    connect-timeout: 1s
+    read-timeout: 5s
     access-key: ${STORAGE_ACCESS_KEY:minioadmin}
     secret-key: ${STORAGE_SECRET_KEY:minioadmin}
     bucket: ${STORAGE_BUCKET:product-images}
@@ -74,8 +78,10 @@ kirana:
     window: 10m             # stock is held this long for payment, then the expiry job releases it
     reconcile-after: 1m     # unpaid orders older than this are checked with the gateway
     http:
-      connect-timeout: 2s
-      read-timeout: 5s
+      # Stage 5 latency budget: with 3 attempts (Resilience), a dead gateway costs at most
+      # ~3 x 2 s + backoff before the shopper hears "pay later", and the breaker cuts that to 0.
+      connect-timeout: 1s
+      read-timeout: 2s
     mock:
       # payment-mock imitates Razorpay's API (infra/docker-compose.yml). Not real secrets.
       api-url: ${PAYMENT_MOCK_URL:http://localhost:8090}
@@ -87,6 +93,12 @@ kirana:
       checkout-url:
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}
+  resilience:
+    enabled: true   # false = no retries, breakers or bulkhead (for before/after measurements)
+  chaos:
+    enabled: false  # the chaos profile turns this on (fault controls in Manage)
+    toxiproxy-url: http://localhost:8474
+    payment-mock-admin-url: http://localhost:8090
   diagnostics:
     # Stage 2: X-Query-Count / X-DB-Time-Ms headers and one log line per request.
     query-metrics: true

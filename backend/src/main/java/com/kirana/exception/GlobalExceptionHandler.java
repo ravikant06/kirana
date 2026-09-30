@@ -2,7 +2,10 @@ package com.kirana.exception;
 
 import java.util.List;
 
+import com.kirana.payment.PaymentUnavailableException;
+import com.kirana.payment.RazorpayStyleGateway;
 import com.kirana.ratelimit.RateLimitedException;
+import io.github.resilience4j.bulkhead.BulkheadFullException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessResourceFailureException;
@@ -53,6 +56,32 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     public ProblemDetail storage(StorageException ex) {
         log.error("Object storage call failed", ex);
         return problem(HttpStatus.SERVICE_UNAVAILABLE, "Storage unavailable", ex.getMessage());
+    }
+
+    /** Stage 5: the gateway is down, slow, or its circuit is open. The order (if any) is kept. */
+    @ExceptionHandler(PaymentUnavailableException.class)
+    public ResponseEntity<ProblemDetail> paymentUnavailable(PaymentUnavailableException ex) {
+        log.warn("Payment unavailable: {}", ex.getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "15")
+                .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "Payment unavailable",
+                        "The payment service is not responding. Your order is kept; try paying again in a minute."));
+    }
+
+    /** The gateway refused our request (4xx): a configuration or programming error on our side. */
+    @ExceptionHandler(RazorpayStyleGateway.GatewayRejectedException.class)
+    public ProblemDetail gatewayRejected(RazorpayStyleGateway.GatewayRejectedException ex) {
+        log.error("Payment gateway rejected a request: {}", ex.getMessage());
+        return problem(HttpStatus.BAD_GATEWAY, "Payment gateway error", "The payment gateway refused the request.");
+    }
+
+    /** Stage 5 bulkhead: all checkout slots are busy. Fail fast; the shopper retries in a second. */
+    @ExceptionHandler(BulkheadFullException.class)
+    public ResponseEntity<ProblemDetail> checkoutBusy(BulkheadFullException ex) {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "Checkout busy",
+                        "Too many checkouts are running right now. Please try again in a moment."));
     }
 
     /** 429 with Retry-After, so well-behaved clients know when to come back. */

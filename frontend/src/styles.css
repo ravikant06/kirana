@@ -331,3 +331,25 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .pay-error { padding: 20px; gap: 14px; }
 .order-pay { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; padding: 0 18px 14px; }
 
+/* Stage 5: Resilience lab */
+.lab { display: grid; gap: 16px; margin-top: 20px; }
+.lab-head p { max-width: 70ch; }
+.lab-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 12px; }
+.lab-card { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; display: grid; gap: 6px; align-content: start; }
+.lab-card.is-bad { border-color: var(--chili); background: var(--chili-wash); }
+.lab-card.is-warn { border-color: var(--marigold); background: var(--marigold-wash); }
+.lab-card-head { display: flex; justify-content: space-between; align-items: center; gap: 8px; }
+.lab-card p { margin: 0; font-size: 0.85rem; }
+.lab-metrics { font-family: var(--mono); font-size: 0.78rem !important; color: var(--muted); }
+.lab-pill { font-size: 0.75rem; font-weight: 700; padding: 2px 10px; border-radius: 99px; white-space: nowrap; }
+.lab-pill.is-ok { background: var(--leaf-wash); color: var(--leaf); }
+.lab-pill.is-bad { background: var(--chili); color: #fff; }
+.lab-pill.is-warn { background: var(--marigold); color: var(--ink); }
+.lab-controls { display: grid; gap: 10px; }
+.lab-controls h3 { font: 700 0.95rem var(--display); margin: 6px 0 0; }
+.lab-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
+.lab-row { display: grid; grid-template-columns: 130px 130px 1fr; gap: 10px; align-items: center; }
+.lab-row-name { font-weight: 700; }
+.lab-row-state { font-family: var(--mono); font-size: 0.8rem; }
+@media (max-width: 700px) { .lab-row { grid-template-columns: 1fr; } }
+

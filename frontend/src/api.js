@@ -215,6 +215,13 @@ export const api = {
     addToCart: (userId, productId) => request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true }),
     checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true }),
   },
+  // Stage 5 Resilience lab
+  system: {
+    status: () => request('GET', '/system/status', undefined, { quiet: true }),
+    resetBreaker: (name) => request('POST', `/system/breakers/${q(name)}/reset`),
+    paymentFault: (body) => request('POST', '/system/chaos/payment', body),
+    networkFault: (proxy, body) => request('POST', `/system/chaos/network/${q(proxy)}`, body),
+  },
   payments: {
     providers: () => request('GET', '/payments/providers'),
   },

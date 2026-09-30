@@ -10,6 +10,8 @@ import java.util.concurrent.TimeUnit;
 
 import com.kirana.config.StorageProperties;
 import com.kirana.exception.StorageException;
+import com.kirana.resilience.Resilience;
+import io.github.resilience4j.circuitbreaker.CallNotPermittedException;
 import io.minio.GetPresignedObjectUrlArgs;
 import io.minio.MinioClient;
 import io.minio.PostPolicy;
@@ -28,10 +30,14 @@ public class ImageStorage {
     private static final int READ_URL_TTL_HOURS = 1;
 
     private final MinioClient client;
+    private final MinioSigner signer;
+    private final Resilience resilience;
     private final StorageProperties props;
 
-    public ImageStorage(MinioClient client, StorageProperties props) {
+    public ImageStorage(MinioClient client, MinioSigner signer, StorageProperties props, Resilience resilience) {
         this.client = client;
+        this.signer = signer;
+        this.resilience = resilience;
         this.props = props;
     }
 
@@ -52,7 +58,7 @@ public class ImageStorage {
         policy.addStartsWithCondition("Content-Type", "image/");
         policy.addContentLengthRangeCondition(1, props.maxUploadBytes());
         try {
-            Map<String, String> signed = client.getPresignedPostFormData(policy);
+            Map<String, String> signed = signer.client().getPresignedPostFormData(policy);
             // The SDK returns only the signature fields. The browser must also send the
             // fields the policy constrains, so we add them. Order matters only for the file.
             Map<String, String> form = new LinkedHashMap<>();
@@ -67,6 +73,16 @@ public class ImageStorage {
 
     /** What storage actually holds at this key, or empty if nothing was uploaded. */
     public Optional<StoredObject> stat(String objectKey) {
+        // Stage 5: breaker + one retry (stat is idempotent). A missing object is a normal
+        // answer (empty), not a MinIO failure, so it does not count against the breaker.
+        try {
+            return resilience.minio(true, () -> statOnce(objectKey));
+        } catch (CallNotPermittedException e) {
+            throw new StorageException("Storage is failing, so it is not being called for now (circuit open)", e);
+        }
+    }
+
+    private Optional<StoredObject> statOnce(String objectKey) {
         try {
             StatObjectResponse stat = client.statObject(
                     StatObjectArgs.builder().bucket(props.bucket()).object(objectKey).build());
@@ -84,7 +100,7 @@ public class ImageStorage {
     /** A fresh, time-limited GET URL. Signing is local computation, no network call. */
     public String readUrl(String objectKey) {
         try {
-            return client.getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
+            return signer.client().getPresignedObjectUrl(GetPresignedObjectUrlArgs.builder()
                     .method(Method.GET)
                     .bucket(props.bucket())
                     .object(objectKey)
@@ -98,9 +114,16 @@ public class ImageStorage {
     /** Deleting a key that does not exist succeeds (S3 semantics). */
     public void delete(String objectKey) {
         try {
-            client.removeObject(RemoveObjectArgs.builder().bucket(props.bucket()).object(objectKey).build());
-        } catch (Exception e) {
-            throw new StorageException("Could not delete the object", e);
+            resilience.minio(true, () -> {
+                try {
+                    client.removeObject(RemoveObjectArgs.builder().bucket(props.bucket()).object(objectKey).build());
+                    return null;
+                } catch (Exception e) {
+                    throw new StorageException("Could not delete the object", e);
+                }
+            });
+        } catch (CallNotPermittedException e) {
+            throw new StorageException("Storage is failing, so it is not being called for now (circuit open)", e);
         }
     }
 

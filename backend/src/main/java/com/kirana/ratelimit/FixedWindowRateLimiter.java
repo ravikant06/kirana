@@ -3,6 +3,7 @@ package com.kirana.ratelimit;
 import java.time.Duration;
 import java.util.List;
 
+import com.kirana.resilience.Resilience;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -25,9 +26,11 @@ public class FixedWindowRateLimiter implements RateLimiter {
             """);
 
     private final StringRedisTemplate redis;
+    private final Resilience resilience;
 
-    public FixedWindowRateLimiter(StringRedisTemplate redis) {
+    public FixedWindowRateLimiter(StringRedisTemplate redis, Resilience resilience) {
         this.redis = redis;
+        this.resilience = resilience;
     }
 
     @Override
@@ -35,6 +38,6 @@ public class FixedWindowRateLimiter implements RateLimiter {
         long w = window.toMillis();
         long windowIndex = nowMillis / w;
         long untilEnd = (windowIndex + 1) * w - nowMillis;
-        return RedisScripts.run(redis, SCRIPT, key + ":fw:" + windowIndex, limit, w, untilEnd);
+        return RedisScripts.run(redis, resilience, SCRIPT, key + ":fw:" + windowIndex, limit, w, untilEnd);
     }
 }

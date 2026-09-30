@@ -8,6 +8,7 @@ import java.util.function.Supplier;
 
 import com.kirana.cache.CacheStatus.Result;
 import com.kirana.config.CacheProperties;
+import com.kirana.resilience.Resilience;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataAccessException;
@@ -49,12 +50,14 @@ public class CacheAside {
     private final StringRedisTemplate redis;
     private final JsonMapper json;
     private final CacheProperties props;
+    private final Resilience resilience;
     private volatile long lastWarning;
 
-    public CacheAside(StringRedisTemplate redis, JsonMapper json, CacheProperties props) {
+    public CacheAside(StringRedisTemplate redis, JsonMapper json, CacheProperties props, Resilience resilience) {
         this.redis = redis;
         this.json = json;
         this.props = props;
+        this.resilience = resilience;
     }
 
     private enum State { HIT, MISS, DOWN }
@@ -107,7 +110,7 @@ public class CacheAside {
 
     public void evict(String... keys) {
         try {
-            redis.delete(List.of(keys));
+            resilience.redis(() -> redis.delete(List.of(keys)));
         } catch (DataAccessException e) {
             // The TTL is the safety net: the stale entry expires on its own.
             warn("evict", e);
@@ -134,7 +137,9 @@ public class CacheAside {
     private <T> Read<T> read(String key, TypeReference<T> type) {
         String raw;
         try {
-            raw = redis.opsForValue().get(key);
+            // Through the Redis circuit breaker (Stage 5): while open, this fails instantly
+            // instead of waiting 200 ms, and the fail-open path below serves from Postgres.
+            raw = resilience.redis(() -> redis.opsForValue().get(key));
         } catch (DataAccessException e) {
             warn("read", e);
             return new Read<>(State.DOWN, null);
@@ -157,9 +162,10 @@ public class CacheAside {
     private void write(String key, Object value, Duration ttl) {
         try {
             if (value == null) {
-                redis.opsForValue().set(key, NOT_FOUND, props.negativeTtl());
+                resilience.redisRun(() -> redis.opsForValue().set(key, NOT_FOUND, props.negativeTtl()));
             } else {
-                redis.opsForValue().set(key, json.writeValueAsString(value), jitter(ttl));
+                String encoded = json.writeValueAsString(value);
+                resilience.redisRun(() -> redis.opsForValue().set(key, encoded, jitter(ttl)));
             }
         } catch (DataAccessException e) {
             warn("write", e);
@@ -169,7 +175,7 @@ public class CacheAside {
     private String tryLock(String key) {
         String token = UUID.randomUUID().toString();
         try {
-            Boolean ok = redis.opsForValue().setIfAbsent("lock:" + key, token, props.lockTtl());
+            Boolean ok = resilience.redis(() -> redis.opsForValue().setIfAbsent("lock:" + key, token, props.lockTtl()));
             return Boolean.TRUE.equals(ok) ? token : null;
         } catch (DataAccessException e) {
             warn("lock", e);
@@ -179,7 +185,7 @@ public class CacheAside {
 
     private void unlock(String key, String token) {
         try {
-            redis.execute(UNLOCK, List.of("lock:" + key), token);
+            resilience.redis(() -> redis.execute(UNLOCK, List.of("lock:" + key), token));
         } catch (DataAccessException e) {
             warn("unlock", e); // the lock TTL releases it
         }

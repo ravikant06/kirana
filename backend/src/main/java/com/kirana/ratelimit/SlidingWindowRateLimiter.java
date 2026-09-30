@@ -4,6 +4,7 @@ import java.time.Duration;
 import java.util.List;
 import java.util.UUID;
 
+import com.kirana.resilience.Resilience;
 import org.springframework.data.redis.core.StringRedisTemplate;
 import org.springframework.data.redis.core.script.DefaultRedisScript;
 import org.springframework.stereotype.Component;
@@ -31,14 +32,16 @@ public class SlidingWindowRateLimiter implements RateLimiter {
             """);
 
     private final StringRedisTemplate redis;
+    private final Resilience resilience;
 
-    public SlidingWindowRateLimiter(StringRedisTemplate redis) {
+    public SlidingWindowRateLimiter(StringRedisTemplate redis, Resilience resilience) {
         this.redis = redis;
+        this.resilience = resilience;
     }
 
     @Override
     public Decision tryAcquire(String key, int limit, Duration window, long nowMillis) {
-        return RedisScripts.run(redis, SCRIPT, key + ":sw", limit, window.toMillis(), nowMillis,
+        return RedisScripts.run(redis, resilience, SCRIPT, key + ":sw", limit, window.toMillis(), nowMillis,
                 nowMillis + "-" + UUID.randomUUID());
     }
 }
