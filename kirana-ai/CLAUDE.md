@@ -25,12 +25,15 @@ the agent loop with a bounded budget, the LLM adapter pattern, hybrid BM25 + den
 
     kirana_ai/        the package (flat on purpose)
       llm/            adapter: Gemini, OpenAI, Anthropic behind one interface
-      agent.py        agent loop + tool specs
+      agent.py        agent loop + tool specs (takes text-only history)
+      chat.py         one chat turn: thread, history, agent, messages (3 steps, no tx across the LLM)
+      usage.py        CallRecorder: one ai.llm_calls row per LLM call; cost from pricing.yaml
       loader.py, chunker.py, embeddings.py, sparse.py, vector_store.py, filters.py
       cli.py          ingest / ask / chat, until the HTTP API exists
       db/             SQLAlchemy models + session_scope()
       config.py       every tunable, overridable by env / .env
     migrations/       Alembic (schema `ai`)
+    pricing.yaml      USD per 1M tokens; missing = cost NULL (unknown, not free)
     kb/seed/          seed knowledge base (Phase 0–1; MinIO from Phase 2)
     eval/             retrieval eval: golden sets, recall@k, MRR, bootstrap CIs
     tests/            pytest, offline only (FakeAdapter, no network)

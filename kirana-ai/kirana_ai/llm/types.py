@@ -76,6 +76,19 @@ class Message:
 
 
 @dataclass(frozen=True)
+class Usage:
+    """
+    Tokens one call consumed, in neutral terms.
+
+    `output_tokens` is what the provider bills as output, which for reasoning
+    models includes "thinking" tokens the caller never sees (Gemini reports
+    them separately as thoughts_token_count; we add them in).
+    """
+    input_tokens: int | None = None
+    output_tokens: int | None = None
+
+
+@dataclass(frozen=True)
 class LLMResponse:
     """
     One model reply. Either it answered (`text`) or it wants tools run
@@ -83,8 +96,29 @@ class LLMResponse:
     """
     text: str | None = None
     tool_calls: tuple[ToolCall, ...] = field(default_factory=tuple)
+    usage: Usage | None = None
     raw: Any = None
 
     @property
     def wants_tools(self) -> bool:
         return bool(self.tool_calls)
+
+
+class LLMError(Exception):
+    """
+    A provider call failed (network, auth, quota, bad request).
+
+    An ordinary exception, not SystemExit: in a server a failed call must fail
+    one request, not the process, and it must still be recordable.
+    """
+
+
+@dataclass(frozen=True)
+class CallRecord:
+    """What one LLM call cost and how it went. Handed to every call listener."""
+    provider: str
+    model: str
+    ok: bool
+    latency_ms: int
+    usage: Usage | None = None
+    error: str | None = None

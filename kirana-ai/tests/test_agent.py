@@ -5,29 +5,10 @@ If agent.py contained any Gemini-specific code these tests could not exist,
 which is the point of the Adapter pattern: the Client depends on the
 abstraction only.
 """
-from collections.abc import Sequence
-
-import pytest
-
+from conftest import FakeAdapter
 from kirana_ai import agent
-from kirana_ai.llm import LLMAdapter, LLMResponse, Message, ToolCall, ToolSpec
+from kirana_ai.llm import LLMResponse, Message, ToolCall
 from kirana_ai.llm.registry import available
-
-
-class FakeAdapter(LLMAdapter):
-    """Replays a scripted list of LLMResponses and records what it was sent."""
-
-    provider = "fake"
-
-    def __init__(self, replies: list[LLMResponse]) -> None:
-        super().__init__(model="fake-model", api_key="none")
-        self._replies = list(replies)
-        self.calls: list[list[Message]] = []
-
-    def _complete(self, messages: Sequence[Message], *, tools: Sequence[ToolSpec] = (),
-                  system: str | None = None) -> LLMResponse:
-        self.calls.append(list(messages))
-        return self._replies.pop(0)
 
 
 def _chunk(i: int = 1) -> dict:
@@ -108,3 +89,17 @@ def test_budget_exhausted_forces_an_answer_without_tools(monkeypatch):
 
     assert len(steps) == agent.MAX_STEPS
     assert answer == "final"
+
+
+def test_history_is_sent_before_the_new_question(monkeypatch):
+    """The model is stateless: a follow-up works only because earlier turns are resent."""
+    monkeypatch.setattr(agent, "_run_search", lambda args, tenant, k: [_chunk()])
+    history = [Message.user("Can I return opened rice?"),
+               Message.assistant("Only if it is defective.")]
+    fake = FakeAdapter([LLMResponse(text="Sealed rice: within 7 days.")])
+
+    agent.answer("and if it's sealed?", history=history, llm=fake)
+
+    sent = fake.calls[0]
+    assert [m.text for m in sent] == ["Can I return opened rice?", "Only if it is defective.",
+                                      "and if it's sealed?"]

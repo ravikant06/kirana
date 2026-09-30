@@ -1,46 +1,17 @@
 """
 Schema tests against a real Postgres 17 (Testcontainers, so Docker must be running).
 
-The container is set up the way the real database is: infra/seed/ai-schema.sql
-as the superuser, then `alembic upgrade head` as kirana_ai.
+The `pg` fixture (conftest.py) is set up the way the real database is:
+infra/seed/ai-schema.sql as the superuser, then `alembic upgrade head` as kirana_ai.
 """
-from pathlib import Path
-
-import psycopg
 import pytest
-from alembic import command
 from alembic.autogenerate import compare_metadata
-from alembic.config import Config
 from alembic.migration import MigrationContext
-from sqlalchemy import create_engine, text
+from sqlalchemy import text
 from sqlalchemy.exc import IntegrityError, InvalidRequestError
 from sqlalchemy.orm import Session
-from testcontainers.postgres import PostgresContainer  # noqa: deprecated alias, still shipped
 
 from kirana_ai.db.models import Base, Message, Role, Thread
-
-AI_ROOT = Path(__file__).resolve().parent.parent
-SCHEMA_SQL = AI_ROOT.parent / "infra" / "seed" / "ai-schema.sql"
-
-
-@pytest.fixture(scope="module")
-def pg():
-    with PostgresContainer("postgres:17", username="kirana", password="kirana",
-                           dbname="kirana", driver="psycopg") as container:
-        admin_url = container.get_connection_url()
-        with psycopg.connect(admin_url.replace("+psycopg", ""), autocommit=True) as conn:
-            conn.execute(SCHEMA_SQL.read_text())
-            # Stand-in for one of Kirana's tables, owned by the superuser as in real life.
-            conn.execute("CREATE TABLE public.orders (id BIGINT PRIMARY KEY)")
-
-        ai_url = admin_url.replace("kirana:kirana@", "kirana_ai:kirana_ai@")
-        cfg = Config(str(AI_ROOT / "alembic.ini"))
-        cfg.set_main_option("sqlalchemy.url", ai_url)
-        command.upgrade(cfg, "head")
-
-        engine = create_engine(ai_url)
-        yield engine
-        engine.dispose()
 
 
 def _only_ai(name, type_, _parent):

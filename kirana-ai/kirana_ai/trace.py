@@ -151,24 +151,3 @@ def compact_json(value: Any, limit: int = 300) -> str:
     except Exception:
         text = str(value)
     return text if _full or len(text) <= limit else text[:limit] + "..."
-
-
-def usage_of(raw: Any) -> str | None:
-    """Best-effort token usage, whatever the provider calls it."""
-    meta = getattr(raw, "usage_metadata", None) or getattr(raw, "usage", None)
-    if meta is None:
-        return None
-    fields = (
-        ("prompt_token_count", "input_tokens", "prompt_tokens"),
-        ("candidates_token_count", "output_tokens", "completion_tokens"),
-        ("total_token_count", "total_tokens"),
-    )
-    labels = ("in", "out", "total")
-    parts = []
-    for label, names in zip(labels, fields):
-        for name in names:
-            value = getattr(meta, name, None)
-            if value is not None:
-                parts.append(f"{label}={value}")
-                break
-    return "  ".join(parts) or None

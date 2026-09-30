@@ -5,13 +5,21 @@ Command line for the AI service until the HTTP API exists (Phase 1).
     python -m kirana_ai.cli ingest --recreate   # drop the collection first
     python -m kirana_ai.cli ask "Can I return opened rice?"
     python -m kirana_ai.cli ask -t "..."        # print every step: prompts, filters, hits
-    python -m kirana_ai.cli chat                # interactive, one question at a time
+    python -m kirana_ai.cli chat --user 7       # a saved conversation (Postgres), with history
+    python -m kirana_ai.cli chat --user 7 --thread <id>   # continue one
+    python -m kirana_ai.cli threads --user 7    # list a shopper's threads
+
+`ask` is stateless and touches no database. `chat` is the real turn: history,
+thread and messages in Postgres, every LLM call recorded in ai.llm_calls.
 """
 import argparse
 import uuid
 from datetime import datetime, timezone
 
-from kirana_ai import agent, chunker, config, embeddings, loader, sparse, trace, vector_store
+import uuid as uuid_mod
+
+from kirana_ai import agent, chat, chunker, config, embeddings, loader, sparse, trace, vector_store
+from kirana_ai.llm import get_adapter
 
 
 def ingest(recreate: bool) -> None:
@@ -46,9 +54,7 @@ def ingest(recreate: bool) -> None:
     print(f"Collection:       {config.COLLECTION_NAME} @ {config.QDRANT_URL}")
 
 
-def _print_answer(question: str) -> None:
-    chunks, final_answer, steps = agent.answer(question)
-
+def _print_steps(steps: list[dict]) -> None:
     if steps:
         print("\nTOOL CALLS:")
         for i, step in enumerate(steps, 1):
@@ -57,6 +63,11 @@ def _print_answer(question: str) -> None:
             print(f"  [{i}] {step['tool']}{query}")
             print(f"      filters: tenant={config.TENANT_ID}{', ' + where if where else ''}")
             print(f"      results: {step['count']}")
+
+
+def _print_answer(question: str) -> None:
+    chunks, final_answer, steps = agent.answer(question)
+    _print_steps(steps)
 
     if chunks:
         print("\nCHUNKS SEEN:")
@@ -68,6 +79,38 @@ def _print_answer(question: str) -> None:
     print(final_answer)
 
 
+def _chat(user_id: int, thread_id: uuid_mod.UUID | None) -> None:
+    llm = get_adapter()                     # one adapter for the session; a recorder per turn
+    print(f"Kirana assistant ({llm.provider} / {llm.model}), shopper {user_id}, "
+          f"history {config.HISTORY_TURNS} turn(s). Ask a question, or 'exit' to quit.")
+    while True:
+        question = input("\n> ").strip()
+        if question.lower() in {"exit", "quit", ""}:
+            break
+        try:
+            result = chat.send(user_id, question, thread_id=thread_id, llm=llm)
+        except chat.ThreadNotFound:
+            print(f"No thread {thread_id} for shopper {user_id}.")
+            return
+        thread_id = result.thread_id
+        _print_steps(result.steps)
+        print(f"\n{result.reply}")
+        if result.citations:
+            print("\ncitations: " + ", ".join(c["source"] for c in result.citations))
+        u = result.usage
+        print(f"\n[thread {thread_id}]  {u['llm_calls']} LLM call(s), "
+              f"{u['input_tokens']} in / {u['output_tokens']} out tokens, "
+              f"{u['latency_ms']} ms, cost {chat.total_cost(u)}")
+
+
+def _threads(user_id: int) -> None:
+    threads = chat.list_threads(user_id)
+    if not threads:
+        print(f"No threads for shopper {user_id}.")
+    for t in threads:
+        print(f"{t.id}  {t.updated_at:%Y-%m-%d %H:%M}  {t.title}")
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="kirana_ai.cli", description=__doc__,
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -77,10 +120,17 @@ def main() -> None:
     p_ingest.add_argument("--recreate", action="store_true",
                           help="drop the collection first (removes chunks of deleted files)")
 
-    for name, help_text in (("ask", "answer one question"), ("chat", "interactive loop")):
+    p_threads = sub.add_parser("threads", help="list a shopper's threads")
+    p_threads.add_argument("--user", type=int, required=True, help="Kirana user id")
+
+    for name, help_text in (("ask", "answer one question (stateless)"),
+                            ("chat", "saved conversation with history")):
         p = sub.add_parser(name, help=help_text)
         if name == "ask":
             p.add_argument("question")
+        else:
+            p.add_argument("--user", type=int, required=True, help="Kirana user id (owns the thread)")
+            p.add_argument("--thread", type=uuid_mod.UUID, help="continue this thread")
         p.add_argument("-t", "--trace", action="store_true",
                        help="print every step: prompts, embeddings, filters, results")
         p.add_argument("--trace-full", action="store_true",
@@ -91,6 +141,9 @@ def main() -> None:
     if args.command == "ingest":
         ingest(args.recreate)
         return
+    if args.command == "threads":
+        _threads(args.user)
+        return
 
     if args.trace or args.trace_full:
         trace.enable(True, full=args.trace_full)
@@ -98,14 +151,7 @@ def main() -> None:
     if args.command == "ask":
         _print_answer(args.question)
         return
-
-    print(f"Kirana assistant ({config.LLM_PROVIDER} / {config.GENERATION_MODEL}). "
-          "Ask a question, or 'exit' to quit.")
-    while True:
-        question = input("\n> ").strip()
-        if question.lower() in {"exit", "quit", ""}:
-            break
-        _print_answer(question)
+    _chat(args.user, args.thread)
 
 
 if __name__ == "__main__":

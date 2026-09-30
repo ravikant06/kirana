@@ -1,0 +1,16 @@
+# LLM prices, in USD per 1 million tokens, used to compute ai.llm_calls.cost_usd.
+#
+# Copy them from the provider's pricing page and note the date you checked:
+# prices change, and each llm_calls row freezes the price that applied at call time.
+#
+# A model missing here, or with a null price, is recorded with cost_usd = NULL,
+# which means "unknown", never "free". Thinking tokens are billed as output.
+#
+# These are the Paid tier, Standard prices. On the Free tier the calls cost nothing,
+# so cost_usd then shows what the same traffic would cost once you pay for it.
+checked_on: 2026-09-30   # ai.google.dev/gemini-api/docs/pricing
+
+models:
+  gemini-3.5-flash:
+    input_per_mtok: 1.50
+    output_per_mtok: 9.00    # includes thinking tokens

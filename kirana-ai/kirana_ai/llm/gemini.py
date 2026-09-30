@@ -21,7 +21,7 @@ from google.genai import types
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMResponse, Message, Role, ToolCall, ToolSpec
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
 
 _SCHEMA_KEYS = ("description", "enum", "required")
 
@@ -130,7 +130,7 @@ class GeminiAdapter(LLMAdapter):
                 config=types.GenerateContentConfig(**config_kwargs),
             )
         except Exception as exc:
-            raise SystemExit(f"Gemini call failed: {exc}") from exc
+            raise LLMError(f"Gemini call failed: {exc}") from exc
 
         parts = (response.candidates[0].content.parts or []) if response.candidates else []
         calls = tuple(
@@ -144,4 +144,14 @@ class GeminiAdapter(LLMAdapter):
             if p.function_call
         )
         text = None if calls else (response.text or None)
-        return LLMResponse(text=text, tool_calls=calls, raw=response)
+        return LLMResponse(text=text, tool_calls=calls, usage=_usage(response), raw=response)
+
+
+def _usage(response: Any) -> Usage | None:
+    meta = getattr(response, "usage_metadata", None)
+    if meta is None:
+        return None
+    output = meta.candidates_token_count
+    if meta.thoughts_token_count:          # billed as output, never shown
+        output = (output or 0) + meta.thoughts_token_count
+    return Usage(input_tokens=meta.prompt_token_count, output_tokens=output)

@@ -12,7 +12,7 @@ from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMResponse, Message, Role, ToolCall, ToolSpec
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
 
 
 @register
@@ -91,11 +91,17 @@ class OpenAIAdapter(LLMAdapter):
         try:
             response = self._client.chat.completions.create(**kwargs)
         except Exception as exc:
-            raise SystemExit(f"OpenAI call failed: {exc}") from exc
+            raise LLMError(f"OpenAI call failed: {exc}") from exc
 
         choice = response.choices[0].message
         calls = tuple(
             ToolCall(id=c.id, name=c.function.name, arguments=json.loads(c.function.arguments or "{}"))
             for c in (choice.tool_calls or [])
         )
-        return LLMResponse(text=None if calls else choice.content, tool_calls=calls, raw=response)
+        usage = None
+        if response.usage is not None:
+            # completion_tokens already includes any reasoning tokens.
+            usage = Usage(input_tokens=response.usage.prompt_tokens,
+                          output_tokens=response.usage.completion_tokens)
+        return LLMResponse(text=None if calls else choice.content, tool_calls=calls,
+                           usage=usage, raw=response)

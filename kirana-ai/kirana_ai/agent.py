@@ -19,6 +19,8 @@ Two deliberate design choices:
     filter silently hides the right answer, so the filters must be visible
     to whoever is reading the output.
 """
+from collections.abc import Sequence
+
 from kirana_ai import config, embeddings, filters, sparse, trace, vector_store
 from kirana_ai.llm import Message, ToolResult, ToolSpec, get_adapter
 
@@ -172,12 +174,18 @@ def _list_payload(documents: list[dict]) -> dict:
 
 def answer(
     question: str,
+    history: Sequence[Message] = (),
     top_k: int = config.TOP_K,
     tenant_id: str | None = None,
     llm=None,
 ) -> tuple[list[dict], str, list[dict]]:
     """
     Agentic RAG. Returns (chunks_seen, final_answer, steps).
+
+    `history` is the earlier turns of the conversation, as plain user and
+    assistant text (AD11). The model is stateless: it knows about "the rice"
+    in a follow-up only because the earlier turns are sent again, in full,
+    on every call — which is why each turn costs more input tokens than the last.
 
     `llm` is injected for testability and provider choice; it defaults to
     whatever config.LLM_PROVIDER selects.
@@ -188,12 +196,13 @@ def answer(
     trace.reset()
     trace.section("QUERY RECEIVED")
     trace.kv("question", repr(question))
+    trace.kv("history", f"{len(history)} earlier message(s)")
     trace.kv("tenant", tenant_id)
     trace.kv("top_k", top_k)
     trace.kv("provider", getattr(llm, "provider", "?"))
     trace.kv("max search rounds", MAX_STEPS)
 
-    messages: list[Message] = [Message.user(question)]
+    messages: list[Message] = [*history, Message.user(question)]
     seen: dict[str, dict] = {}   # chunk_id -> chunk, deduped across searches
     steps: list[dict] = []
 

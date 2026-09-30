@@ -12,12 +12,15 @@ Adding a provider means adding one module here and decorating the class with
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import available, get_adapter, register
 from kirana_ai.llm.types import (
+    CallRecord,
+    LLMError,
     LLMResponse,
     Message,
     Role,
     ToolCall,
     ToolResult,
     ToolSpec,
+    Usage,
 )
 
 # Importing the concrete adapters is what populates the registry. Their SDK
@@ -26,7 +29,7 @@ from kirana_ai.llm.types import (
 from kirana_ai.llm import anthropic, gemini, openai  # noqa: E402,F401  (side-effect: registration)
 
 __all__ = [
-    "LLMAdapter", "LLMResponse", "Message", "Role",
-    "ToolCall", "ToolResult", "ToolSpec",
+    "CallRecord", "LLMAdapter", "LLMError", "LLMResponse", "Message", "Role",
+    "ToolCall", "ToolResult", "ToolSpec", "Usage",
     "available", "get_adapter", "register",
 ]

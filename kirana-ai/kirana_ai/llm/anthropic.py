@@ -12,7 +12,7 @@ from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMResponse, Message, Role, ToolCall, ToolSpec
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
 
 MAX_TOKENS = 2048
 
@@ -87,7 +87,7 @@ class AnthropicAdapter(LLMAdapter):
         try:
             response = self._client.messages.create(**kwargs)
         except Exception as exc:
-            raise SystemExit(f"Anthropic call failed: {exc}") from exc
+            raise LLMError(f"Anthropic call failed: {exc}") from exc
 
         calls = tuple(
             ToolCall(id=b.id, name=b.name, arguments=dict(b.input or {}))
@@ -95,4 +95,7 @@ class AnthropicAdapter(LLMAdapter):
             if b.type == "tool_use"
         )
         text = next((b.text for b in response.content if b.type == "text"), None)
-        return LLMResponse(text=None if calls else text, tool_calls=calls, raw=response)
+        usage = Usage(input_tokens=response.usage.input_tokens,
+                      output_tokens=response.usage.output_tokens)
+        return LLMResponse(text=None if calls else text, tool_calls=calls,
+                           usage=usage, raw=response)

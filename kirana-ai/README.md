@@ -27,7 +27,8 @@ alembic upgrade head
 python -m kirana_ai.cli ingest
 python -m kirana_ai.cli ask "Can I return opened rice?"
 python -m kirana_ai.cli ask -t "..."            # trace every step
-python -m kirana_ai.cli chat                    # interactive
+python -m kirana_ai.cli chat --user 7           # saved conversation, with history
+python -m kirana_ai.cli threads --user 7        # that shopper's threads
 
 # 5. Measure and test
 python -m eval.run_retrieval --compare          # dense vs hybrid recall@k
@@ -41,7 +42,9 @@ pytest                                          # no API key needed; DB tests ne
 | `kirana_ai/llm/` | LLM adapter: Gemini, OpenAI, Anthropic behind one interface |
 | `kirana_ai/agent.py` | Agent loop and tools (`search_docs`, `list_documents`) |
 | `kirana_ai/{loader,chunker,embeddings,sparse,vector_store,filters}.py` | Ingestion and retrieval |
-| `kirana_ai/cli.py` | `ingest`, `ask`, `chat` |
+| `kirana_ai/chat.py` | One chat turn: thread, history, agent, saved messages |
+| `kirana_ai/usage.py` | One `ai.llm_calls` row per LLM call, with cost from `pricing.yaml` |
+| `kirana_ai/cli.py` | `ingest`, `ask`, `chat`, `threads` |
 | `kirana_ai/db/` | SQLAlchemy models and sessions (schema `ai`) |
 | `migrations/` | Alembic migrations (owns schema `ai`) |
 | `kb/seed/` | Seed store policies |

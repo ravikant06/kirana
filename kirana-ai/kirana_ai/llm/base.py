@@ -12,12 +12,19 @@ different shape, so they would get their own `EmbeddingAdapter` rather than
 being bolted on here.
 """
 import json
+import logging
+import time
 from abc import ABC, abstractmethod
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from typing import ClassVar
 
 from kirana_ai import trace
-from kirana_ai.llm.types import LLMResponse, Message, Role, ToolSpec
+from kirana_ai.llm.types import CallRecord, LLMError, LLMResponse, Message, Role, ToolSpec
+
+log = logging.getLogger(__name__)
+
+#: Called once per LLM call, success or failure. See LLMAdapter.add_listener.
+CallListener = Callable[[CallRecord], None]
 
 
 class LLMAdapter(ABC):
@@ -29,6 +36,19 @@ class LLMAdapter(ABC):
     def __init__(self, model: str, api_key: str) -> None:
         self.model = model
         self.api_key = api_key
+        self._listeners: list[CallListener] = []
+
+    def add_listener(self, listener: CallListener) -> None:
+        """
+        Observe every call: provider, model, tokens, latency, success or error.
+
+        This is how cost recording plugs in (kirana_ai/usage.py) without the
+        LLM layer knowing anything about the database.
+        """
+        self._listeners.append(listener)
+
+    def remove_listener(self, listener: CallListener) -> None:
+        self._listeners.remove(listener)
 
     def complete(
         self,
@@ -38,11 +58,39 @@ class LLMAdapter(ABC):
         system: str | None = None,
     ) -> LLMResponse:
         """
-        Template Method: trace the call, delegate translation to _complete().
+        Template Method: time and trace the call, delegate translation to _complete().
 
-        Every adapter gets identical logging for free, and the tracing code
-        lives in one place rather than being copied per provider.
+        Every adapter gets identical timing, tracing and call records for free,
+        and that code lives in one place rather than being copied per provider.
+        A failed call is reported to listeners too: it may still have cost money.
         """
+        start = time.perf_counter()
+        try:
+            reply = self._traced_complete(messages, tools=tools, system=system)
+        except LLMError as exc:
+            self._notify(CallRecord(provider=self.provider, model=self.model, ok=False,
+                                    latency_ms=_ms_since(start), error=str(exc)))
+            raise
+        self._notify(CallRecord(provider=self.provider, model=self.model, ok=True,
+                                latency_ms=_ms_since(start), usage=reply.usage))
+        return reply
+
+    def _notify(self, record: CallRecord) -> None:
+        # Observability must never break the thing it observes: a listener that
+        # fails is logged, and the chat carries on.
+        for listener in self._listeners:
+            try:
+                listener(record)
+            except Exception:
+                log.exception("LLM call listener failed")
+
+    def _traced_complete(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> LLMResponse:
         if not trace.is_on():
             return self._complete(messages, tools=tools, system=system)
 
@@ -85,9 +133,8 @@ class LLMAdapter(ABC):
             trace.result("text answer", elapsed[0])
             trace.body("  answer", reply.text or "", limit=700)
 
-        usage = trace.usage_of(reply.raw)
-        if usage:
-            trace.kv("tokens", usage)
+        if reply.usage:
+            trace.kv("tokens", f"in={reply.usage.input_tokens}  out={reply.usage.output_tokens}")
         return reply
 
     @staticmethod
@@ -153,3 +200,7 @@ class LLMAdapter(ABC):
 
     def __repr__(self) -> str:  # pragma: no cover - debugging aid
         return f"<{type(self).__name__} model={self.model!r}>"
+
+
+def _ms_since(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)

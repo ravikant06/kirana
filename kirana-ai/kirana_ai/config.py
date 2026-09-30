@@ -67,6 +67,9 @@ BM25_K1 = float(os.getenv("BM25_K1", "1.5"))
 BM25_B = float(os.getenv("BM25_B", "0.75"))
 
 # --- RAG knobs ---
+# Conversation turns (user + assistant pairs) resent to the model on each turn.
+# 0 turns history off, for the "is it really stateless?" experiment.
+HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "10"))
 TOP_K = int(os.getenv("TOP_K", "4"))                     # how many chunks to retrieve
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))         # characters per chunk
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "150"))   # characters shared between neighbours

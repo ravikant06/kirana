@@ -44,6 +44,7 @@ the assistant has a real problem that needs it.
 | No relevance floor (G2); no reranker (G4) | Confident wrong answers | 3, 4 |
 | Retrieval evals only, no answer-quality evals (G3) | Measuring answers | 3, 9 |
 | Embeddings are Gemini-only (G6) | Model migration | 12 |
+| Embedding calls are not costed: the Gemini API returns no usage for them (checked: `metadata` and `statistics` are `None`). Under 1% of a turn's tokens today | Complete cost attribution | 11 (estimate, or reconcile with billing), 12 (`EmbeddingAdapter`) |
 | No budgets or timeouts (G7) | Production safety | 11 |
 
 ### Kirana facts that shape this plan
@@ -177,6 +178,8 @@ question with sources; `pytest` passes; the retrieval eval runs.
 ---
 
 ### Phase 1: Integrate: "Ask Kirana" chat (1–2 sessions) ← the fast path
+
+Progress: ✅ M1 database (schema `ai`, 3 tables) · ✅ M2 history + LLM-call recording (CLI `chat`) · M3 FastAPI · M4 chat panel in Kirana
 
 **Build**
 - `POST /ai/v1/chat` `{thread_id?, message}` → `{thread_id, message_id, reply, citations, steps}`

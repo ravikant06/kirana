@@ -10,6 +10,7 @@ dependencies = [
     "sqlalchemy>=2.0.30",
     "alembic>=1.13",
     "psycopg[binary]>=3.2",
+    "pyyaml>=6.0",
 ]
 
 [project.optional-dependencies]
