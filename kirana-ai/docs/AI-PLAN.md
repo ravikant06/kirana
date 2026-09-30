@@ -529,7 +529,7 @@ that Ravi has approved on purpose. A note in `CLAUDE.md` should say so (AD9).
 
 ## 6. Decisions
 
-Settled by Ravi: two separate repos; a shared frontend (Kirana's); Postgres for AI metadata;
+Settled by Ravi: two separate services (one repo, see AD1); a shared frontend (Kirana's); Postgres for AI metadata;
 MinIO for files; Redis for events now, Kafka later; auth added when it is first needed.
 
 Open (proposed default first):
@@ -537,12 +537,14 @@ Open (proposed default first):
 | # | Decision | Default proposed | Alternatives |
 |---|---|---|---|
 | ~~AD1~~ | AI repo name and layout | **Settled:** `kirana/kirana-ai/`, fresh copy, flat package; rag-project untouched | — |
-| AD2 | Python DB access and migrations | psycopg 3 + raw SQL, Alembic for migrations | SQLAlchemy ORM; plain numbered SQL files |
+| ~~AD2~~ | Python DB access and migrations | **Settled:** SQLAlchemy 2.0 ORM + Alembic. SQL echo logging on in dev, so the queries stay visible | — |
 | AD3 | Where the ingest queue lives | A **second Redis container** (`redis-queue`, AOF on, `noeviction`) | Same Redis with a changed eviction policy (hurts the cache); accept loss + `reindex` |
 | AD4 | What triggers ingestion | **MinIO bucket notification → Redis list** (if the fork supports it) | AI service pushes the event itself when the upload is confirmed |
 | AD5 | Who owns KB documents | **The AI service** (upload policy, `ai.documents`, admin API) | Kirana backend owns them and publishes events |
 | AD6 | Add `category` to products | Yes, in Phase 4 (small V4 migration) | Price filter only |
 | AD7 | Login style in Phase 5 | **Dev login** (pick a user, get a real RS256 JWT); passwords later | Email + password (bcrypt) from the start |
 | AD8 | Idempotency in Phase 6 | Minimal key store now; Kirana Stage 7 generalises it | Wait for Stage 7 |
-| AD9 | Mark AI-track Kirana work in `CLAUDE.md` | Yes, a short "AI track" section pointing here | Keep it separate |
+| ~~AD9~~ | Mark AI-track Kirana work in `CLAUDE.md` | **Settled:** yes, an "AI track" section in the root `CLAUDE.md` | — |
+| ~~AD11~~ | What history each turn resends | **Settled:** text only (user messages + final answers); tool calls and chunks are stored for display but not resent. Provider-neutral, cheaper; follow-ups search again | — |
+| ~~AD12~~ | Thread ownership before login | **Settled:** `X-User-Id` required (400 without), like the cart; replaced by the JWT `sub` in Phase 5 | — |
 | AD10 | Default LLM | Gemini (as now) for generation and embeddings; Claude as the fallback in Phase 11 | Claude or OpenAI primary |

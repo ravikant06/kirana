@@ -101,6 +101,17 @@ Do not add caching, locking, retries, messaging, indexes beyond the schema, or n
 infrastructure before the stage that introduces it. Some gaps are deliberate: they
 are the problems later stages solve.
 
+## AI track (parallel, separate plan)
+
+`kirana-ai/` is the AI assistant, a separate Python service with its own phases in
+`kirana-ai/docs/AI-PLAN.md` and its own `kirana-ai/CLAUDE.md`. It runs in parallel with
+the stages above and does not follow them.
+
+The Kirana-side changes listed for each AI phase (section 5 of `AI-PLAN.md`: frontend
+chat panel, the `ai` Postgres schema, product events, JWT login, and so on) are approved
+by Ravi and are **not** "jumping ahead". Build them when that AI phase is current, and
+keep them to what the phase lists. Everything else in this file still applies to them.
+
 ## After each milestone
 
 - Tell Ravi what to run and what to expect (log lines, curl commands, UI behaviour).

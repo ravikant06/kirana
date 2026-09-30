@@ -29,6 +29,16 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 QDRANT_URL = os.getenv("QDRANT_URL", "http://localhost:6335")
 COLLECTION_NAME = os.getenv("COLLECTION_NAME", "kirana_kb")
 
+# --- Postgres (schema `ai`, role `kirana_ai`; see infra/seed/ai-schema.sql) ---
+# Same Postgres instance as Kirana, but our own login role, which can reach only
+# schema `ai`. Kirana's tables are off limits by permission, not by convention.
+DATABASE_URL = os.getenv(
+    "DATABASE_URL", "postgresql+psycopg://kirana_ai:kirana_ai@localhost:5432/kirana"
+)
+# Log every SQL statement, like Kirana's SQL logging. The ORM writes the SQL for
+# us, so this is how we keep seeing what it actually runs.
+SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() in {"1", "true", "yes"}
+
 # --- Tenancy ---
 # Kirana is single-tenant, but every chunk is still stamped and every search
 # still scoped. The rule "scope is injected by the server, never chosen by the

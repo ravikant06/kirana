@@ -28,7 +28,9 @@ the agent loop with a bounded budget, the LLM adapter pattern, hybrid BM25 + den
       agent.py        agent loop + tool specs
       loader.py, chunker.py, embeddings.py, sparse.py, vector_store.py, filters.py
       cli.py          ingest / ask / chat, until the HTTP API exists
+      db/             SQLAlchemy models + session_scope()
       config.py       every tunable, overridable by env / .env
+    migrations/       Alembic (schema `ai`)
     kb/seed/          seed knowledge base (Phase 0–1; MinIO from Phase 2)
     eval/             retrieval eval: golden sets, recall@k, MRR, bootstrap CIs
     tests/            pytest, offline only (FakeAdapter, no network)
@@ -46,14 +48,19 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
 - **Scope and identity are injected by the server, never tool parameters.**
 - **Embed descriptions, fetch live facts.** Price, stock and order status never go in Qdrant.
 - **The AI service never reads Kirana's tables.** Kirana data comes over REST only.
-- Tests are offline. Anything that needs Qdrant or an API key is an eval or a manual run, not a test.
+- Tests need no network and no API key. Postgres tests use Testcontainers (Docker), like
+  Kirana's. Anything that needs Qdrant or an LLM is an eval or a manual run, not a test.
+- **Database:** SQLAlchemy 2.0 ORM (AD2), everything in schema `ai`, role `kirana_ai`.
+  Alembic owns the schema; migrations are hand-written SQL. `test_db.py` checks models
+  and migrations agree. Relationships are `lazy="raise"`. Enums are VARCHAR + CHECK.
+  Never hold a DB transaction open across an LLM call.
 - Keep the module docstring style: say *why*, not just what.
 
 ## Current phase
 
 **Phase 0: done** (engine copied, Kirana seed corpus, Qdrant in compose, CLI, retrieval
 eval, offline tests). **Next: Phase 1** (FastAPI chat API + chat panel in Kirana's
-frontend). Phase 1 needs decision AD2 (Python DB access) first.
+frontend). Phase 1 decisions are settled: AD2 (SQLAlchemy + Alembic), AD11 (text-only history), AD12 (X-User-Id owns threads).
 
 Only the current phase is in scope. Gaps listed in the plan (no deletes, no relevance
 floor, no streaming…) are deliberate: later phases fix them.

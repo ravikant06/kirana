@@ -7,20 +7,23 @@ dependencies = [
     "google-genai>=1.30.0",
     "qdrant-client>=1.12.0",
     "python-dotenv>=1.0.0",
+    "sqlalchemy>=2.0.30",
+    "alembic>=1.13",
+    "psycopg[binary]>=3.2",
 ]
 
 [project.optional-dependencies]
 # Other LLM providers, only needed when LLM_PROVIDER selects them.
 openai = ["openai>=1.40"]
 anthropic = ["anthropic>=0.40"]
-dev = ["pytest>=8"]
+dev = ["pytest>=8", "testcontainers[postgres]>=4.8"]
 
 [build-system]
 requires = ["setuptools>=68"]
 build-backend = "setuptools.build_meta"
 
 [tool.setuptools]
-packages = ["kirana_ai", "kirana_ai.llm"]
+packages = ["kirana_ai", "kirana_ai.llm", "kirana_ai.db"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
