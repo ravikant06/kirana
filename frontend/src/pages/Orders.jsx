@@ -2,9 +2,40 @@ import { useEffect, useState } from 'react'
 import { api, money, when } from '../api.js'
 import { useLoad } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
+import { usePayment } from '../components/PaymentModal.jsx'
 
-export default function Orders({ userId, highlight }) {
-  const { data, error, loading } = useLoad(() => (userId ? api.orders.list() : Promise.resolve(null)), [userId])
+// What each status means to a shopper.
+const STATUS_LABEL = { CREATED: 'Awaiting payment', PAID: 'Paid', CANCELLED: 'Cancelled', FAILED: 'Not paid' }
+
+export default function Orders({ userId, highlight, notify }) {
+  const { data, error, loading, reload } = useLoad(() => (userId ? api.orders.list() : Promise.resolve(null)), [userId])
+  const [busy, setBusy] = useState(null)
+  const payment = usePayment({ notify, onDone: () => reload() })
+
+  const payNow = async (o) => {
+    setBusy(o.id)
+    try {
+      payment.start(await api.orders.pay(o.id))
+    } catch (e) {
+      notify(e.message, 'error')
+      reload()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const cancel = async (o) => {
+    setBusy(o.id)
+    try {
+      await api.orders.cancel(o.id)
+      notify(`Order #${o.id} cancelled; its items are back on the shelf`)
+    } catch (e) {
+      notify(e.message, 'error')
+    } finally {
+      setBusy(null)
+      reload()
+    }
+  }
   const [open, setOpen] = useState(highlight ?? null)
   useEffect(() => setOpen(highlight ?? null), [highlight])
 
@@ -20,6 +51,7 @@ export default function Orders({ userId, highlight }) {
   const orders = data || []
   return (
     <section>
+      {payment.modal}
       <header className="page-head">
         <h1>Your orders</h1>
       </header>
@@ -37,10 +69,22 @@ export default function Orders({ userId, highlight }) {
             <button className="order-row" onClick={() => setOpen(open === o.id ? null : o.id)} aria-expanded={open === o.id}>
               <span className="order-id">#{o.id}</span>
               <span className="order-when">{when(o.createdAt)}</span>
-              <span className={`badge badge-${String(o.status || '').toLowerCase()}`}>{o.status}</span>
+              <span className={`badge badge-${String(o.status || '').toLowerCase()}`}>{STATUS_LABEL[o.status] || o.status}</span>
               <span className="order-count">{o.items?.length ?? 0} items</span>
               <strong className="order-total">{money(o.total)}</strong>
             </button>
+            {o.status === 'CREATED' && (
+              <div className="order-pay">
+                <span className="muted">
+                  {o.paymentDueAt ? `Items held until ${when(o.paymentDueAt)}.` : 'Awaiting payment.'}
+                </span>
+                <button className="btn" disabled={busy === o.id} onClick={() => payNow(o)}>Pay now</button>
+                <button className="btn-quiet" disabled={busy === o.id} onClick={() => cancel(o)}>Cancel order</button>
+              </div>
+            )}
+            {(o.status === 'CANCELLED' || o.status === 'FAILED') && o.closedReason && (
+              <div className="order-pay"><span className="muted">{o.closedReason}</span></div>
+            )}
             {open === o.id && (
               <table className="order-items">
                 <thead>

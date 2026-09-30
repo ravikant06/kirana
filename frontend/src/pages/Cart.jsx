@@ -3,11 +3,17 @@ import { api, money } from '../api.js'
 import { useLoad } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
+import { usePayment } from '../components/PaymentModal.jsx'
 
 export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop }) {
   const { data: cart, error, loading, reload } = useLoad(() => (userId ? api.cart.get() : Promise.resolve(null)), [userId])
   const [busy, setBusy] = useState(false)
   const [orderError, setOrderError] = useState(null)
+  const providers = useLoad(() => api.payments.providers(), [])
+  const [provider, setProvider] = useState(null)
+  const available = (providers.data || []).filter((p) => p.available)
+  const chosen = provider ?? available.find((p) => p.isDefault)?.id ?? available[0]?.id
+  const payment = usePayment({ notify, onDone: (orderId) => onOrdered(orderId) })
 
   const run = async (fn) => {
     setBusy(true)
@@ -26,10 +32,14 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
     setBusy(true)
     setOrderError(null)
     try {
-      const order = await api.orders.place()
+      const { order, payment: session, paymentProblem } = await api.orders.place(chosen)
       onCartChanged()
-      notify(`Order #${order.id} placed`)
-      onOrdered(order.id)
+      if (session) {
+        payment.start(session) // stock is held; the gateway's checkout opens
+      } else {
+        notify(paymentProblem || `Order #${order.id} placed; pay for it from Orders.`, 'error')
+        onOrdered(order.id)
+      }
     } catch (e) {
       setOrderError(e)
       await reload()
@@ -51,6 +61,7 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
 
   return (
     <section>
+      {payment.modal}
       <header className="page-head">
         <h1>Your cart</h1>
       </header>
@@ -88,10 +99,29 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
               <span>Total</span>
               <strong>{money(cart.total)}</strong>
             </div>
+            {available.length > 0 && (
+              <fieldset className="pay-choice">
+                <legend>Pay with</legend>
+                {(providers.data || []).map((p) => (
+                  <label key={p.id} className={p.available ? '' : 'is-disabled'}>
+                    <input
+                      type="radio"
+                      name="payment-provider"
+                      value={p.id}
+                      checked={chosen === p.id}
+                      disabled={!p.available}
+                      onChange={() => setProvider(p.id)}
+                    />
+                    <span>{p.label}{!p.available && ' (not configured)'}</span>
+                  </label>
+                ))}
+              </fieldset>
+            )}
             {orderError && <Problem error={orderError} compact />}
             <button className="btn btn-big" disabled={busy} onClick={placeOrder}>
-              {busy ? 'Working…' : 'Place order'}
+              {busy ? 'Working…' : 'Place order and pay'}
             </button>
+            <p className="muted pay-note">Your items are held for 10 minutes while you pay.</p>
           </div>
         </div>
       )}

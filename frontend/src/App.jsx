@@ -157,7 +157,7 @@ export default function App() {
         {view.name === 'cart' && (
           <Cart userId={userId} onCartChanged={refreshCart} onOrdered={(id) => go('orders', { highlight: id })} notify={notify} goShop={() => go('shop')} />
         )}
-        {view.name === 'orders' && <Orders userId={userId} highlight={view.highlight} />}
+        {view.name === 'orders' && <Orders userId={userId} highlight={view.highlight} notify={notify} />}
         {view.name === 'manage' && <Manage notify={notify} users={users} onUsersChanged={loadUsers} />}
       </main>
 

@@ -215,8 +215,15 @@ export const api = {
     addToCart: (userId, productId) => request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true }),
     checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true }),
   },
+  payments: {
+    providers: () => request('GET', '/payments/providers'),
+  },
   orders: {
-    place: () => request('POST', '/orders'),
+    // Stage 5: returns { order, payment, paymentProblem }. payment opens the gateway checkout.
+    place: (paymentProvider) => request('POST', '/orders', paymentProvider ? { paymentProvider } : undefined),
+    pay: (id) => request('POST', `/orders/${q(id)}/payment`),
+    verify: (id, body) => request('POST', `/orders/${q(id)}/payment/verify`, body),
+    cancel: (id) => request('POST', `/orders/${q(id)}/cancel`),
     list: () => request('GET', '/orders'),
     get: (id) => request('GET', `/orders/${q(id)}`),
   },
