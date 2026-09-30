@@ -13,7 +13,8 @@ public final class OrderMapper {
     /** Touches order.getItems(): a lazy collection. Needs an open session (experiment 4). */
     public static OrderResponse toResponse(Order order) {
         return new OrderResponse(order.getId(), order.getStatus(), order.getTotal(), order.getCreatedAt(),
-                order.getItems().stream().map(OrderMapper::toItem).toList());
+                order.getItems().stream().map(OrderMapper::toItem).toList(),
+                order.getPaymentProvider(), order.getPaymentDueAt(), order.getPaidAt(), order.getClosedReason());
     }
 
     private static OrderItemResponse toItem(OrderItem item) {

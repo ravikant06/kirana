@@ -58,6 +58,15 @@ services:
       timeout: 3s
       retries: 10
 
+  payment-mock:
+    # Stage 5: a Razorpay-shaped test gateway that can be made slow, down or flaky.
+    build: ../payment-mock
+    environment:
+      MOCK_KEY_ID: rzp_test_kiranamock
+      MOCK_KEY_SECRET: kirana-mock-secret
+    ports:
+      - "8090:8090"   # API + hosted checkout page: http://localhost:8090/docs
+
   qdrant:
     # AI track (kirana-ai/): vector store for the assistant's knowledge base.
     # Pinned: Qdrant upgrades its on-disk format in place, and an older image may not

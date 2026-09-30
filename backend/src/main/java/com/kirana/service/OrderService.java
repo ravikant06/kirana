@@ -1,5 +1,6 @@
 package com.kirana.service;
 
+import java.time.Duration;
 import java.time.Instant;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
@@ -7,6 +8,7 @@ import java.util.List;
 import java.util.Map;
 
 import com.kirana.cache.FlashSaleCounter;
+import com.kirana.config.PaymentProperties;
 import com.kirana.dto.OrderResponse;
 import com.kirana.entity.Cart;
 import com.kirana.entity.CartItem;
@@ -35,9 +37,11 @@ public class OrderService {
     private final UserService users;
     private final FlashSaleCounter flashSale;
     private final TransactionTemplate tx;
+    private final Duration paymentWindow;
 
     public OrderService(OrderRepository orders, CartRepository carts, InventoryRepository inventory, UserService users,
-                        FlashSaleCounter flashSale, TransactionTemplate tx) {
+                        FlashSaleCounter flashSale, TransactionTemplate tx, PaymentProperties payment) {
+        this.paymentWindow = payment.window();
         this.orders = orders;
         this.carts = carts;
         this.inventory = inventory;
@@ -109,7 +113,8 @@ public class OrderService {
                 .sorted(Comparator.comparing((CartItem i) -> i.getProduct().getId()))
                 .toList();
 
-        Order order = new Order(user);
+        // Stage 5: stock is held until paymentDueAt; unpaid orders are then released (PaymentJobs).
+        Order order = new Order(user, Instant.now().plus(paymentWindow));
         byProductId.forEach(line -> order.addLine(line.getProduct(), line.getQuantity()));
         orders.save(order);
 

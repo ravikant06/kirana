@@ -4,6 +4,9 @@
 spring:
   application:
     name: kirana
+  config:
+    # Local secrets (Razorpay test keys) live in backend/.env, which git ignores.
+    import: optional:file:.env[.properties]
 
   datasource:
     url: jdbc:postgresql://${DB_HOST:localhost}:${DB_PORT:5432}/${DB_NAME:kirana}
@@ -65,6 +68,25 @@ kirana:
     cart:
       limit: 20
       window: 10s
+  payment:
+    default-provider: mock
+    currency: INR
+    window: 10m             # stock is held this long for payment, then the expiry job releases it
+    reconcile-after: 1m     # unpaid orders older than this are checked with the gateway
+    http:
+      connect-timeout: 2s
+      read-timeout: 5s
+    mock:
+      # payment-mock imitates Razorpay's API (infra/docker-compose.yml). Not real secrets.
+      api-url: ${PAYMENT_MOCK_URL:http://localhost:8090}
+      checkout-url: http://localhost:8090
+      key-id: rzp_test_kiranamock
+      key-secret: kirana-mock-secret
+    razorpay:
+      api-url: https://api.razorpay.com
+      checkout-url:
+      key-id: ${RAZORPAY_KEY_ID:}
+      key-secret: ${RAZORPAY_KEY_SECRET:}
   diagnostics:
     # Stage 2: X-Query-Count / X-DB-Time-Ms headers and one log line per request.
     query-metrics: true

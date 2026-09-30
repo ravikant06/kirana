@@ -49,6 +49,15 @@ public class Order {
     @OrderBy("id")
     private List<OrderItem> items = new ArrayList<>();
 
+    // Stage 5 payment fields. Status changes go through OrderRepository's conditional
+    // transitions (UPDATE ... WHERE status = 'CREATED'), never through setters here.
+    private String paymentProvider;
+    private String gatewayOrderId;
+    private String paymentId;
+    private Instant paymentDueAt;
+    private Instant paidAt;
+    private String closedReason;
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -61,9 +70,10 @@ public class Order {
         // for JPA
     }
 
-    public Order(User user) {
+    public Order(User user, Instant paymentDueAt) {
         this.user = user;
         this.status = OrderStatus.CREATED;
+        this.paymentDueAt = paymentDueAt;
     }
 
     /** Copies name and price from the product as they are now (D2 snapshot). */
@@ -78,6 +88,12 @@ public class Order {
     public OrderStatus getStatus() { return status; }
     public double getTotal() { return total; }
     public List<OrderItem> getItems() { return items; }
+    public String getPaymentProvider() { return paymentProvider; }
+    public String getGatewayOrderId() { return gatewayOrderId; }
+    public String getPaymentId() { return paymentId; }
+    public Instant getPaymentDueAt() { return paymentDueAt; }
+    public Instant getPaidAt() { return paidAt; }
+    public String getClosedReason() { return closedReason; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }
