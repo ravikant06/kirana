@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, setUserId as setApiUser, subscribe } from './api.js'
 import Inspector from './components/Inspector.jsx'
+import ChatDock from './components/chat/ChatDock.jsx'
 import Shop from './pages/Shop.jsx'
 import ProductDetail from './pages/ProductDetail.jsx'
 import Cart from './pages/Cart.jsx'
@@ -161,6 +162,8 @@ export default function App() {
       </main>
 
       <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} />
+
+      <ChatDock userId={userId} userName={userName} inspectorOpen={inspectorOpen} />
 
       {toast && (
         <div className={`toast toast-${toast.kind}`} role="status">

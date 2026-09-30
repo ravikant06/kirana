@@ -179,7 +179,7 @@ question with sources; `pytest` passes; the retrieval eval runs.
 
 ### Phase 1: Integrate: "Ask Kirana" chat (1–2 sessions) ← the fast path
 
-Progress: ✅ M1 database (schema `ai`, 3 tables) · ✅ M2 history + LLM-call recording (CLI `chat`) · ✅ M3 FastAPI · M4 chat panel in Kirana
+Progress: ✅ M1 database (schema `ai`, 3 tables) · ✅ M2 history + LLM-call recording (CLI `chat`) · ✅ M3 FastAPI · ✅ M4 chat panel in Kirana (`frontend/src/components/chat/`)
 
 **Build**
 - `POST /ai/v1/chat` `{thread_id?, message}` → `{thread_id, message_id, reply, citations, steps}`

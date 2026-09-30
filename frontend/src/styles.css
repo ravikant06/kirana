@@ -310,3 +310,10 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .rush-result tr:first-child th, .rush-result tr:first-child td { border-top: 0; }
 .rush-result td:nth-child(2) { font: 800 1.1rem var(--display); font-variant-numeric: tabular-nums; }
 
+
+/* Requests panel: AI service calls (kirana-ai) */
+.req-svc { font-family: var(--mono); font-size: 0.68rem; font-weight: 600; letter-spacing: 0.04em; background: var(--marigold); color: var(--ink); padding: 1px 5px; border-radius: 4px; margin-right: 6px; vertical-align: 1px; }
+.req-ai { color: var(--marigold); }
+.req-steps { margin: 0 0 10px; padding-left: 20px; font-size: 0.84rem; color: var(--panel-ink); display: grid; gap: 4px; }
+.req-where { color: var(--panel-muted); }
+.req-hits { color: var(--marigold); }

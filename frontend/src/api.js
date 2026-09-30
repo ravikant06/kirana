@@ -37,7 +37,9 @@ export class ApiError extends Error {
 // opts.userId: act as a different shopper for this call (the rush simulator uses it).
 // opts.quiet:  leave it out of the Requests panel (background polling).
 // opts.meta:   never throw; return { ok, status, data, queries, ms } instead.
+// opts.service: 'ai' sends it to the AI service (/ai → kirana-ai on :8000) instead of Spring Boot.
 async function request(method, path, body, opts = {}) {
+  const ai = opts.service === 'ai'
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const userId = opts.userId ?? currentUserId
@@ -47,7 +49,8 @@ async function request(method, path, body, opts = {}) {
   const entry = {
     id: crypto.randomUUID(),
     method,
-    path,
+    path: ai ? '/ai' + path : path,
+    service: ai ? 'ai' : 'backend',
     userId,
     requestBody: body,
     at: new Date(),
@@ -56,16 +59,15 @@ async function request(method, path, body, opts = {}) {
 
   let res
   try {
-    res = await fetch('/api' + path, {
+    res = await fetch((ai ? '/ai' : '/api') + path, {
       method,
       headers,
       body: body !== undefined ? JSON.stringify(body) : undefined,
     })
   } catch {
-    const problem = {
-      title: 'Backend not reachable',
-      detail: 'The request never got a response. Is Spring Boot running on port 8080?',
-    }
+    const problem = ai
+      ? { title: 'AI service not reachable', detail: 'The request never got a response. Is kirana-ai running on port 8000 (uvicorn kirana_ai.api:app --port 8000)?' }
+      : { title: 'Backend not reachable', detail: 'The request never got a response. Is Spring Boot running on port 8080?' }
     log({ ...entry, status: 0, ms: Math.round(performance.now() - started), responseBody: problem })
     if (opts.meta) return { ok: false, status: 0, data: problem, queries: null, ms: 0 }
     throw new ApiError(0, problem)
@@ -85,6 +87,13 @@ async function request(method, path, body, opts = {}) {
   const dbMs = res.headers.get('X-DB-Time-Ms')
   // Stage 4: HIT (answered by Redis), MISS (went to Postgres), BYPASS (Redis unavailable).
   const cache = res.headers.get('X-Cache')
+  // AI service: what the turn cost. Cost is absent when the model has no price in pricing.yaml.
+  const aiUsage = res.headers.get('X-AI-LLM-Calls') === null ? null : {
+    calls: Number(res.headers.get('X-AI-LLM-Calls')),
+    inputTokens: Number(res.headers.get('X-AI-Input-Tokens')),
+    outputTokens: Number(res.headers.get('X-AI-Output-Tokens')),
+    cost: res.headers.get('X-AI-Cost-USD'),
+  }
   const ms = Math.round(performance.now() - started)
   log({
     ...entry,
@@ -93,6 +102,7 @@ async function request(method, path, body, opts = {}) {
     queries: queries === null ? null : Number(queries),
     dbMs: dbMs === null ? null : Number(dbMs),
     cache,
+    aiUsage,
     responseBody: data,
   })
 
@@ -103,8 +113,10 @@ async function request(method, path, body, opts = {}) {
     if (!text && res.status >= 500) {
       throw new ApiError(res.status, {
         status: res.status,
-        title: 'Empty error response',
-        detail: `Got ${res.status} with no body. If the backend is down, the dev proxy answers this way.`,
+        title: ai ? 'AI service not reachable' : 'Empty error response',
+        detail: ai
+          ? `Got ${res.status} with no body: the dev proxy answers this way when kirana-ai is not running on port 8000.`
+          : `Got ${res.status} with no body. If the backend is down, the dev proxy answers this way.`,
       })
     }
     const problem = data && typeof data === 'object' ? data : { status: res.status, detail: String(data || res.statusText) }
@@ -207,6 +219,14 @@ export const api = {
     place: () => request('POST', '/orders'),
     list: () => request('GET', '/orders'),
     get: (id) => request('GET', `/orders/${q(id)}`),
+  },
+  // The AI assistant (kirana-ai). Same X-User-Id, same ProblemDetail errors, different service.
+  ai: {
+    chat: (message, threadId) =>
+      request('POST', '/v1/chat', threadId ? { message, thread_id: threadId } : { message }, { service: 'ai' }),
+    threads: () => request('GET', '/v1/threads', undefined, { service: 'ai' }),
+    thread: (id) => request('GET', `/v1/threads/${q(id)}`, undefined, { service: 'ai' }),
+    deleteThread: (id) => request('DELETE', `/v1/threads/${q(id)}`, undefined, { service: 'ai' }),
   },
 }
 

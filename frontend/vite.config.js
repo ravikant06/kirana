@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react'
 // The browser only ever talks to the Vite dev server (localhost:5173).
 // Anything under /api is forwarded to Spring Boot, with the /api prefix removed,
 // so the backend sees plain paths like /products and never needs CORS config.
+// /ai does the same for the AI service (kirana-ai, FastAPI on :8000).
 // Image uploads are the exception: they go straight from the browser to MinIO.
 export default defineConfig({
   plugins: [react()],
@@ -14,6 +15,11 @@ export default defineConfig({
         target: process.env.BACKEND_URL || 'http://localhost:8080',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),
+      },
+      '/ai': {
+        target: process.env.AI_URL || 'http://localhost:8000',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/ai/, ''),
       },
     },
   },

@@ -67,8 +67,8 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
 ## Current phase
 
 **Phase 0: done** (engine copied, Kirana seed corpus, Qdrant in compose, CLI, retrieval
-eval, offline tests). **Next: Phase 1** (FastAPI chat API + chat panel in Kirana's
-frontend). Phase 1 decisions are settled: AD2 (SQLAlchemy + Alembic), AD11 (text-only history), AD12 (X-User-Id owns threads).
+eval, offline tests). **Phase 1: built** (schema `ai`, history + cost recording, FastAPI, chat panel in
+`frontend/src/components/chat/`); wrap-up experiments next, then Phase 2. Phase 1 decisions are settled: AD2 (SQLAlchemy + Alembic), AD11 (text-only history), AD12 (X-User-Id owns threads).
 
 Only the current phase is in scope. Gaps listed in the plan (no deletes, no relevance
 floor, no streaming…) are deliberate: later phases fix them.

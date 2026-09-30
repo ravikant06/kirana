@@ -4,6 +4,13 @@ import { clearLog, subscribe } from '../api.js'
 // A request running this many statements or more is highlighted: often an N+1.
 const SQL_WARN = 10
 
+const tokens = new Intl.NumberFormat('en-IN')
+
+function aiSummary(u) {
+  const cost = u.cost ? ` · $${Number(u.cost).toFixed(4)}` : ''
+  return `${u.calls} LLM · ${tokens.format(u.inputTokens + u.outputTokens)} tok${cost}`
+}
+
 function statusClass(s) {
   if (s === 0) return 's-fail'
   if (s < 300) return 's-ok'
@@ -39,7 +46,10 @@ export default function Inspector({ open, onClose }) {
               >
                 <span className={`req-status ${statusClass(e.status)}`}>{e.status || 'ERR'}</span>
                 <span className="req-method">{e.method}</span>
-                <span className="req-path">{e.path}</span>
+                <span className="req-path">
+                  {e.service === 'ai' && <span className="req-svc">AI</span>}
+                  {e.path}
+                </span>
                 <span className="req-ms">
                   {e.ms} ms
                   {e.queries != null && (
@@ -47,6 +57,7 @@ export default function Inspector({ open, onClose }) {
                       {e.queries} SQL · {e.dbMs} ms DB{e.cache ? ` · ${e.cache}` : ''}
                     </span>
                   )}
+                  {e.aiUsage && <span className="req-sql req-ai">{aiSummary(e.aiUsage)}</span>}
                 </span>
               </button>
               {e.direct && <div className="req-note">Sent straight to MinIO. Spring Boot never saw this request.</div>}
@@ -63,6 +74,31 @@ export default function Inspector({ open, onClose }) {
                       {e.cache === 'MISS' && ' Cache miss: loaded from Postgres and stored in Redis.'}
                       {e.cache === 'BYPASS' && ' Redis was unavailable, so Postgres answered directly.'}
                     </div>
+                  )}
+                  {e.aiUsage && (
+                    <div className="req-meta">
+                      The AI service made {e.aiUsage.calls} LLM {e.aiUsage.calls === 1 ? 'call' : 'calls'}:{' '}
+                      {tokens.format(e.aiUsage.inputTokens)} input and {tokens.format(e.aiUsage.outputTokens)} output
+                      tokens (thinking included),{' '}
+                      {e.aiUsage.cost ? `$${e.aiUsage.cost}` : 'cost unknown (no price in pricing.yaml)'}.
+                    </div>
+                  )}
+                  {Array.isArray(e.responseBody?.steps) && e.responseBody.steps.length > 0 && (
+                    <>
+                      <h3>Agent steps</h3>
+                      <ol className="req-steps">
+                        {e.responseBody.steps.map((s, i) => (
+                          <li key={i}>
+                            <code>{s.tool}</code>
+                            {s.query ? ` “${s.query}”` : ''}
+                            {Object.keys(s.where || {}).length > 0 && (
+                              <span className="req-where"> {Object.entries(s.where).map(([k, v]) => `${k}=${v}`).join(', ')}</span>
+                            )}
+                            <span className="req-hits"> → {s.count} {s.count === 1 ? 'hit' : 'hits'}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </>
                   )}
                   {e.requestBody !== undefined && (
                     <>
