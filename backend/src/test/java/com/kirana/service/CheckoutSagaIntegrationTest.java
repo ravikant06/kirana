@@ -182,6 +182,52 @@ class CheckoutSagaIntegrationTest {
     }
 
     @Test
+    void payNowReusesTheAttachedGatewayOrderEvenIfTheGatewayWouldMakeANewOne() {
+        // Real Razorpay creates a new order for a repeated receipt; the stub now does the same.
+        gateway.newIdEachCall = true;
+        Fixture f = fixture(5);
+        CheckoutResponse first = saga.start(f.user, "stub");
+
+        PaymentSession again = saga.requestPayment(f.user, first.order().id(), null);
+
+        assertThat(again.gatewayOrderId()).isEqualTo(first.payment().gatewayOrderId());
+        assertThat(gateway.created.get()).isEqualTo(1); // "Pay now" did not create a second gateway order
+        assertThat(saga.verifyPayment(f.user, first.order().id(), again.gatewayOrderId(), "pay_1", StubGateway.GOOD).status())
+                .isEqualTo(OrderStatus.PAID);
+    }
+
+    @Test
+    void twoSimultaneousCheckoutsOfOneCartPlaceOneOrderAndSayWhy() throws Exception {
+        Fixture f = fixture(5);
+        ExecutorService pool = Executors.newFixedThreadPool(2);
+        CountDownLatch start = new CountDownLatch(1);
+        List<Future<Object>> tabs = new ArrayList<>();
+        for (int i = 0; i < 2; i++) {
+            tabs.add(pool.submit(() -> {
+                start.await();
+                try {
+                    return saga.start(f.user, "stub");
+                } catch (Exception e) {
+                    return e;
+                }
+            }));
+        }
+        start.countDown();
+        List<Object> results = new ArrayList<>();
+        for (Future<Object> t : tabs) {
+            results.add(t.get(30, TimeUnit.SECONDS));
+        }
+        pool.shutdown();
+
+        assertThat(results).filteredOn(r -> r instanceof CheckoutResponse).hasSize(1);
+        Object loser = results.stream().filter(r -> !(r instanceof CheckoutResponse)).findFirst().orElseThrow();
+        assertThat(loser).isInstanceOf(ConflictException.class);
+        // Racing: "already in progress". Arriving just after the first committed: "Cart is empty".
+        assertThat(((ConflictException) loser).getTitle()).isIn("Checkout already in progress", "Cart is empty");
+        assertThat(stock(f)).isEqualTo(4);
+    }
+
+    @Test
     void rupeesBecomeExactPaise() {
         assertThat(CheckoutSaga.toPaise(120.10)).isEqualTo(12010);
         assertThat(CheckoutSaga.toPaise(0.1 + 0.2)).isEqualTo(30);  // 0.30000000000000004
@@ -232,7 +278,9 @@ class CheckoutSagaIntegrationTest {
         static final String GOOD = "good-signature";
 
         final AtomicReference<GatewayStatus> status = new AtomicReference<>(new GatewayStatus(GatewayStatus.State.PENDING, null));
+        final java.util.concurrent.atomic.AtomicInteger created = new java.util.concurrent.atomic.AtomicInteger();
         volatile boolean down;
+        volatile boolean newIdEachCall; // behave like real Razorpay: no de-duplication by receipt
 
         @Override public String id() { return "stub"; }
         @Override public String label() { return "Stub"; }
@@ -243,7 +291,9 @@ class CheckoutSagaIntegrationTest {
             if (down) {
                 throw new PaymentUnavailableException("stub is down", null);
             }
-            return new GatewayOrder("gw_" + orderId, amountPaise, currency); // same id for the same order
+            int n = created.incrementAndGet();
+            String id = newIdEachCall ? "gw_" + orderId + "_" + n : "gw_" + orderId; // mock-style: same id per order
+            return new GatewayOrder(id, amountPaise, currency);
         }
 
         @Override

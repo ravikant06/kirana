@@ -24,6 +24,7 @@ import com.kirana.repository.CartLineView;
 import com.kirana.repository.CartRepository;
 import com.kirana.repository.InventoryRepository;
 import com.kirana.repository.OrderRepository;
+import org.springframework.dao.OptimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
@@ -73,7 +74,17 @@ public class OrderService {
                     case NOT_ARMED -> { } // no sale, or Redis down: Postgres decides, as in Stage 3
                 }
             }
-            return tx.execute(status -> placeInDb(userId, taken));
+            try {
+                return tx.execute(status -> placeInDb(userId, taken));
+            } catch (OptimisticLockingFailureException e) {
+                // Two checkouts of the same cart at once (two tabs, a double click): both read the
+                // cart, the first commits and deletes its lines, the second's DELETE finds 0 rows
+                // and Hibernate rolls it back. Correct outcome (one order), so just say what it was.
+                // A real idempotency key (Stage 7) would instead return the first order.
+                throw new ConflictException("Checkout already in progress",
+                        "This cart is already being checked out (another tab or a double click). "
+                                + "Check your orders before trying again.");
+            }
         } catch (RuntimeException e) {
             taken.forEach(flashSale::giveBack);
             throw e;

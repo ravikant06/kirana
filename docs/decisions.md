@@ -262,6 +262,16 @@ payment-mock's mode and Toxiproxy faults and resets breakers.
 inside Kirana for now; `120.10 × 100` in floating point is `12009.99…`, so the conversion goes
 through the decimal string with HALF_UP rounding.
 
+**D55. One gateway order per Kirana order, stored and reused; never rely on the gateway to
+de-duplicate.** Tested: real Razorpay creates a new order for a repeated receipt (the mock
+does not), so "Pay now" re-creating it handed the browser an order we never stored and verify
+rejected a real payment. Now `request()` reuses the attached gateway order; if two requests
+race, the one attached first wins and the other's is left unused (it expires unpaid at the
+gateway). A concurrent duplicate checkout of the same cart (two tabs) is rolled back by
+Hibernate's row-count check on the cart-line delete and now answers 409 "Checkout already in
+progress". Both are stopgaps: Stage 7 adds a client idempotency key that returns the first
+order instead.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

@@ -155,13 +155,31 @@ public class CheckoutSaga {
 
     // ---------------------------------------------------------------- the steps themselves
 
+    /**
+     * An order gets exactly one gateway order, and every payment attempt uses it.
+     *
+     * Do not rely on the gateway to de-duplicate: real Razorpay creates a NEW order for the same
+     * receipt (tested), so asking again on "Pay now" would hand the browser an order we never
+     * stored, and verify would reject the payment. So: reuse the attached one if there is one;
+     * otherwise create one and attach it, and if a concurrent request attached a different one
+     * first, use theirs (ours is left unused and expires at the gateway, unpaid).
+     */
     private PaymentSession request(Long orderId, PaymentGateway gateway) {
         Order order = orders.findById(orderId).orElseThrow();
         long paise = toPaise(order.getTotal());
+        if (order.getGatewayOrderId() != null) {
+            return gateway.session(orderId, new GatewayOrder(order.getGatewayOrderId(), paise, props.currency()));
+        }
         // Outside any transaction: the gateway call can take seconds and must not hold a connection.
-        GatewayOrder g = gateway.createOrder(orderId, paise, props.currency());
-        tx.executeWithoutResult(s -> orders.attachGatewayOrder(orderId, gateway.id(), g.gatewayOrderId(), Instant.now()));
-        return gateway.session(orderId, g);
+        GatewayOrder created = gateway.createOrder(orderId, paise, props.currency());
+        tx.executeWithoutResult(s -> orders.attachGatewayOrder(orderId, gateway.id(), created.gatewayOrderId(), Instant.now()));
+        String attached = orders.findById(orderId).orElseThrow().getGatewayOrderId();
+        if (attached != null && !attached.equals(created.gatewayOrderId())) {
+            log.info("Order {}: another request attached gateway order {} first; {} stays unused",
+                    orderId, attached, created.gatewayOrderId());
+            return gateway.session(orderId, new GatewayOrder(attached, paise, props.currency()));
+        }
+        return gateway.session(orderId, created);
     }
 
     /** CREATED -> PAID, once. A payment arriving after the order closed is flagged for a refund. */
