@@ -30,7 +30,7 @@ const NETWORK_FAULTS = [
 
 const pct = (v) => (v < 0 ? '–' : `${Math.round(v)}%`)
 
-export default function ResilienceLab({ notify }) {
+export default function ResilienceLab({ notify, embedded }) {
   const [tick, setTick] = useState(0)
   const status = usePoll(() => api.system.status(), 2000, [tick])
   const refresh = () => setTick((t) => t + 1)
@@ -46,18 +46,22 @@ export default function ResilienceLab({ notify }) {
     }
   }
 
-  if (!status) return null
+  if (!status) return <div className="panel lab"><p className="muted">Waiting for /system/status from the backend…</p></div>
   const mode = status.paymentMockMode?.mode
 
   return (
     <div className="panel lab">
-      <div className="lab-head">
-        <h2>Resilience lab</h2>
-        <p className="muted">
-          Break a dependency, then use the shop and watch what happens here. Updates every 2 seconds.
-          {!status.resilienceEnabled && ' Resilience is switched off (kirana.resilience.enabled=false).'}
-        </p>
-      </div>
+      {embedded ? (
+        !status.resilienceEnabled && <p className="muted">Resilience is switched off (kirana.resilience.enabled=false).</p>
+      ) : (
+        <div className="lab-head">
+          <h2>Resilience lab</h2>
+          <p className="muted">
+            Break a dependency, then use the shop and watch what happens here. Updates every 2 seconds.
+            {!status.resilienceEnabled && ' Resilience is switched off (kirana.resilience.enabled=false).'}
+          </p>
+        </div>
+      )}
 
       <div className="lab-grid">
         {status.breakers.map((b) => {

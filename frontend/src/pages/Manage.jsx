@@ -1,82 +1,145 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { api, money, uploadToStorage } from '../api.js'
 import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import Pager from '../components/Pager.jsx'
-import ResilienceLab from '../components/ResilienceLab.jsx'
+import Modal from '../components/Modal.jsx'
+import { BoltIcon, BoxIcon, CheckIcon, ChevronRight, PlusIcon, SearchIcon, TrashIcon, UserIcon, XIcon } from '../components/icons.jsx'
 
-export default function Manage({ notify, onUsersChanged, users }) {
+const TABS = [
+  ['catalog', 'Catalogue', BoxIcon],
+  ['shoppers', 'Shoppers', UserIcon],
+]
+
+function StatusPill({ p, onSale }) {
+  if (onSale) return <span className="pill pill-flash"><BoltIcon size={12} /> Flash sale</span>
+  if (p.stock === null || p.stock === undefined) return <span className="pill">Unknown</span>
+  if (p.stock <= 0) return <span className="pill pill-out">Out of stock</span>
+  if (p.stock <= 5) return <span className="pill pill-low">Low stock</span>
+  return <span className="pill pill-ok">In stock</span>
+}
+
+export default function Manage({ notify, onUsersChanged, users, initialTab, userId, onChooseUser }) {
+  const [tab, setTab] = useState(initialTab === 'shoppers' ? 'shoppers' : 'catalog')
   const [page, setPage] = useState(0)
   const list = useLoad(() => api.products.list(page, 10), [page])
-  const [selected, setSelected] = useState(null) // null = nothing, 'new' = create form, id = edit
+  // null = closed, 'new' = create form, { id, name } = edit that product
+  const [selected, setSelected] = useState(null)
 
   const refresh = () => list.reload()
   const sales = usePoll(() => api.flashSale.active(), 3000, [])
   const onSale = new Set((sales || []).map((s) => s.productId))
+  const close = useCallback(() => setSelected(null), [])
+  const rows = list.data?.content || []
 
   return (
-    <section>
-      <header className="page-head">
-        <h1>Manage</h1>
-        <p>Admin tools for products, stock, flash sales, images and shoppers. To run a flash sale, pick a product.</p>
+    <section className="manage-page">
+      <header className="page-head manage-head">
+        <div>
+          <span className="eyebrow">Admin</span>
+          <h1>Manage store</h1>
+          <p>Products, stock, flash sales, images and shoppers. Click a product to edit it.</p>
+        </div>
+        {list.data && (
+          <div className="kpis">
+            <div className="kpi"><strong>{(list.data.totalElements ?? 0).toLocaleString('en-IN')}</strong><span>Products</span></div>
+            <div className="kpi"><strong>{sales?.length ?? 0}</strong><span>Flash sales live</span></div>
+          </div>
+        )}
       </header>
 
-      <div className="manage">
-        <div className="panel">
-          <div className="panel-head">
-            <h2>Products</h2>
-            <button className="btn" onClick={() => setSelected('new')}>New product</button>
-          </div>
-          {list.error && <Problem error={list.error} compact />}
-          {list.data && list.data.content.length === 0 && <p className="muted">No products yet.</p>}
-          <ul className="plist">
-            {(list.data?.content || []).map((p) => (
-              <li key={p.id}>
-                <button className={`plist-row ${selected === p.id ? 'is-active' : ''}`} onClick={() => setSelected(p.id)}>
-                  <Thumb src={p.thumbnailUrl} alt={p.name} className="plist-img" />
-                  <span className="plist-name">
-                    {onSale.has(p.id) && <span className="badge badge-flash">Flash</span>} {p.name}
-                  </span>
-                  <span className="muted">{money(p.price)}</span>
-                  <span className="plist-stock">{p.stock ?? '—'}</span>
-                </button>
-              </li>
-            ))}
-          </ul>
-          <Pager page={list.data?.page ?? page} totalPages={list.data?.totalPages} onChange={setPage} />
+      <div className="manage-bar">
+        <div className="seg" role="tablist" aria-label="Manage sections">
+          {TABS.map(([key, label, Icon]) => (
+            <button key={key} role="tab" aria-selected={tab === key} className={`seg-btn ${tab === key ? 'is-active' : ''}`} onClick={() => setTab(key)}>
+              <Icon size={16} /> {label}
+            </button>
+          ))}
         </div>
-
-        <div className="panel panel-wide">
-          {selected === null && <p className="muted">Pick a product to edit, or create a new one.</p>}
-          {selected === 'new' && (
-            <ProductForm
-              key="new"
-              onSaved={(p) => {
-                notify(`Created ${p.name}`)
-                refresh()
-                setSelected(p.id)
-              }}
-            />
-          )}
-          {selected !== null && selected !== 'new' && (
-            <ProductEditor
-              key={selected}
-              id={selected}
-              notify={notify}
-              onChanged={refresh}
-              onDeleted={() => {
-                setSelected(null)
-                refresh()
-              }}
-            />
-          )}
-        </div>
+        {tab === 'catalog' && (
+          <button className="btn btn-add" onClick={() => setSelected('new')}><PlusIcon size={16} /> New product</button>
+        )}
       </div>
 
-      <ResilienceLab notify={notify} />
+      {tab === 'catalog' && (
+        <div className="card ptable-card">
+          {list.error && <div className="ptable-msg"><Problem error={list.error} compact /></div>}
+          {list.data && rows.length === 0 && (
+            <div className="panel-empty">
+              <div className="empty-art" aria-hidden="true"><BoxIcon size={32} /></div>
+              <h2>No products yet</h2>
+              <p className="muted">Create your first product to fill the shelf.</p>
+              <button className="btn btn-add" onClick={() => setSelected('new')}><PlusIcon size={16} /> New product</button>
+            </div>
+          )}
+          {(rows.length > 0 || list.loading) && (
+            <table className={`ptable ${list.loading && list.data ? 'is-loading' : ''}`}>
+              <thead>
+                <tr><th>Product</th><th>Price</th><th>Stock</th><th>Status</th><th aria-label="Actions" /></tr>
+              </thead>
+              <tbody>
+                {!list.data && Array.from({ length: 6 }, (_, i) => (
+                  <tr key={i} aria-hidden="true"><td colSpan="5"><div className="sk sk-line" /></td></tr>
+                ))}
+                {rows.map((p) => (
+                  <tr key={p.id} className="ptable-row" onClick={() => setSelected({ id: p.id, name: p.name })}>
+                    <td data-label="Product">
+                      <div className="ptable-product">
+                        <Thumb src={p.thumbnailUrl} alt={p.name} className="ptable-img" />
+                        <div>
+                          <button className="ptable-name" onClick={(e) => { e.stopPropagation(); setSelected({ id: p.id, name: p.name }) }}>
+                            {p.name}
+                          </button>
+                          <span className="ptable-id">ID {p.id}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td data-label="Price" className="ptable-num">{money(p.price)}</td>
+                    <td data-label="Stock" className="ptable-num">
+                      <span className={p.stock === 0 ? 'is-out' : ''}>{p.stock ?? '—'}</span>
+                    </td>
+                    <td data-label="Status"><StatusPill p={p} onSale={onSale.has(p.id)} /></td>
+                    <td className="ptable-act"><span className="ptable-edit">Edit <ChevronRight size={16} /></span></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          <div className="ptable-foot">
+            <Pager page={list.data?.page ?? page} totalPages={list.data?.totalPages} onChange={setPage} />
+          </div>
+        </div>
+      )}
 
-      <Users users={users} onChanged={onUsersChanged} notify={notify} />
+      {tab === 'shoppers' && <Users users={users} onChanged={onUsersChanged} notify={notify} userId={userId} onChoose={onChooseUser} />}
+
+      {selected === 'new' && (
+        <Modal title="New product" subtitle="Add the basics now. Stock, flash sale and images open after you create it." onClose={close}>
+          <ProductForm
+            key="new"
+            onSaved={(p) => {
+              notify(`Created ${p.name}`)
+              refresh()
+              setSelected({ id: p.id, name: p.name })
+            }}
+          />
+        </Modal>
+      )}
+      {selected && selected !== 'new' && (
+        <Modal title={selected.name} subtitle={`Product ID ${selected.id}`} size="lg" onClose={close}>
+          <ProductEditor
+            key={selected.id}
+            id={selected.id}
+            notify={notify}
+            onChanged={refresh}
+            onDeleted={() => {
+              setSelected(null)
+              refresh()
+            }}
+          />
+        </Modal>
+      )}
     </section>
   )
 }
@@ -110,7 +173,7 @@ function ProductForm({ product, onSaved, onReload }) {
 
   return (
     <form className="form" onSubmit={save} noValidate>
-      <h2>{product ? 'Details' : 'New product'}</h2>
+      {product && <h2>Details</h2>}
       <label>
         <span>Name</span>
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
@@ -150,25 +213,35 @@ function ProductEditor({ id, notify, onChanged, onDeleted }) {
   }
 
   if (error) return <Problem error={error} />
-  if (!p) return <p className="muted">Loading…</p>
+  if (!p) return <div className="editor" aria-hidden="true"><div className="sk sk-line" /><div className="sk sk-line short" /><div className="sk sk-btn" /></div>
 
   return (
     <div className="editor">
-      <ProductForm
-        key={p.version}
-        product={p}
-        onReload={reload}
-        onSaved={(saved) => {
-          notify(`Saved ${saved.name}`)
-          reload()
-          onChanged()
-        }}
-      />
-      <FlashSale productId={id} productName={p.name} notify={notify} onChanged={onChanged} />
-      <Stock productId={id} notify={notify} onChanged={onChanged} />
-      <Images product={p} notify={notify} onChanged={() => { reload(); onChanged() }} />
+      <div className="editor-grid">
+        <div className="editor-col">
+          <ProductForm
+            key={p.version}
+            product={p}
+            onReload={reload}
+            onSaved={(saved) => {
+              notify(`Saved ${saved.name}`)
+              reload()
+              onChanged()
+            }}
+          />
+          <Images product={p} notify={notify} onChanged={() => { reload(); onChanged() }} />
+        </div>
+        <div className="editor-col">
+          <Stock productId={id} notify={notify} onChanged={onChanged} />
+          <FlashSale productId={id} productName={p.name} notify={notify} onChanged={onChanged} />
+        </div>
+      </div>
       <div className="danger">
-        <button className="btn-danger" onClick={del}>Delete product</button>
+        <div>
+          <strong>Delete this product</strong>
+          <p className="muted">It disappears from the shop and listings. This cannot be undone.</p>
+        </div>
+        <button className="btn-danger" onClick={del}><TrashIcon size={16} /> Delete product</button>
       </div>
     </div>
   )
@@ -452,38 +525,142 @@ function Images({ product, notify, onChanged }) {
   )
 }
 
-function Users({ users, onChanged, notify }) {
+// Shoppers: a bounded search over GET /users (20 newest, or 20 matches). "Shop as" only changes
+// which X-User-Id the app sends from now on, exactly like the menu in the top bar.
+function Users({ users, onChanged, notify, userId, onChoose }) {
+  const [q, setQ] = useState('')
+  const [adding, setAdding] = useState(false)
+  const qRef = useRef('')
+  const first = useRef(true)
+
+  useEffect(() => {
+    qRef.current = q
+    if (first.current) {
+      first.current = false
+      return
+    }
+    const t = setTimeout(() => onChanged(undefined, q.trim()), 250)
+    return () => clearTimeout(t)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [q])
+  // Leave the shared list unfiltered for the top-bar menu when this tab goes away.
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => () => { if (qRef.current) onChanged(undefined, '') }, [])
+
+  const list = users || []
+
+  return (
+    <>
+      <div className="users-bar">
+        <label className="table-search">
+          <SearchIcon size={16} />
+          <input type="search" placeholder="Search shoppers by name or email" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Search shoppers" />
+          {q && <button type="button" className="search-clear" onClick={() => setQ('')} aria-label="Clear search"><XIcon size={14} /></button>}
+        </label>
+        <button className="btn btn-add" onClick={() => setAdding(true)}><PlusIcon size={16} /> Add shopper</button>
+      </div>
+
+      <div className="card ptable-card">
+        <div className="table-note">
+          <UserIcon size={16} />
+          <span>
+            No login yet. The shopper you pick is sent as the <code>X-User-Id</code> header.{' '}
+            {q ? `Showing up to 20 matches for “${q}”.` : 'Showing the 20 newest shoppers; search to find others.'}
+          </span>
+        </div>
+        {list.length === 0 ? (
+          <div className="panel-empty">
+            <div className="empty-art" aria-hidden="true"><UserIcon size={32} /></div>
+            <h2>{q ? 'No shopper matches' : 'No shoppers yet'}</h2>
+            <p className="muted">{q ? 'Try another name or email.' : 'Add one to start shopping.'}</p>
+            {!q && <button className="btn btn-add" onClick={() => setAdding(true)}><PlusIcon size={16} /> Add shopper</button>}
+          </div>
+        ) : (
+          <table className="ptable utable">
+            <thead>
+              <tr><th>Shopper</th><th>Email</th><th>ID</th><th aria-label="Actions" /></tr>
+            </thead>
+            <tbody>
+              {list.map((u) => {
+                const current = u.id === userId
+                return (
+                  <tr key={u.id} className={current ? 'is-current' : ''}>
+                    <td data-label="Shopper">
+                      <div className="ptable-product">
+                        <span className="avatar">{(u.name || '?').slice(0, 1).toUpperCase()}</span>
+                        <div>
+                          <strong className="utable-name">{u.name}</strong>
+                        </div>
+                      </div>
+                    </td>
+                    <td data-label="Email" className="utable-email" title={u.email}>{u.email}</td>
+                    <td data-label="ID"><code className="ptable-id">{u.id}</code></td>
+                    <td className="utable-act">
+                      {current ? (
+                        <span className="utable-check"><CheckIcon size={16} /> Current</span>
+                      ) : (
+                        <button className="btn-quiet" onClick={() => { onChoose(u); notify(`Now shopping as ${u.name}`) }}>Shop as</button>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        )}
+      </div>
+
+      {adding && (
+        <Modal title="Add shopper" subtitle="You'll switch to the new shopper once they're created." onClose={() => setAdding(false)}>
+          <UserForm
+            notify={notify}
+            onCreated={(u) => {
+              setAdding(false)
+              setQ('')
+              onChanged(u.id)
+            }}
+          />
+        </Modal>
+      )}
+    </>
+  )
+}
+
+function UserForm({ notify, onCreated }) {
   const [form, setForm] = useState({ name: '', email: '' })
   const [error, setError] = useState(null)
+  const [busy, setBusy] = useState(false)
+  const fieldErr = (f) => error?.problem?.errors?.find((e) => e.field === f)?.message
 
   const create = async (e) => {
     e.preventDefault()
     setError(null)
+    setBusy(true)
     try {
       const u = await api.users.create(form)
       notify(`Created shopper ${u.name}`)
-      setForm({ name: '', email: '' })
-      onChanged(u.id)
+      onCreated(u)
     } catch (err) {
       setError(err)
+    } finally {
+      setBusy(false)
     }
   }
 
   return (
-    <div className="panel users">
-      <h2>Shoppers</h2>
-      <p className="muted">No login yet. The top bar picks a shopper and sends their ID in the X-User-Id header.</p>
-      <ul className="user-list">
-        {(users || []).map((u) => (
-          <li key={u.id}><strong>{u.name}</strong> <span className="muted">{u.email}, id {u.id}</span></li>
-        ))}
-      </ul>
-      <form className="user-form" onSubmit={create} noValidate>
-        <input placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-        <input placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
-        <button className="btn">Add shopper</button>
-      </form>
-      {error && <Problem error={error} compact />}
-    </div>
+    <form className="form" onSubmit={create} noValidate>
+      <label>
+        <span>Name</span>
+        <input autoFocus placeholder="e.g. Asha Verma" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
+        {fieldErr('name') && <em className="field-err">{fieldErr('name')}</em>}
+      </label>
+      <label>
+        <span>Email</span>
+        <input type="email" placeholder="asha@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
+        {fieldErr('email') && <em className="field-err">{fieldErr('email')}</em>}
+      </label>
+      {error && !error.problem?.errors?.length && <Problem error={error} compact />}
+      <button className="btn btn-add" disabled={busy}><PlusIcon size={16} /> {busy ? 'Adding…' : 'Add shopper'}</button>
+    </form>
   )
 }
