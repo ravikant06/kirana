@@ -111,6 +111,13 @@ export default function ResilienceLab({ notify, embedded }) {
                 ? 'Start it with docker compose up -d kafka.'
                 : 'Switched off (kirana.kafka.enabled=false).'}
           </p>
+          {status.outbox && (
+            <p className={status.outbox.waiting > 0 ? 'lab-warn' : 'muted'}>
+              Outbox: {status.outbox.waiting} event{status.outbox.waiting === 1 ? '' : 's'} waiting
+              {status.outbox.waiting > 0 && status.outbox.oldestWaitingSeconds != null && ` (oldest ${status.outbox.oldestWaitingSeconds} s)`}
+              {status.outbox.lastError && ` · ${status.outbox.lastError}`} · {status.outbox.published} published
+            </p>
+          )}
           <p className="muted">Look inside (messages, partitions, offsets, consumer lag): <a href="http://localhost:8085" target="_blank" rel="noreferrer">Kafka UI on localhost:8085</a></p>
         </div>
       )}

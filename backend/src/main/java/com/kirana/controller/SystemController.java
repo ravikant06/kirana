@@ -2,6 +2,7 @@ package com.kirana.controller;
 
 import com.kirana.dto.SystemStatus;
 import com.kirana.messaging.KafkaStatus;
+import com.kirana.messaging.OutboxStats;
 import com.kirana.resilience.ChaosControls;
 import com.kirana.resilience.Resilience;
 import io.github.resilience4j.circuitbreaker.CircuitBreaker;
@@ -23,11 +24,13 @@ public class SystemController {
     private final Resilience resilience;
     private final ChaosControls chaos;
     private final KafkaStatus kafka;
+    private final OutboxStats outbox;
 
-    public SystemController(Resilience resilience, ChaosControls chaos, KafkaStatus kafka) {
+    public SystemController(Resilience resilience, ChaosControls chaos, KafkaStatus kafka, OutboxStats outbox) {
         this.resilience = resilience;
         this.chaos = chaos;
         this.kafka = kafka;
+        this.outbox = outbox;
     }
 
     @GetMapping("/system/status")
@@ -37,7 +40,7 @@ public class SystemController {
         return new SystemStatus(resilience.enabled(), chaos.chaosEnabled(), breakers,
                 new SystemStatus.Slots(bulkhead.getMetrics().getAvailableConcurrentCalls(),
                         bulkhead.getMetrics().getMaxAllowedConcurrentCalls()),
-                chaos.paymentMode(), chaos.networkFaults(), kafka.snapshot());
+                chaos.paymentMode(), chaos.networkFaults(), kafka.snapshot(), outbox.snapshot());
     }
 
     @PostMapping("/system/breakers/{name}/reset")

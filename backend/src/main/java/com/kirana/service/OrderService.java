@@ -39,10 +39,13 @@ public class OrderService {
     private final FlashSaleCounter flashSale;
     private final TransactionTemplate tx;
     private final Duration paymentWindow;
+    private final OrderEvents events;
 
     public OrderService(OrderRepository orders, CartRepository carts, InventoryRepository inventory, UserService users,
-                        FlashSaleCounter flashSale, TransactionTemplate tx, PaymentProperties payment) {
+                        FlashSaleCounter flashSale, TransactionTemplate tx, PaymentProperties payment,
+                        OrderEvents events) {
         this.paymentWindow = payment.window();
+        this.events = events;
         this.orders = orders;
         this.carts = carts;
         this.inventory = inventory;
@@ -140,6 +143,8 @@ public class OrderService {
 
         cart.clear(); // D4: checkout deletes the lines, keeps the cart row
         orders.flush();
+        // Inside TX1: the outbox row commits together with the order, or not at all (Stage 6).
+        events.publish(new OrderEvent.OrderPlaced(order.getId(), userId, order.getTotal()));
         return OrderMapper.toResponse(order);
     }
 

@@ -122,3 +122,124 @@ cd ../backend && mvn spring-boot:run
 * Manage → Resilience lab: **Kafka · Connected**, `orders.v1 (3 partitions)`.
 * In Kafka UI, open `orders.v1` → **Produce message**, key `order-42`, any value, three times:
   all three land in the same partition (Messages tab shows the partition and offset).
+
+---
+
+## 6b. Transactional outbox
+
+**Done:** every order event (`OrderPlaced`, `OrderPaid`, `OrderClosed`, `PaymentAfterClose`) is
+now written to an **`outbox` table in the same database transaction** as the order change. A
+**relay** publishes waiting rows to Kafka topic `orders.v1` every half second, in order, keyed
+by order id.
+
+**Problem solved: the dual write.** A change in Postgres plus a message to another system can't
+share one transaction, so one can happen without the other:
+
+| Naive way | What can go wrong |
+|---|---|
+| Send to Kafka, then commit the order | the commit fails → Kafka says "order 42 paid", but it isn't (a consumer would ship an unpaid order) |
+| Commit the order, then send to Kafka | the app crashes in between → "order 42 paid" is **never** announced (no shipping, no refund) |
+| Stage 5 (in-memory event after commit) | the same as above: lost on a crash |
+
+With the outbox, the event is a **row** next to the order row, so they commit together or not
+at all. Delivering it to Kafka becomes a separate, retryable job.
+
+**User-visible today:** still nothing (no consumers yet). It's the guarantee that refunds (6d)
+and fulfilment (6e) will rely on: *if an order changed, the event about it will reach Kafka.*
+
+### Before and after
+
+```mermaid
+flowchart LR
+    subgraph Before["Stage 5"]
+        A1["CheckoutSaga<br/>order → PAID<br/>(transaction)"] --> A2["COMMIT"]
+        A2 --> A3["publish OrderPaid<br/>in memory → log line"]
+        A3 -.->|"app crashes here:<br/>event lost"| X1["✗"]
+    end
+    subgraph After["Stage 6b"]
+        B1["CheckoutSaga<br/>order → PAID<br/>+ INSERT outbox row<br/>(same transaction)"] --> B2["COMMIT<br/>both rows, or neither"]
+        B2 --> B3["OutboxRelay (every 0.5 s)<br/>reads waiting rows"]
+        B3 --> B4["Kafka orders.v1<br/>key = order id"]
+        B4 --> B5["mark row published"]
+    end
+```
+
+### One event, step by step (shopper pays)
+
+```mermaid
+sequenceDiagram
+    participant B as Browser
+    participant S as CheckoutSaga
+    participant DB as Postgres
+    participant R as OutboxRelay
+    participant K as Kafka (orders.v1)
+    B->>S: POST /orders/{id}/payment/verify
+    S->>DB: BEGIN
+    S->>DB: UPDATE orders SET status='PAID' WHERE status='CREATED'
+    S->>DB: INSERT INTO outbox (OrderPaid, key=order id)
+    S->>DB: COMMIT (both rows together)
+    S-->>B: 200 {status: PAID}
+    Note over R: up to 0.5 s later
+    R->>DB: BEGIN; SELECT … WHERE published_at IS NULL<br/>ORDER BY id FOR UPDATE SKIP LOCKED
+    R->>K: send(key=order id, value=JSON, headers event-id, event-type)
+    K-->>R: acknowledged (acks=all)
+    R->>DB: UPDATE outbox SET published_at = now(); COMMIT
+```
+
+The shopper's request ends at the COMMIT. Kafka is never on the request's path, so a Kafka
+outage does not slow or fail checkout.
+
+### What happens when something fails
+
+| Failure | Result | Why |
+|---|---|---|
+| Order transaction rolls back (e.g. out of stock) | no event | the outbox row rolled back with it |
+| App crashes after COMMIT, before the relay runs | event sent after restart | the row is in Postgres, still unpublished |
+| Kafka down | events wait; checkout unaffected; lab shows "N waiting" | relay retries every 0.5 s |
+| Relay crashes after Kafka acknowledged, before marking the row | the event is sent **twice** | **at-least-once**: consumers must ignore an `eventId` they've seen (6c) |
+| One event can't be sent | it and everything after it wait | keeps per-order order (no "Closed" before "Placed") |
+| Two backend instances | each relay takes different rows | `FOR UPDATE SKIP LOCKED` skips rows another relay has locked |
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `db/migration/V5__outbox.sql` | `outbox` table (`event_id` unique, `topic`, `message_key`, `event_type`, `payload`, `published_at`, `attempts`, `last_error`) + index on unpublished rows |
+| `entity/OutboxMessage.java`, `repository/OutboxRepository.java` | the row, inserted through JPA |
+| `service/OutboxOrderEvents.java` | **new `OrderEvents` implementation**: INSERT into the outbox, joining the caller's transaction (replaces Stage 5's in-memory `SpringOrderEvents`, now deleted). `CheckoutSaga` did not change. |
+| `service/OrderService.java` | `OrderPlaced` now published **inside TX1** (it used to be published after the commit, which the outbox would not have protected) |
+| `messaging/OutboxRelay.java` | the polling publisher: lock, send, wait for the acknowledgement, mark; stop at the first failure |
+| `messaging/OutboxStats.java` | waiting count, age of the oldest, last error → `/system/status`, lab |
+| `application.yml` | `kirana.outbox.*` (interval, batch); **scheduler pool 3 threads** (the default single thread would let the relay and the payment jobs block each other) |
+| `OutboxIntegrationTest` | a rolled-back checkout leaves no event; events arrive in Kafka in order with their ids |
+
+### Message format (topic `orders.v1`)
+
+```
+key:     "50050852"                                  ← order id: all of one order's events share a partition
+headers: event-id = c67e5368-…, event-type = OrderPaid
+value:   {"eventId":"c67e5368-…","type":"OrderPaid","occurredAt":"2026-10-01T20:39:23Z",
+          "orderId":50050852,"data":{"orderId":50050852,"provider":"mock","paymentId":"pay_…"}}
+```
+
+### Experiment (run on the real stack)
+
+Kafka stopped → order placed and paid → the lab shows **2 waiting** → backend killed with
+`kill -9` → Kafka started → backend started → `Outbox relay: published 2 event(s)` → Kafka holds
+`OrderPlaced` then `OrderPaid` for order 50050852, both on partition 1, in order.
+
+### Try it
+
+1. `docker stop kirana-kafka-1`, then place and pay an order in the UI. It works normally.
+   Lab → Kafka card: **Unreachable**, **Outbox: 2 events waiting**.
+2. Stop the backend (Ctrl+C), `docker start kirana-kafka-1`, start the backend again.
+   The log shows `Outbox relay: published 2 event(s)`; the lab shows 0 waiting.
+3. Kafka UI → `orders.v1` → Messages: your order's events, same partition, in order.
+
+### Known costs
+
+* The relay holds a database transaction while it waits for Kafka (at most a few seconds), on a
+  scheduler thread. At larger scale: claim rows with a lease and publish outside the
+  transaction, or use change data capture (Debezium reading Postgres's write-ahead log).
+* Published rows are never deleted yet; a cleanup job comes later.
+* At-least-once delivery: duplicates are possible, so every consumer must deduplicate.

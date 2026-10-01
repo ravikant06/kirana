@@ -77,8 +77,7 @@ public class CheckoutSaga {
     /** Steps 1 and 2. A gateway outage does not lose the order: it stays CREATED and can be paid later. */
     public CheckoutResponse start(Long userId, String provider) {
         PaymentGateway gateway = gateways.forCheckout(provider); // validate before taking any stock
-        OrderResponse order = orderService.place(userId);
-        events.publish(new OrderEvent.OrderPlaced(order.id(), userId, order.total()));
+        OrderResponse order = orderService.place(userId); // publishes OrderPlaced inside TX1 (Stage 6)
         try {
             PaymentSession session = request(order.id(), gateway);
             return new CheckoutResponse(reload(order.id()), session, null);

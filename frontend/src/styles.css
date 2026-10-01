@@ -900,3 +900,4 @@ code { font-family: var(--mono); font-size: 0.85em; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+.lab-warn { margin: 0; font-size: 0.85rem; color: var(--marigold-deep); font-weight: 700; }

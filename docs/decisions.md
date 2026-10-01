@@ -280,6 +280,13 @@ partitions, keyed by order id. Producer: `acks=all`, idempotent, 10 s delivery t
 for Apache Kafka with explicit settings. `kirana.kafka.enabled` switches Kafka off (most tests).
 Cost: one broker means replication factor 1 (production uses 3).
 
+**D57. Order events go through a transactional outbox, relayed to Kafka by a polling publisher.**
+(Ravi) `OutboxOrderEvents` inserts the event in the caller's transaction; `OutboxRelay` sends
+waiting rows every 0.5 s (`FOR UPDATE SKIP LOCKED`, stop at the first failure to keep per-order
+order), keyed by order id, with `event-id`/`event-type` headers. At-least-once: consumers
+dedupe by `eventId`. Scheduler pool raised to 3 threads. Costs: the relay waits on Kafka inside a
+transaction (scheduler thread only); published rows are not cleaned up yet.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

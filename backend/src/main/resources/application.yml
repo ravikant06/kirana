@@ -50,6 +50,13 @@ spring:
         request.timeout.ms: 5000
         max.block.ms: 5000
 
+  task:
+    scheduling:
+      pool:
+        # PaymentJobs and OutboxRelay are @Scheduled. The default is ONE thread for all of them,
+        # so a relay waiting on Kafka would delay the payment jobs, and the other way round.
+        size: 3
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -115,6 +122,9 @@ kirana:
     enabled: false  # the chaos profile turns this on (fault controls in Manage)
     toxiproxy-url: http://localhost:8474
     payment-mock-admin-url: http://localhost:8090
+  outbox:
+    relay-interval-ms: 500   # how often the relay looks for unpublished events
+    batch-size: 100
   kafka:
     enabled: ${KAFKA_ENABLED:true}   # false: no topics, no producers or consumers (most tests)
     topics:

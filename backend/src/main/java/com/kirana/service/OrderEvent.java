@@ -1,9 +1,9 @@
 package com.kirana.service;
 
 /**
- * Facts about orders, published after the change commits. Stage 5 only logs them; in Stage 6
- * they go to Kafka (through an outbox) for services that react on their own: email, loyalty,
- * analytics, shipping. Checkout itself does not depend on who listens.
+ * Facts about orders. Written to the outbox with the change (Stage 6) and relayed to Kafka topic
+ * orders.v1, keyed by order id, for services that react on their own (refunds, fulfilment).
+ * Checkout itself does not depend on who listens.
  */
 public sealed interface OrderEvent {
 

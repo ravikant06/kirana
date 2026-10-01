@@ -1,9 +1,9 @@
 package com.kirana.service;
 
 /**
- * Where order events go. The seam Stage 6 plugs into: replace the implementation with
- * "insert into an outbox table in the same transaction, relay to Kafka", and nothing that
- * publishes has to change.
+ * Where order events go. Stage 5 logged them in memory; Stage 6 (OutboxOrderEvents) writes them
+ * to the outbox table in the caller's transaction, and OutboxRelay sends them to Kafka.
+ * Publishers did not change. Call it inside the transaction that makes the change.
  */
 public interface OrderEvents {
 
