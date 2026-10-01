@@ -56,6 +56,7 @@ class CheckoutSagaIntegrationTest {
     @Autowired InventoryService inventory;
     @Autowired CartService carts;
     @Autowired OrderService orders;
+    @Autowired org.springframework.jdbc.core.JdbcTemplate jdbc;
 
     private final StubGateway gateway = new StubGateway();
 
@@ -152,6 +153,63 @@ class CheckoutSagaIntegrationTest {
         saga.expire(unpaid);
         assertThat(orders.get(f.user, unpaid).status()).isEqualTo(OrderStatus.FAILED);
         assertThat(stock(f)).isEqualTo(4); // the paid one keeps its unit; the unpaid one's came back
+    }
+
+    @Test
+    void anUnknownGatewayAnswerHoldsTheOrderInsteadOfClosingIt() {
+        // G3: "the gateway has no record" is not "not paid" (e.g. payment-mock restarted and lost
+        // its memory). Expiry keeps the stock held and asks again later.
+        Fixture f = fixture(5);
+        long orderId = saga.start(f.user, "stub").order().id();
+        var due = orders.get(f.user, orderId).paymentDueAt();
+        gateway.status.set(new GatewayStatus(GatewayStatus.State.UNKNOWN, null));
+
+        saga.expire(orderId);
+
+        var after = orders.get(f.user, orderId);
+        assertThat(after.status()).isEqualTo(OrderStatus.CREATED);
+        assertThat(after.paymentDueAt()).isAfter(due); // asked again later, not closed
+        assertThat(stock(f)).isEqualTo(4);
+    }
+
+    @Test
+    void aLatePaymentIsRecordedOnceHoweverManyWaysItIsReported() {
+        // G1: money arrives after the order closed. The browser, the webhook consumer and the
+        // re-check job may all notice it; the refund event must be raised exactly once.
+        Fixture f = fixture(5);
+        CheckoutResponse r = saga.start(f.user, "stub");
+        long orderId = r.order().id();
+        saga.cancel(f.user, orderId);
+        gateway.status.set(new GatewayStatus(GatewayStatus.State.PAID, "pay_late"));
+
+        assertThat(saga.applyPayment(orderId, "pay_late")).isEqualTo(CheckoutSaga.PaymentResult.PAID_AFTER_CLOSE);
+        assertThat(saga.applyPayment(orderId, "pay_late")).isEqualTo(CheckoutSaga.PaymentResult.PAID_AFTER_CLOSE);
+        saga.recheckClosed(orderId);
+        assertThatThrownBy(() -> saga.verifyPayment(f.user, orderId, r.payment().gatewayOrderId(), "pay_late", StubGateway.GOOD))
+                .isInstanceOf(ConflictException.class);
+
+        var order = orders.get(f.user, orderId);
+        assertThat(order.status()).isEqualTo(OrderStatus.CANCELLED); // never flips to PAID
+        assertThat(order.latePaymentId()).isEqualTo("pay_late");
+        assertThat(jdbc.queryForObject("SELECT count(*) FROM outbox WHERE message_key = ? AND event_type = 'PaymentAfterClose'",
+                Long.class, Long.toString(orderId))).isEqualTo(1);
+        assertThat(stock(f)).isEqualTo(5); // the stock released on cancel stays released
+    }
+
+    @Test
+    void theReCheckFindsMoneyThatArrivedAfterExpiry() {
+        Fixture f = fixture(5);
+        long orderId = saga.start(f.user, "stub").order().id();
+        gateway.status.set(new GatewayStatus(GatewayStatus.State.PENDING, null));
+        saga.expire(orderId);
+        assertThat(orders.get(f.user, orderId).status()).isEqualTo(OrderStatus.FAILED);
+
+        saga.recheckClosed(orderId); // still nothing at the gateway
+        assertThat(orders.get(f.user, orderId).latePaymentId()).isNull();
+
+        gateway.status.set(new GatewayStatus(GatewayStatus.State.PAID, "pay_after_expiry")); // shopper paid in the old tab
+        saga.recheckClosed(orderId);
+        assertThat(orders.get(f.user, orderId).latePaymentId()).isEqualTo("pay_after_expiry");
     }
 
     @Test
@@ -306,6 +364,11 @@ class CheckoutSagaIntegrationTest {
 
         @Override
         public boolean verifySignature(String gatewayOrderId, String paymentId, String signature) {
+            return GOOD.equals(signature);
+        }
+
+        @Override
+        public boolean verifyWebhook(String body, String signature) {
             return GOOD.equals(signature);
         }
 

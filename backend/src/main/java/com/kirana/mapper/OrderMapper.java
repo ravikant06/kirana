@@ -14,7 +14,8 @@ public final class OrderMapper {
     public static OrderResponse toResponse(Order order) {
         return new OrderResponse(order.getId(), order.getStatus(), order.getTotal(), order.getCreatedAt(),
                 order.getItems().stream().map(OrderMapper::toItem).toList(),
-                order.getPaymentProvider(), order.getPaymentDueAt(), order.getPaidAt(), order.getClosedReason());
+                order.getPaymentProvider(), order.getPaymentDueAt(), order.getPaidAt(), order.getClosedReason(),
+                order.getLatePaymentId());
     }
 
     private static OrderItemResponse toItem(OrderItem item) {

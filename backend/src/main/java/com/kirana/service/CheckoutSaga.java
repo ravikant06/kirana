@@ -41,11 +41,15 @@ import org.springframework.transaction.support.TransactionTemplate;
  *   2. request       gateway order created (no transaction held)         requestPayment
  *   3a. confirm      CREATED -> PAID                                     confirmPayment
  *   3b. close        CREATED -> CANCELLED | FAILED, and release stock    cancel / expire
+ *   4. late payment  money arrived after 3b: recorded once, refund event  applyPayment (Stage 6c)
  *
  * Every move out of CREATED is one conditional UPDATE (OrderRepository): whoever changes the
  * row owns the step's side effects; a duplicate or late caller changes nothing. That is what
  * lets the shopper's verify call, the reconciler and the expiry job race safely today, and
  * what lets Kafka consumers (at-least-once) call the same methods in Stage 6.
+ *
+ * Stage 6c: payments now reach us three ways, all ending in applyPayment: the browser (verify),
+ * the gateway's webhook (via Kafka, PaymentEventsListener) and polling (reconcile, recheckClosed).
  */
 @Service
 public class CheckoutSaga {
@@ -135,7 +139,14 @@ public class CheckoutSaga {
         }
     }
 
-    /** The payment window passed. Check the gateway one last time, then release the stock. */
+    /**
+     * The payment window passed. Check the gateway one last time, then release the stock.
+     *
+     * PENDING means the gateway knows the order and has no captured payment: safe to close (and
+     * if money still arrives later, recheckClosed / the webhook catch it). UNKNOWN means the
+     * gateway could not tell us anything about it, which is not the same as "not paid" (G3):
+     * hold the order a little longer and ask again, up to unknown-grace; only then close it.
+     */
     public void expire(Long orderId) {
         Order order = orders.findById(orderId).orElse(null);
         if (order == null || order.getStatus() != OrderStatus.CREATED) {
@@ -147,9 +158,43 @@ public class CheckoutSaga {
                 confirmPayment(orderId, status.paymentId());
                 return;
             }
-            // UNKNOWN (gateway has no record) and PENDING both mean: no captured payment we know of.
+            if (status.state() == GatewayStatus.State.UNKNOWN) {
+                Instant now = Instant.now();
+                Instant giveUpAt = order.getCreatedAt().plus(props.window()).plus(props.unknownGrace());
+                if (now.isBefore(giveUpAt)) {
+                    // Postponing the due time also moves the order to the back of the expiry queue,
+                    // so a pile of UNKNOWN orders cannot starve the others.
+                    Instant from = now.isAfter(order.getPaymentDueAt()) ? now : order.getPaymentDueAt();
+                    Instant retryAt = min(from.plusSeconds(300), giveUpAt);
+                    tx.executeWithoutResult(s -> orders.postponeDue(orderId, retryAt, now));
+                    log.warn("Expiry: {} has no record of order {} ({}); holding it until {} instead of closing",
+                            order.getPaymentProvider(), orderId, order.getGatewayOrderId(), retryAt);
+                    return;
+                }
+                log.error("Expiry: {} still has no record of order {} after {}; closing it. "
+                                + "The re-check job keeps watching for a late payment for {}.",
+                        order.getPaymentProvider(), orderId, props.unknownGrace(), props.recheckClosedFor());
+            }
         }
         close(orderId, OrderStatus.FAILED, "Not paid within " + props.window().toMinutes() + " minutes");
+    }
+
+    /**
+     * Stage 6c safety net (G1) for when no webhook arrives: a recently closed order is asked
+     * about once more. Money that arrived after the close becomes a late payment (refund).
+     */
+    public void recheckClosed(Long orderId) {
+        Order order = orders.findById(orderId).orElse(null);
+        if (order == null || order.getGatewayOrderId() == null || order.getLatePaymentId() != null
+                || (order.getStatus() != OrderStatus.CANCELLED && order.getStatus() != OrderStatus.FAILED)) {
+            return;
+        }
+        GatewayStatus status = gateways.of(order.getPaymentProvider()).fetchStatus(order.getGatewayOrderId());
+        if (status.state() == GatewayStatus.State.PAID) {
+            log.warn("Re-check: order {} was {} but {} captured payment {}",
+                    orderId, order.getStatus(), order.getPaymentProvider(), status.paymentId());
+            applyPayment(orderId, status.paymentId());
+        }
     }
 
     // ---------------------------------------------------------------- the steps themselves
@@ -181,26 +226,47 @@ public class CheckoutSaga {
         return gateway.session(orderId, created);
     }
 
-    /** CREATED -> PAID, once. A payment arriving after the order closed is flagged for a refund. */
-    void confirmPayment(Long orderId, String paymentId) {
-        Boolean changed = tx.execute(s -> {
-            if (orders.markPaid(orderId, paymentId, Instant.now()) == 1) {
+    /** What applyPayment did with a captured payment. */
+    public enum PaymentResult {
+        /** CREATED -> PAID by this call. */
+        PAID,
+        /** Someone else (browser, webhook, reconciler) confirmed it first; nothing to do. */
+        ALREADY_PAID,
+        /** The order had already closed: recorded as a late payment, refund event raised once. */
+        PAID_AFTER_CLOSE
+    }
+
+    /**
+     * Step 3a or 4 for a payment the gateway captured, whoever reports it. Never throws for a
+     * closed order, so a Kafka consumer can call it inside its own transaction. Every branch is
+     * a conditional UPDATE, so reporting the same payment any number of times is harmless.
+     */
+    public PaymentResult applyPayment(Long orderId, String paymentId) {
+        return tx.execute(s -> {
+            Instant now = Instant.now();
+            if (orders.markPaid(orderId, paymentId, now) == 1) {
                 Order o = orders.findById(orderId).orElseThrow();
                 events.publish(new OrderEvent.OrderPaid(orderId, o.getPaymentProvider(), paymentId));
-                return true;
+                return PaymentResult.PAID;
             }
-            return false;
+            Order order = orders.findById(orderId).orElseThrow();
+            if (order.getStatus() == OrderStatus.PAID) {
+                return PaymentResult.ALREADY_PAID;
+            }
+            if (orders.markLatePayment(orderId, paymentId, now) == 1) {
+                events.publish(new OrderEvent.PaymentAfterClose(orderId, order.getPaymentProvider(), paymentId));
+            }
+            return PaymentResult.PAID_AFTER_CLOSE;
         });
-        if (Boolean.TRUE.equals(changed)) {
-            return;
+    }
+
+    /** applyPayment for callers that answer a person (the shopper's verify): a closed order is an error. */
+    void confirmPayment(Long orderId, String paymentId) {
+        if (applyPayment(orderId, paymentId) == PaymentResult.PAID_AFTER_CLOSE) {
+            Order order = orders.findById(orderId).orElseThrow();
+            throw new ConflictException("Order already closed",
+                    "Order %d was %s before this payment arrived. A refund is needed.".formatted(orderId, order.getStatus()));
         }
-        Order order = orders.findById(orderId).orElseThrow();
-        if (order.getStatus() == OrderStatus.PAID) {
-            return; // already confirmed by another caller: nothing to do
-        }
-        events.publish(new OrderEvent.PaymentAfterClose(orderId, order.getPaymentProvider(), paymentId));
-        throw new ConflictException("Order already closed",
-                "Order %d was %s before this payment arrived. A refund is needed.".formatted(orderId, order.getStatus()));
     }
 
     /** CREATED -> CANCELLED/FAILED, once; only the caller that closes it releases the stock. */
@@ -228,6 +294,10 @@ public class CheckoutSaga {
     }
 
     // ---------------------------------------------------------------- helpers
+
+    private static Instant min(Instant a, Instant b) {
+        return a.isBefore(b) ? a : b;
+    }
 
     private Order requireOwned(Long userId, Long orderId) {
         return orders.findWithItemsByIdAndUserId(orderId, userId)

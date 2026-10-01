@@ -49,13 +49,22 @@ spring:
         delivery.timeout.ms: 10000
         request.timeout.ms: 5000
         max.block.ms: 5000
+    # Stage 6c consumers. We commit offsets ourselves (ack-mode manual), only after the work is
+    # committed to Postgres; auto-commit would commit on a timer, possibly before the work is done.
+    consumer:
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      enable-auto-commit: false
+      auto-offset-reset: earliest   # a brand-new group starts from the oldest record, not "now"
+    listener:
+      ack-mode: manual
 
   task:
     scheduling:
       pool:
         # PaymentJobs and OutboxRelay are @Scheduled. The default is ONE thread for all of them,
         # so a relay waiting on Kafka would delay the payment jobs, and the other way round.
-        size: 3
+        size: 4
 
   data:
     redis:
@@ -100,6 +109,8 @@ kirana:
     currency: INR
     window: 10m             # stock is held this long for payment, then the expiry job releases it
     reconcile-after: 1m     # unpaid orders older than this are checked with the gateway
+    recheck-closed-for: 30m # Stage 6c: closed orders are re-checked this long for a late payment
+    unknown-grace: 1h       # Stage 6c: past due but the gateway has no record: hold this long, then close
     http:
       # Stage 5 latency budget: with 3 attempts (Resilience), a dead gateway costs at most
       # ~3 x 2 s + backoff before the shopper hears "pay later", and the breaker cuts that to 0.
@@ -111,11 +122,13 @@ kirana:
       checkout-url: http://localhost:8090
       key-id: rzp_test_kiranamock
       key-secret: kirana-mock-secret
+      webhook-secret: kirana-mock-webhook-secret
     razorpay:
       api-url: https://api.razorpay.com
       checkout-url:
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}
+      webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}   # only if you expose a webhook URL (tunnel)
   resilience:
     enabled: true   # false = no retries, breakers or bulkhead (for before/after measurements)
   chaos:

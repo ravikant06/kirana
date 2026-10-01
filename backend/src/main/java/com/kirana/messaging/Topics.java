@@ -9,6 +9,9 @@ public final class Topics {
     /** Order lifecycle events (placed, paid, closed). Key: the order id. */
     public static final String ORDERS = "orders.v1";
 
+    /** What payment gateways told us (webhooks): captured, failed. Key: our order id. */
+    public static final String PAYMENTS = "payments.v1";
+
     private Topics() {
     }
 }

@@ -46,6 +46,41 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             """)
     int close(Long id, OrderStatus to, String reason, Instant now);
 
+    /**
+     * Stage 6c: records a payment that arrived after the order closed. Once per order: the
+     * caller that gets 1 raises the refund event; duplicates (webhook retries, the re-check job,
+     * the browser) get 0.
+     */
+    @Modifying
+    @Query("""
+            update Order o set o.latePaymentId = :paymentId, o.updatedAt = :now
+            where o.id = :id and o.latePaymentId is null
+              and o.status in (com.kirana.entity.OrderStatus.CANCELLED, com.kirana.entity.OrderStatus.FAILED)
+            """)
+    int markLatePayment(Long id, String paymentId, Instant now);
+
+    /** Stage 6c: the gateway does not know this order yet; keep holding it a little longer. */
+    @Modifying
+    @Query("""
+            update Order o set o.paymentDueAt = :due, o.updatedAt = :now
+            where o.id = :id and o.status = com.kirana.entity.OrderStatus.CREATED
+            """)
+    int postponeDue(Long id, Instant due, Instant now);
+
+    Optional<Order> findByPaymentProviderAndGatewayOrderId(String paymentProvider, String gatewayOrderId);
+
+    /**
+     * Stage 6c safety net for lost webhooks: orders closed recently that had a gateway order and
+     * no late payment recorded yet. The gateway is asked whether money arrived after all.
+     */
+    @Query("""
+            select o.id from Order o
+            where o.status in (com.kirana.entity.OrderStatus.CANCELLED, com.kirana.entity.OrderStatus.FAILED)
+              and o.gatewayOrderId is not null and o.latePaymentId is null and o.updatedAt > :closedAfter
+            order by o.id
+            """)
+    List<Long> findRecentlyClosedIds(Instant closedAfter, Limit limit);
+
     /** Unpaid orders that have a gateway order and are older than :before (for the reconciler). */
     @Query("""
             select o.id from Order o

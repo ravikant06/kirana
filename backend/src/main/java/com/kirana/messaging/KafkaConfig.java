@@ -6,6 +6,9 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.listener.CommonErrorHandler;
+import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.FixedBackOff;
 
 /**
  * Topics Kirana owns, created at startup by Spring's KafkaAdmin (the broker has automatic
@@ -24,5 +27,21 @@ public class KafkaConfig {
     @Bean
     NewTopic ordersTopic(@Value("${kirana.kafka.topics.partitions:3}") int partitions) {
         return TopicBuilder.name(Topics.ORDERS).partitions(partitions).replicas(1).build();
+    }
+
+    @Bean
+    NewTopic paymentsTopic(@Value("${kirana.kafka.topics.partitions:3}") int partitions) {
+        return TopicBuilder.name(Topics.PAYMENTS).partitions(partitions).replicas(1).build();
+    }
+
+    /**
+     * What a listener does when handling a record throws (Stage 6c): try the same record again
+     * 3 more times, 1 s apart (the partition waits meanwhile, which keeps order), then log it and
+     * move on. Skipping loses the event for this consumer; 6f adds a dead-letter topic instead.
+     * Spring Boot wires this bean into every @KafkaListener.
+     */
+    @Bean
+    CommonErrorHandler kafkaErrorHandler() {
+        return new DefaultErrorHandler(new FixedBackOff(1000L, 3));
     }
 }

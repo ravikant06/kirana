@@ -43,6 +43,11 @@ public class PaymentGateways {
         return g;
     }
 
+    /** Any configured gateway by id (webhooks name their provider in the URL). */
+    public java.util.Optional<PaymentGateway> find(String id) {
+        return java.util.Optional.ofNullable(byId.get(id));
+    }
+
     /** The gateway an existing order was created with. */
     public PaymentGateway of(String id) {
         PaymentGateway g = byId.get(id);

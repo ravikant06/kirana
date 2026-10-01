@@ -64,6 +64,12 @@ services:
     environment:
       MOCK_KEY_ID: rzp_test_kiranamock
       MOCK_KEY_SECRET: kirana-mock-secret
+      # Stage 6 webhooks: where to POST payment events (the backend on your laptop), and the
+      # secret they are signed with (matches kirana.payment.mock.webhook-secret).
+      WEBHOOK_URL: http://host.docker.internal:8080/webhooks/payment/mock
+      WEBHOOK_SECRET: kirana-mock-webhook-secret
+    extra_hosts:
+      - "host.docker.internal:host-gateway"   # lets the container reach the host on Linux too
     ports:
       - "8090:8090"   # API + hosted checkout page: http://localhost:8090/docs
 

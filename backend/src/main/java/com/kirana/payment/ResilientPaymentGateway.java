@@ -48,6 +48,11 @@ public class ResilientPaymentGateway implements PaymentGateway {
     }
 
     @Override
+    public boolean verifyWebhook(String body, String signature) {
+        return delegate.verifyWebhook(body, signature);
+    }
+
+    @Override
     public PaymentSession session(long orderId, GatewayOrder order) {
         return delegate.session(orderId, order);
     }

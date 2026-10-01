@@ -10,6 +10,10 @@ Plus a hosted checkout page the browser opens (Razorpay's is its checkout.js mod
     GET  /checkout/{order_id}         Pay / Decline / "pay but lose the reply" / Cancel
 And a switch for Stage 5 failure experiments, applied to the /v1 API only:
     GET|POST /admin/mode              {"mode": "normal|slow|down|flaky|hang", "delay_ms", "failure_rate"}
+Stage 6: webhooks, like Razorpay's. After every payment attempt it POSTs a signed event
+(payment.captured / payment.failed) to WEBHOOK_URL, retrying with growing waits until it gets a 2xx:
+    GET|POST /admin/webhooks          {"enabled": bool, "duplicate": bool, "url": "..."}
+    GET  /admin/webhooks/deliveries   the last deliveries and their attempts
 
 State is in memory: restarting the mock forgets every order (the reconciler then sees UNKNOWN).
 """
@@ -17,11 +21,15 @@ import asyncio
 import base64
 import hashlib
 import hmac
+import json
 import os
 import random
 import secrets
 import threading
 import time
+import urllib.error
+import urllib.request
+from collections import deque
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -30,6 +38,8 @@ from pydantic import BaseModel
 
 KEY_ID = os.environ.get("MOCK_KEY_ID", "rzp_test_kiranamock")
 KEY_SECRET = os.environ.get("MOCK_KEY_SECRET", "kirana-mock-secret")
+# Webhooks are signed with a separate secret, as in Razorpay (set in its dashboard).
+WEBHOOK_SECRET = os.environ.get("WEBHOOK_SECRET", "kirana-mock-webhook-secret")
 
 app = FastAPI(title="payment-mock")
 app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
@@ -39,6 +49,13 @@ _orders: dict[str, dict] = {}        # order_id -> order
 _by_receipt: dict[str, str] = {}      # receipt -> order_id (idempotency)
 _payments: dict[str, list] = {}       # order_id -> [payment]
 _mode = {"mode": "normal", "delay_ms": 3000, "failure_rate": 0.3}
+_webhooks = {
+    "url": os.environ.get("WEBHOOK_URL", "http://host.docker.internal:8080/webhooks/payment/mock"),
+    "enabled": True,     # off: the shop only learns from the browser or the reconciler
+    "duplicate": False,  # on: every event is delivered twice (consumers must not double-apply)
+}
+_deliveries: deque = deque(maxlen=30)
+RETRY_DELAYS = [1, 2, 4, 8, 16, 32]  # seconds between attempts, then give up (Razorpay retries for ~24 h)
 
 
 def _new_id(prefix: str) -> str:
@@ -140,6 +157,7 @@ def attempt(order_id: str, body: Attempt):
             payment["error_description"] = "Payment declined by the test bank"
             order["status"] = "attempted"
         _payments[order_id].append(payment)
+    _send_webhook("payment.captured" if payment["status"] == "captured" else "payment.failed", payment)
     if payment["status"] == "captured":
         # What Razorpay's checkout hands the browser: the server must verify this signature.
         return {"razorpay_order_id": order_id, "razorpay_payment_id": payment["id"],
@@ -178,6 +196,67 @@ def set_mode(m: Mode):
     if m.failure_rate is not None:
         _mode["failure_rate"] = min(1.0, max(0.0, m.failure_rate))
     return _mode
+
+
+# ---------------------------------------------------------------- webhooks (Stage 6)
+
+def _send_webhook(event: str, payment: dict) -> None:
+    if not _webhooks["enabled"]:
+        return
+    copies = 2 if _webhooks["duplicate"] else 1
+    event_id = "evt_" + secrets.token_hex(8)  # the same id on every retry and every duplicate
+    body = json.dumps({
+        "entity": "event", "account_id": "acc_kiranamock", "event": event, "contains": ["payment"],
+        "payload": {"payment": {"entity": payment}}, "created_at": int(time.time()),
+    }, separators=(",", ":")).encode()
+    signature = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
+    for _ in range(copies):
+        threading.Thread(target=_deliver, args=(event_id, event, body, signature, _webhooks["url"]), daemon=True).start()
+
+
+def _deliver(event_id: str, event: str, body: bytes, signature: str, url: str) -> None:
+    record = {"event_id": event_id, "event": event, "url": url, "attempts": [], "delivered": False}
+    _deliveries.appendleft(record)
+    for attempt, wait in enumerate([0] + RETRY_DELAYS, start=1):
+        time.sleep(wait)
+        req = urllib.request.Request(url, data=body, method="POST", headers={
+            "Content-Type": "application/json",
+            "X-Razorpay-Signature": signature,
+            "X-Razorpay-Event-Id": event_id,
+        })
+        try:
+            with urllib.request.urlopen(req, timeout=5) as res:
+                record["attempts"].append({"n": attempt, "status": res.status})
+                if 200 <= res.status < 300:
+                    record["delivered"] = True
+                    return
+        except urllib.error.HTTPError as e:
+            record["attempts"].append({"n": attempt, "status": e.code})
+        except Exception as e:  # connection refused, timeout: the shop is down
+            record["attempts"].append({"n": attempt, "error": type(e).__name__})
+
+
+class WebhookSettings(BaseModel):
+    enabled: bool | None = None
+    duplicate: bool | None = None
+    url: str | None = None
+
+
+@app.get("/admin/webhooks")
+def get_webhooks():
+    return _webhooks
+
+
+@app.post("/admin/webhooks")
+def set_webhooks(w: WebhookSettings):
+    for k, v in w.model_dump(exclude_none=True).items():
+        _webhooks[k] = v
+    return _webhooks
+
+
+@app.get("/admin/webhooks/deliveries")
+def deliveries():
+    return list(_deliveries)
 
 
 @app.get("/health")

@@ -17,6 +17,8 @@ import org.springframework.stereotype.Component;
  *  - reconciler: orders unpaid for more than reconcile-after are checked with the gateway, which
  *    catches "paid, but the browser never told us" (closed tab, lost network, timeout).
  *  - expiry: orders past their payment window are closed and their stock released.
+ *  - re-check (Stage 6c): recently closed orders are asked about once more, which catches money
+ *    that arrived after the close when the webhook never came (G1).
  *
  * Known gap (Stage 8): with several app instances, every instance runs these jobs. The
  * conditional transitions keep that correct (only one settles each order), but the work is
@@ -50,6 +52,13 @@ public class PaymentJobs {
     public void expire() {
         for (Long id : orders.findExpiredIds(Instant.now(), BATCH)) {
             settle("expire", id, () -> saga.expire(id));
+        }
+    }
+
+    @Scheduled(fixedDelay = 120_000, initialDelay = 60_000)
+    public void recheckClosed() {
+        for (Long id : orders.findRecentlyClosedIds(Instant.now().minus(props.recheckClosedFor()), BATCH)) {
+            settle("re-check", id, () -> saga.recheckClosed(id));
         }
     }
 

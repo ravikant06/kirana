@@ -75,4 +75,16 @@
 24. **Bulkhead and graceful degradation.** Cap the resources one feature can take so its
    trouble cannot sink the others, and decide per page what still works when each
    dependency is down.
+25. **Webhooks (push) vs polling (pull), and using both.** The gateway pushes events even when
+   the shopper's tab is closed; senders retry until they get a 2xx, so a webhook is
+   at-least-once and must be verified (HMAC over the raw body) and de-duplicated (by the
+   sender's event id). Answer 2xx only after the event is durable. Keep polling as the safety
+   net for webhooks that never arrive.
+26. **Idempotent consumers: three layers.** De-dupe at the door (unique event id), in the
+   consumer (an inbox table written in the same transaction as the work, offset committed
+   after), and in the state change itself (conditional updates). The last one alone is enough
+   when the effect is naturally idempotent; the inbox covers effects that are not.
+27. **Consumer groups own partitions.** A crashed consumer still owns its partitions until the
+   broker's session timeout (45 s by default) expires; only then does a rebalance hand them to
+   someone else. Events are not lost meanwhile, only late.
 

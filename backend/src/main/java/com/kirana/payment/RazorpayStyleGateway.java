@@ -101,8 +101,18 @@ public class RazorpayStyleGateway implements PaymentGateway {
         if (gatewayOrderId == null || paymentId == null || signature == null) {
             return false;
         }
-        byte[] expected = hmacSha256(gatewayOrderId + "|" + paymentId).getBytes(StandardCharsets.UTF_8);
+        byte[] expected = hmacSha256(config.keySecret(), gatewayOrderId + "|" + paymentId).getBytes(StandardCharsets.UTF_8);
         // Constant-time comparison: timing must not reveal how many leading characters matched.
+        return MessageDigest.isEqual(expected, signature.getBytes(StandardCharsets.UTF_8));
+    }
+
+    @Override
+    public boolean verifyWebhook(String body, String signature) {
+        String secret = config.webhookSecret();
+        if (secret == null || secret.isBlank() || body == null || signature == null) {
+            return false;
+        }
+        byte[] expected = hmacSha256(secret, body).getBytes(StandardCharsets.UTF_8);
         return MessageDigest.isEqual(expected, signature.getBytes(StandardCharsets.UTF_8));
     }
 
@@ -143,10 +153,10 @@ public class RazorpayStyleGateway implements PaymentGateway {
         return URI.create(config.apiUrl().replaceAll("/+$", "") + path);
     }
 
-    private String hmacSha256(String data) {
+    private static String hmacSha256(String secret, String data) {
         try {
             Mac mac = Mac.getInstance("HmacSHA256");
-            mac.init(new SecretKeySpec(config.keySecret().getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
+            mac.init(new SecretKeySpec(secret.getBytes(StandardCharsets.UTF_8), "HmacSHA256"));
             return HexFormat.of().formatHex(mac.doFinal(data.getBytes(StandardCharsets.UTF_8)));
         } catch (NoSuchAlgorithmException | InvalidKeyException e) {
             throw new IllegalStateException("HmacSHA256 unavailable", e);

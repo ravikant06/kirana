@@ -11,6 +11,8 @@ public record PaymentProperties(
         String currency,
         Duration window,
         Duration reconcileAfter,
+        Duration recheckClosedFor,
+        Duration unknownGrace,
         Http http,
         Gateway mock,
         Gateway razorpay) {
@@ -22,8 +24,9 @@ public record PaymentProperties(
     /**
      * apiUrl: where the backend calls the gateway. checkoutUrl: where the browser opens its
      * checkout (only the mock hosts one; Razorpay's comes from its checkout.js).
+     * webhookSecret: signs the gateway's webhooks (set in its dashboard; separate from keySecret).
      */
-    public record Gateway(String apiUrl, String checkoutUrl, String keyId, String keySecret) {
+    public record Gateway(String apiUrl, String checkoutUrl, String keyId, String keySecret, String webhookSecret) {
 
         public boolean configured() {
             return keyId != null && !keyId.isBlank() && keySecret != null && !keySecret.isBlank();

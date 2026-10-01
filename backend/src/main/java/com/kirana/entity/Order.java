@@ -57,6 +57,7 @@ public class Order {
     private Instant paymentDueAt;
     private Instant paidAt;
     private String closedReason;
+    private String latePaymentId; // Stage 6c: paid after it closed; a refund is needed
 
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
@@ -94,6 +95,7 @@ public class Order {
     public Instant getPaymentDueAt() { return paymentDueAt; }
     public Instant getPaidAt() { return paidAt; }
     public String getClosedReason() { return closedReason; }
+    public String getLatePaymentId() { return latePaymentId; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

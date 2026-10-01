@@ -64,6 +64,15 @@ export default function Orders({ userId, highlight, notify, goShop }) {
   const [open, setOpen] = useState(highlight ?? null)
   useEffect(() => setOpen(highlight ?? null), [highlight])
 
+  // Stage 6c: an unpaid order can become Paid without this tab doing anything (the gateway's
+  // webhook). While any order awaits payment, look again every 5 s.
+  const awaiting = (data || []).some((o) => o.status === 'CREATED')
+  useEffect(() => {
+    if (!awaiting) return
+    const t = setInterval(() => reload(), 5000)
+    return () => clearInterval(t)
+  }, [awaiting, reload])
+
   if (!userId) {
     return (
       <div className="empty empty-center">
@@ -123,6 +132,12 @@ export default function Orders({ userId, highlight, notify, goShop }) {
               )}
               {(o.status === 'CANCELLED' || o.status === 'FAILED') && o.closedReason && (
                 <div className="order-pay"><span className="muted">{o.closedReason}</span></div>
+              )}
+              {o.latePaymentId && (
+                <div className="order-pay">
+                  <span className="badge badge-failed">Refund due</span>
+                  <span className="muted">Your payment {o.latePaymentId} arrived after this order closed. It will be refunded.</span>
+                </div>
               )}
             </div>
             {open === o.id && (

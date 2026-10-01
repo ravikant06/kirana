@@ -1,19 +1,13 @@
 package com.kirana.service;
 
-import java.time.Instant;
-import java.util.LinkedHashMap;
-import java.util.Map;
 import java.util.UUID;
 
-import com.kirana.entity.OutboxMessage;
 import com.kirana.messaging.Topics;
-import com.kirana.repository.OutboxRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
-import tools.jackson.databind.json.JsonMapper;
 
 /**
  * Stage 6 implementation of the OrderEvents seam (replaces Stage 5's in-memory one; CheckoutSaga
@@ -29,12 +23,10 @@ public class OutboxOrderEvents implements OrderEvents {
 
     private static final Logger log = LoggerFactory.getLogger(OutboxOrderEvents.class);
 
-    private final OutboxRepository outbox;
-    private final JsonMapper json;
+    private final OutboxWriter outbox;
 
-    public OutboxOrderEvents(OutboxRepository outbox, JsonMapper json) {
+    public OutboxOrderEvents(OutboxWriter outbox) {
         this.outbox = outbox;
-        this.json = json;
     }
 
     @Override
@@ -42,15 +34,7 @@ public class OutboxOrderEvents implements OrderEvents {
     public void publish(OrderEvent event) {
         UUID eventId = UUID.randomUUID();
         String type = event.getClass().getSimpleName();
-        // The message body: a small envelope around the event's own fields.
-        Map<String, Object> envelope = new LinkedHashMap<>();
-        envelope.put("eventId", eventId.toString());
-        envelope.put("type", type);
-        envelope.put("occurredAt", Instant.now().toString());
-        envelope.put("orderId", event.orderId());
-        envelope.put("data", event);
-        outbox.save(new OutboxMessage(eventId, Topics.ORDERS, Long.toString(event.orderId()), type,
-                json.writeValueAsString(envelope)));
+        outbox.append(eventId, Topics.ORDERS, event.orderId(), type, event);
         if (event instanceof OrderEvent.PaymentAfterClose) {
             log.error("REFUND NEEDED (queued as {}): {}", eventId, event);
         } else {

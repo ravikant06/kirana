@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D57), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D60), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -86,12 +86,12 @@ Stage 5 left real correctness gaps around payments (found with Ravi, 2026-10-02)
 Stage 6 fixes them with webhooks, a transactional outbox, Kafka and consumers. Steps, each
 reported to Ravi in `docs/stage-6.md` (what, why, new code, flow diagrams) before the next:
 
-- **6a** Kafka infra: broker (KRaft) + Kafka UI in compose, Spring Kafka wired explicitly,
+- **6a** ✅ Kafka infra: broker (KRaft) + Kafka UI in compose, Spring Kafka wired explicitly,
   topics, connectivity in the Resilience lab, Testcontainers Kafka.
-- **6b** Transactional outbox: `outbox` table, `OutboxOrderEvents` behind the Stage 5 seam,
+- **6b** ✅ Transactional outbox: `outbox` table, `OutboxOrderEvents` behind the Stage 5 seam,
   polling relay → Kafka. Experiment: crash after commit, event still delivered.
-- **6c** Late-payment detection (G1, G3): payment-mock webhooks → `payments.v1`; closed orders
-  re-checked; UNKNOWN never closes an order.
+- **6c** ✅ Late-payment detection (G1, G3): payment-mock webhooks → `payments.v1`; closed orders
+  re-checked; UNKNOWN never closes an order. (D58–D60)
 - **6d** Refunds (G2): refund consumer calls the gateway's refund API, idempotent by payment id.
 - **6e** Fulfilment: warehouse-mock + consumer of `OrderPaid` (dual write reproduced first).
 - **6f** Kafka mechanics: keys and partitions, consumer groups and rebalancing, lag, retries

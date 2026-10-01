@@ -158,8 +158,16 @@ While active, checkout refuses buyers once the gate's units run out, with the us
 until `paymentDueAt`). If the gateway is unavailable, `payment` is null and `paymentProblem`
 says so; pay later with `POST /orders/{id}/payment`. Verify accepts only a valid gateway
 signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
-(`closedReason` says why). 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
+(`closedReason` says why). `latePaymentId` is set when money reached the gateway after the
+order closed (Stage 6c): a refund is due, and the order stays closed. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `Retry-After`.
+
+### Payment webhooks (Stage 6c, called by gateways, not the frontend)
+
+`POST /webhooks/payment/{provider}`. Raw Razorpay-shaped event body; headers
+`X-Razorpay-Signature` (HMAC-SHA256 of the raw body with the provider's webhook secret) and
+`X-Razorpay-Event-Id`. 200 once recorded (also for duplicates and events Kirana doesn't use),
+400 for a bad signature, 404 for an unknown provider.
 
 ### Resilience lab (Stage 5, dev)
 
@@ -191,7 +199,7 @@ signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
 | GET    | /orders/{id} |      | `Order`       |
 
     Order     = { id, status, total, createdAt, items: [OrderItem],
-                  paymentProvider, paymentDueAt, paidAt, closedReason }
+                  paymentProvider, paymentDueAt, paidAt, closedReason, latePaymentId }
     OrderItem = { productId, productName, unitPrice, quantity, lineTotal }
 
 `GET /orders` returns items inline on purpose. It is the endpoint for the N+1 experiment.

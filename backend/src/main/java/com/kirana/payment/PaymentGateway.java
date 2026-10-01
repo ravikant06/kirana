@@ -32,6 +32,12 @@ public interface PaymentGateway {
      */
     boolean verifySignature(String gatewayOrderId, String paymentId, String signature);
 
+    /**
+     * True only if this webhook body was signed by the gateway: HMAC-SHA256 of the raw body with
+     * the webhook secret. False when no webhook secret is configured.
+     */
+    boolean verifyWebhook(String body, String signature);
+
     /** What the browser needs to open this gateway's checkout. */
     PaymentSession session(long orderId, GatewayOrder order);
 }

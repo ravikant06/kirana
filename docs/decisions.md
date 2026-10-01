@@ -287,6 +287,33 @@ order), keyed by order id, with `event-id`/`event-type` headers. At-least-once: 
 dedupe by `eventId`. Scheduler pool raised to 3 threads. Costs: the relay waits on Kafka inside a
 transaction (scheduler thread only); published rows are not cleaned up yet.
 
+**D58. Gateway webhooks enter through the outbox onto `payments.v1`; a Kafka consumer applies
+them.** (6c) The endpoint verifies the HMAC signature over the raw body, finds the order, writes
+one outbox row (topic `payments.v1`, key = our order id) and answers 200 only after that
+commits. The outbox event id is a name-based UUID of the gateway's event id, so a redelivered
+webhook hits the unique constraint and is recorded once. `PaymentEventsListener` (group
+`kirana-payments`, manual offset commit after the database commit, 3 retries 1 s apart then
+skip) applies them through `CheckoutSaga.applyPayment`. Consumer de-duplication uses an inbox
+table, `processed_events (consumer, event_id)`, written in the same transaction as the work.
+Costs: one more hop (~0.5 s relay latency); a skipped poison event is only logged (DLQ in 6f);
+for these payment events the inbox is belt-and-braces, since the conditional updates are already
+idempotent. It's there for consumers whose effects aren't idempotent (6d, 6e).
+
+**D59. A late payment is recorded once on the order (`late_payment_id`), never flips it to
+PAID, and raises `PaymentAfterClose` once.** (6c) Conditional `UPDATE … WHERE late_payment_id IS
+NULL AND status IN (CANCELLED, FAILED)`. The browser, the webhook consumer and a new re-check job
+(closed orders with a gateway order, checked every 2 min for `recheck-closed-for` = 30 min) can
+all report it; only the first raises the refund event. The stock released on close is not taken
+back. Cost: a second payment for the same closed order is not recorded (rare; the refund
+consumer in 6d can look up all payments of the gateway order).
+
+**D60. "Unknown" from the gateway does not close an order until a grace period passes.** (6c,
+G3) Expiry on UNKNOWN postpones `payment_due_at` by 5 minutes (which also moves the order to the
+back of the expiry queue, so these can't starve other orders) until `created_at + window +
+unknown-grace` (1 h), then closes it with an error log; the re-check job keeps watching for 30
+min after that. PENDING still closes immediately. Cost: the stock stays held up to an hour
+longer when the gateway has lost the order.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.
