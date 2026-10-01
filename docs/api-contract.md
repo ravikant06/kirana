@@ -163,7 +163,7 @@ signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
 
 ### Resilience lab (Stage 5, dev)
 
-`GET /system/status` (breaker states, checkout slots, payment-mock mode, network faults),
+`GET /system/status` (breaker states, checkout slots, payment-mock mode, network faults, Kafka reachability and topics),
 `POST /system/breakers/{name}/reset`, `POST /system/chaos/payment` `{ mode, delayMs, failureRate }`,
 `POST /system/chaos/network/{redis|minio|payment}` `{ fault: normal|latency|hang|down, latencyMs }`
 (network faults need the `chaos` profile).

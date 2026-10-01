@@ -272,6 +272,14 @@ Hibernate's row-count check on the cart-line delete and now answers 409 "Checkou
 progress". Both are stopgaps: Stage 7 adds a client idempotency key that returns the first
 order instead.
 
+## Stage 6
+
+**D56. Kafka: one Apache Kafka 4.1 broker in KRaft mode, plus Kafka UI.** (Ravi) Topics are
+created by the backend (`NewTopic` beans), never automatically by the broker. `orders.v1` has 3
+partitions, keyed by order id. Producer: `acks=all`, idempotent, 10 s delivery timeout. Spring
+for Apache Kafka with explicit settings. `kirana.kafka.enabled` switches Kafka off (most tests).
+Cost: one broker means replication factor 1 (production uses 3).
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

@@ -34,6 +34,22 @@ spring:
   flyway:
     locations: classpath:db/migration
 
+  kafka:
+    # Stage 6. compose exposes the broker to the host on 9094 (9092 is for other containers).
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9094}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.apache.kafka.common.serialization.StringSerializer
+      # acks=all: the broker confirms only once the write is stored (on every in-sync copy).
+      acks: all
+      properties:
+        # Idempotent producer: a retried send cannot write the same record twice.
+        enable.idempotence: true
+        # Give up on a send after 10 s instead of the 2-minute default.
+        delivery.timeout.ms: 10000
+        request.timeout.ms: 5000
+        max.block.ms: 5000
+
   data:
     redis:
       host: ${REDIS_HOST:localhost}
@@ -99,6 +115,10 @@ kirana:
     enabled: false  # the chaos profile turns this on (fault controls in Manage)
     toxiproxy-url: http://localhost:8474
     payment-mock-admin-url: http://localhost:8090
+  kafka:
+    enabled: ${KAFKA_ENABLED:true}   # false: no topics, no producers or consumers (most tests)
+    topics:
+      partitions: 3
   diagnostics:
     # Stage 2: X-Query-Count / X-DB-Time-Ms headers and one log line per request.
     query-metrics: true
@@ -116,5 +136,7 @@ logging:
   level:
     # Stage 1 observation: print every SQL statement Hibernate sends.
     org.hibernate.SQL: DEBUG
+    # The Kafka client prints its whole configuration on every connect; keep warnings only.
+    org.apache.kafka: WARN
     # Uncomment to also see the bound parameter values (very noisy):
     # org.hibernate.orm.jdbc.bind: TRACE

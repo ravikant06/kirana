@@ -77,6 +77,12 @@
             <version>${resilience4j.version}</version>
         </dependency>
 
+        <!-- Stage 6: Kafka (Spring for Apache Kafka over the official Kafka client) -->
+        <dependency>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-starter-kafka</artifactId>
+        </dependency>
+
         <!-- Object storage: MinIO's S3 client (works with any S3-compatible server) -->
         <dependency>
             <groupId>io.minio</groupId>
@@ -115,6 +121,11 @@
         <dependency>
             <groupId>org.springframework.boot</groupId>
             <artifactId>spring-boot-starter-data-redis-test</artifactId>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>testcontainers-kafka</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>

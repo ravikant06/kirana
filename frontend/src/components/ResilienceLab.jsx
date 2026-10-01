@@ -95,6 +95,26 @@ export default function ResilienceLab({ notify, embedded }) {
         </div>
       </div>
 
+      {status.kafka && (
+        <div className="lab-card lab-kafka">
+          <div className="lab-card-head">
+            <strong>Kafka</strong>
+            <span className={`lab-pill ${!status.kafka.enabled ? '' : status.kafka.reachable ? 'is-ok' : 'is-bad'}`}>
+              {!status.kafka.enabled ? 'Off' : status.kafka.reachable ? 'Connected' : 'Unreachable'}
+            </span>
+          </div>
+          <p className="muted">
+            Broker at <code>{status.kafka.bootstrap}</code>.{' '}
+            {status.kafka.reachable
+              ? status.kafka.topics.map((t) => `${t.name} (${t.partitions} partitions)`).join(', ') || 'No topics yet.'
+              : status.kafka.enabled
+                ? 'Start it with docker compose up -d kafka.'
+                : 'Switched off (kirana.kafka.enabled=false).'}
+          </p>
+          <p className="muted">Look inside (messages, partitions, offsets, consumer lag): <a href="http://localhost:8085" target="_blank" rel="noreferrer">Kafka UI on localhost:8085</a></p>
+        </div>
+      )}
+
       <div className="lab-controls">
         <h3>Payment gateway (test gateway API)</h3>
         {status.paymentMockMode ? (

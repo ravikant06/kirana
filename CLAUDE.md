@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D55), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D56), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -36,7 +36,7 @@ introduced only when the application has a real problem that motivates it.
 
     backend/    Spring Boot 4.0.x, Java 21, Maven, Hibernate 7, Flyway, Postgres 17, MinIO SDK
     frontend/   React + Vite (done; change only if the contract changes)
-    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork) + Redis 8 (port 6380) + payment-mock (8090) + Toxiproxy (8474)
+    infra/      docker-compose.yml: Postgres + MinIO (pgsty/minio fork) + Redis 8 (port 6380) + payment-mock (8090) + Toxiproxy (8474) + Kafka (9094) + Kafka UI (8085)
     docs/       decisions, API contract, concepts learned
 
 Packages are organized **by layer** (decision D10) under `com.kirana`: `controller`,
@@ -72,26 +72,36 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 5 (current stage): resilience — done
+## Stage 6 plan (current stage): Kafka, motivated by real money bugs
 
-Stages 1–4 are complete (D1–D44). Stage 5 (D45–D54), on branch `stage-5-resilience`:
+Stages 1–5 are complete (D1–D55; Stage 5 summary in `docs/stage-6.md` §0 and decisions).
+Stage 5 left real correctness gaps around payments (found with Ravi, 2026-10-02):
 
-- **Payments:** `PaymentGateway` port; one Razorpay-style client for Razorpay test mode
-  (keys in `backend/.env`) and `payment-mock/` (FastAPI, fault switch). HMAC signatures.
-- **Checkout saga** (`CheckoutSaga`): reserve → request payment → verify / cancel / expire,
-  conditional status transitions, stock released once; reconciler and expiry in
-  `PaymentJobs`; `OrderEvents` seam for Stage 6.
-- **Resilience** (`com.kirana.resilience.Resilience`, Resilience4j functional API):
-  timeouts, retries with backoff+jitter (idempotent only), breakers for payment / Redis /
-  MinIO, checkout bulkhead. Toxiproxy + `chaos` profile; Resilience lab in Manage.
-- Measured (docs/perf/stage5-*.json): hung gateway 30 s → 2 s then ~25 ms once the breaker
-  opens; frozen Redis 224 ms → 26 ms mean.
+- **G1** a payment captured just after expiry, with the browser never reporting it, is never
+  noticed (the reconciler only checks CREATED orders): money taken, order FAILED, silence.
+- **G2** a late payment that *is* reported only logs "REFUND NEEDED"; nobody refunds.
+- **G3** expiry treats a gateway "UNKNOWN" (404) as "not paid".
+- Paid orders trigger nothing (no fulfilment); adding it naively is a dual write.
 
-Known limits: a gateway slower than the 2 s timeout now fails instead of succeeding slowly;
-jobs run on every instance (Stage 8); events are in-process and can be lost on a crash
-(Stage 6 outbox); no idempotency key on POST /orders yet (Stage 7).
+Stage 6 fixes them with webhooks, a transactional outbox, Kafka and consumers. Steps, each
+reported to Ravi in `docs/stage-6.md` (what, why, new code, flow diagrams) before the next:
 
-Next per the process below: wrap up, then plan Stage 6 (Kafka) with Ravi.
+- **6a** Kafka infra: broker (KRaft) + Kafka UI in compose, Spring Kafka wired explicitly,
+  topics, connectivity in the Resilience lab, Testcontainers Kafka.
+- **6b** Transactional outbox: `outbox` table, `OutboxOrderEvents` behind the Stage 5 seam,
+  polling relay → Kafka. Experiment: crash after commit, event still delivered.
+- **6c** Late-payment detection (G1, G3): payment-mock webhooks → `payments.v1`; closed orders
+  re-checked; UNKNOWN never closes an order.
+- **6d** Refunds (G2): refund consumer calls the gateway's refund API, idempotent by payment id.
+- **6e** Fulfilment: warehouse-mock + consumer of `OrderPaid` (dual write reproduced first).
+- **6f** Kafka mechanics: keys and partitions, consumer groups and rebalancing, lag, retries
+  and dead-letter topic (poison event).
+
+Decisions (Ravi, recommended set): Apache Kafka (official image, KRaft, one node); Kafka UI;
+Spring for Apache Kafka with explicit config (manual offsets, explicit error handling);
+polling outbox relay (Debezium CDC explained, not built); consumers inside the backend
+(separate consumer groups) until Stage 9; hybrid saga (checkout orchestrated, side effects
+choreographed); mock webhooks (real Razorpay webhooks optional, needs a tunnel).
 
 ## Do not jump ahead
 

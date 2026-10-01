@@ -82,6 +82,41 @@ services:
       - "28090:28090"   # -> payment-mock
     depends_on: [redis, minio, payment-mock]
 
+  kafka:
+    # Stage 6: one Kafka broker in KRaft mode (Kafka's own controller; no ZooKeeper).
+    # Two listeners: "kafka:9092" for containers (Kafka UI), "localhost:9094" for the backend.
+    image: apache/kafka:4.1.2
+    environment:
+      KAFKA_NODE_ID: 1
+      KAFKA_PROCESS_ROLES: broker,controller
+      KAFKA_LISTENERS: PLAINTEXT://:9092,CONTROLLER://:9093,EXTERNAL://:9094
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://kafka:9092,EXTERNAL://localhost:9094
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: CONTROLLER:PLAINTEXT,PLAINTEXT:PLAINTEXT,EXTERNAL:PLAINTEXT
+      KAFKA_CONTROLLER_LISTENER_NAMES: CONTROLLER
+      KAFKA_CONTROLLER_QUORUM_VOTERS: 1@kafka:9093
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      # One broker, so internal topics can only have one copy.
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_REPLICATION_FACTOR: 1
+      KAFKA_TRANSACTION_STATE_LOG_MIN_ISR: 1
+      KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
+      # Topics are created on purpose by the backend (KafkaConfig), never by a typo.
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+    ports:
+      - "9094:9094"
+    volumes:
+      - kafka-data:/var/lib/kafka/data
+
+  kafka-ui:
+    # See topics, partitions, messages, offsets and consumer lag: http://localhost:8085
+    image: ghcr.io/kafbat/kafka-ui:v1.3.0
+    environment:
+      KAFKA_CLUSTERS_0_NAME: kirana
+      KAFKA_CLUSTERS_0_BOOTSTRAPSERVERS: kafka:9092
+    ports:
+      - "8085:8080"
+    depends_on: [kafka]
+
   qdrant:
     # AI track (kirana-ai/): vector store for the assistant's knowledge base.
     # Pinned: Qdrant upgrades its on-disk format in place, and an older image may not
@@ -98,4 +133,5 @@ services:
 volumes:
   pgdata:
   minio-data:
+  kafka-data:
   qdrant-data:
