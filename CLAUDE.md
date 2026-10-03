@@ -31,6 +31,8 @@ introduced only when the application has a real problem that motivates it.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
 - `docs/concepts-learned.md`: running list of concepts covered.
+- `docs/flows.md`: every business flow end to end (transactions, network calls, tables,
+  idempotency, failures). Keep it in sync when a flow changes.
 
 ## Stack and layout
 

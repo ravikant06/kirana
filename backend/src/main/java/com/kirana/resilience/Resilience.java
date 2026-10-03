@@ -76,8 +76,10 @@ public class Resilience {
         for (String provider : List.of("mock", "razorpay", "stub")) {
             breakers.circuitBreaker(paymentBreaker(provider), payment);
         }
-        // createOrder and fetchStatus are idempotent (our order id is the receipt), so retrying is
-        // safe. 3 attempts, waits ~200 ms then ~400 ms, each randomised by +-50% (jitter).
+        // fetchStatus is a read, so retrying is safe. createOrder is retried too: real Razorpay does
+        // NOT de-duplicate by receipt (D55), so a retry after a timeout may leave an unused gateway
+        // order behind; harmless, because the order keeps only the one attached first (CheckoutSaga).
+        // 3 attempts, waits ~200 ms then ~400 ms, each randomised by +-50% (jitter).
         retries.retry("payment", RetryConfig.custom()
                 .maxAttempts(3)
                 .intervalFunction(IntervalFunction.ofExponentialRandomBackoff(Duration.ofMillis(200), 2.0, 0.5))

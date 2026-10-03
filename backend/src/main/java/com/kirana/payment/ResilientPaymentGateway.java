@@ -4,8 +4,9 @@ import com.kirana.resilience.Resilience;
 
 /**
  * Decorator: the same gateway, with Stage 5's retry and circuit breaker around its network calls.
- * The saga never knows the difference. createOrder and fetchStatus are idempotent (keyed by our
- * order id), so both may be retried. Signature checks are local and pass straight through.
+ * The saga never knows the difference. fetchStatus is a read; createOrder may be retried because a
+ * duplicate gateway order is harmless (only the first attached is used, D55). Signature checks are
+ * local and pass straight through.
  */
 public class ResilientPaymentGateway implements PaymentGateway {
 
