@@ -273,3 +273,80 @@ Restart the backend (V9) and reload the frontend. Add to cart and place an order
 panel shows `key` on each POST. To see a retry, pause the backend for a moment while placing an
 order (Ctrl+Z in its terminal, then `fg` within a few seconds): the panel shows `retry 1`, and if
 the first attempt had got through, `replayed`.
+
+---
+
+## 7d. The same keys in Redis, for comparison
+
+**Done:** a second store behind `kirana.idempotency.store=redis` (env `IDEMPOTENCY_STORE`):
+one hash per key (`idem:{user}:{key}`, 24 h TTL); claim is one Lua script so check-and-claim
+is atomic. Measured against Postgres, then broken on purpose.
+
+### Speed (real stack, 300 sequential requests each, `infra/perf/idempotency_bench.py`)
+
+| Store | New key p50 / p95 | Replay p50 / p95 | SQL statements (new / replay) |
+|---|---|---|---|
+| Postgres | 5.68 / 8.87 ms | 1.40 / 1.76 ms | 10 / 2 |
+| Redis | 5.71 / 9.80 ms | 1.51 / 2.36 ms | 7 / 0 |
+
+**No difference worth having.** Redis removes three SQL statements but adds the same number of
+Redis round trips; on one machine both cost well under a millisecond. Redis would pay off when
+the database is the bottleneck under load (fewer statements, fewer connections held), not for
+latency. (A first run showed only 30/300 successful replays: the cart rate limit, 20 writes per
+10 s per shopper, was refusing them. Spread over 150 shoppers, all succeed.)
+
+### Where Redis falls short
+
+| Failure | Postgres store | Redis store | Seen |
+|---|---|---|---|
+| **Crash after the work commits, before the key records it** | impossible: the recovery point is in the same transaction | the recovery point is written *after* the commit; a crash in between loses it and the retry **repeats the work** | by construction (diagram below) |
+| **Redis restarts or evicts** (no persistence, `allkeys-lru`, Stage 4) | n/a | the key is forgotten; a retry **runs again** | add k1 → retry k1 → key deleted → retry k1: **cart = 2** |
+| **Redis down** | unaffected (Redis only bypassed: cache, rate limits) | every protected request **503** (fail closed) | Redis paused: Redis store **503**; Postgres store **200, replayed once** |
+
+```mermaid
+sequenceDiagram
+    participant S as CartService
+    participant DB as Postgres
+    participant R as Redis
+    rect rgb(235, 245, 235)
+    Note over S,DB: Postgres store
+    S->>DB: BEGIN; cart +1; UPDATE idempotency_keys SET recovery_point='cart_updated'; COMMIT
+    Note over S,DB: both or neither
+    end
+    rect rgb(250, 235, 235)
+    Note over S,R: Redis store
+    S->>DB: BEGIN; cart +1; COMMIT
+    Note over S: 💥 crash here: Redis never hears 'cart_updated'
+    S--xR: HSET recovery_point cart_updated (afterCommit)
+    Note over R: retry after the lock expires → no recovery point → adds again
+    end
+```
+
+Writing the recovery point to Redis *before* the commit would be worse: if the transaction then
+rolled back, the key would claim work that never happened, and the retry would skip it.
+
+**Fail closed, on purpose.** The Stage 4 cache fails *open* (Redis down → ask Postgres): serving
+from the source of truth is always correct. An idempotency check that fails open would run
+requests unprotected, which is exactly the duplicate it exists to stop. So the Redis store
+refuses (503 + `Retry-After: 5`) and Kirana's cart and checkout now depend on Redis being up.
+
+**Conclusion (D71):** Postgres stays the store. The keys protect writes to Postgres, so they
+belong in Postgres: same transaction, same durability, same availability, and no new
+dependency. Redis-based keys fit when the protected work isn't in a database you can share a
+transaction with, or as a fast first filter in front of a durable check.
+
+### New code
+
+| File | What |
+|---|---|
+| `idempotency/RedisIdempotencyStore.java` | Lua claim (new / mismatch / completed / in progress / takeover), recovery point after commit, complete, Lua fail; every call through the Stage 5 Redis breaker; Redis errors → 503 |
+| `idempotency/IdempotencyUnavailableException.java`, `GlobalExceptionHandler` | 503 "Idempotency unavailable", `Retry-After: 5` |
+| `infra/perf/idempotency_bench.py`, `docs/perf/stage7-{postgres,redis}.json` | the measurement |
+| Tests | `RedisIdempotencyIntegrationTest`: replay from Redis with a TTL, 422, recovery point resumed, **a forgotten key repeats the add**; `RedisDownIdempotencyIntegrationTest`: Redis down → 503, nothing added. **110 tests pass.** |
+
+### Try it
+
+`python3 infra/perf/idempotency_bench.py --label postgres`; restart the backend with
+`IDEMPOTENCY_STORE=redis`, run it with `--label redis`; then `docker pause kirana-redis-1` and add
+something to the cart (503), `docker unpause kirana-redis-1`. Restart without the variable to go
+back to Postgres.

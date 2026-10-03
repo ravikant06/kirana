@@ -393,6 +393,14 @@ their action succeeds (checkout attempt; pay / cancel per order), so a user's se
 a timeout repeats the same action; a 422 drops the key. Every attempt shows in the Requests panel
 with its key and "replayed". Scripts send keys. Cost: client code must manage keys.
 
+**D71. Idempotency keys stay in Postgres; the Redis store is a comparison only.** (7d) Measured:
+no latency difference on one machine (new key p50 5.68 vs 5.71 ms; replay 1.40 vs 1.51 ms).
+Redis can't put the recovery point in the database transaction (a crash between commit and the
+Redis write repeats the work), forgets keys on restart or eviction (Kirana's Redis has no
+persistence and evicts), and makes cart and checkout depend on Redis: down → 503 (it fails
+closed on purpose; failing open would run requests unprotected). Kept behind
+`kirana.idempotency.store=redis` for the experiments.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

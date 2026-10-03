@@ -1,0 +1,20 @@
+{
+  "label": "postgres",
+  "measured_at": "2026-10-03T17:49:34",
+  "new_key": {
+    "requests": 300,
+    "ok": 299,
+    "p50_ms": 5.68,
+    "p95_ms": 8.87,
+    "mean_ms": 6.02,
+    "sql_statements": 10.0
+  },
+  "replay": {
+    "requests": 300,
+    "ok": 300,
+    "p50_ms": 1.4,
+    "p95_ms": 1.76,
+    "mean_ms": 1.44,
+    "sql_statements": 2.0
+  }
+}

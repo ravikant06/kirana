@@ -21,6 +21,7 @@ import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import com.kirana.idempotency.IdempotencyInProgressException;
 import com.kirana.idempotency.IdempotencyKeyReusedException;
+import com.kirana.idempotency.IdempotencyUnavailableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -92,6 +93,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.CONFLICT)
                 .header(HttpHeaders.RETRY_AFTER, "1")
                 .body(problem(HttpStatus.CONFLICT, "Request in progress", ex.getMessage()));
+    }
+
+    /** Stage 7d (Redis store): keys can't be checked, so the request is refused rather than run unprotected. */
+    @ExceptionHandler(IdempotencyUnavailableException.class)
+    public ResponseEntity<ProblemDetail> idempotencyUnavailable(IdempotencyUnavailableException ex) {
+        log.warn("Idempotency store unavailable: {}", ex.getCause() == null ? ex.getMessage() : ex.getCause().getMessage());
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE)
+                .header(HttpHeaders.RETRY_AFTER, "5")
+                .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "Idempotency unavailable", ex.getMessage()));
     }
 
     /** Stage 7: the Idempotency-Key was used for a different request (IETF draft: 422). */

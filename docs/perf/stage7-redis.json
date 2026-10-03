@@ -1,0 +1,20 @@
+{
+  "label": "redis",
+  "measured_at": "2026-10-03T17:49:44",
+  "new_key": {
+    "requests": 300,
+    "ok": 299,
+    "p50_ms": 5.71,
+    "p95_ms": 9.8,
+    "mean_ms": 6.17,
+    "sql_statements": 7.0
+  },
+  "replay": {
+    "requests": 300,
+    "ok": 300,
+    "p50_ms": 1.51,
+    "p95_ms": 2.36,
+    "mean_ms": 1.6,
+    "sql_statements": 0.0
+  }
+}
