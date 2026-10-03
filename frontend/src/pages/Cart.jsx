@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { api, money } from '../api.js'
+import { useRef, useState } from 'react'
+import { api, money, newKey } from '../api.js'
 import { useLoad } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
@@ -15,6 +15,9 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
   const available = (providers.data || []).filter((p) => p.available)
   const chosen = provider ?? available.find((p) => p.isDefault)?.id ?? available[0]?.id
   const payment = usePayment({ notify, onDone: (orderId) => onOrdered(orderId) })
+  // Stage 7: one key per checkout attempt. Kept until the order is placed, so clicking "Place
+  // order" again after an error or timeout gets the first attempt's order instead of a new one.
+  const checkoutKey = useRef(null)
 
   const run = async (fn) => {
     setBusy(true)
@@ -33,7 +36,9 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
     setBusy(true)
     setOrderError(null)
     try {
-      const { order, payment: session, paymentProblem } = await api.orders.place(chosen)
+      checkoutKey.current ??= newKey()
+      const { order, payment: session, paymentProblem } = await api.orders.place(chosen, checkoutKey.current)
+      checkoutKey.current = null // done: the next checkout is a new action
       onCartChanged()
       if (session) {
         payment.start(session) // stock is held; the gateway's checkout opens
@@ -42,6 +47,7 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
         onOrdered(order.id)
       }
     } catch (e) {
+      if (e.status === 422) checkoutKey.current = null // the key belonged to a different request
       setOrderError(e)
       await reload()
     } finally {

@@ -1,5 +1,5 @@
-import { useEffect, useState } from 'react'
-import { api, money, when } from '../api.js'
+import { useEffect, useState, useRef } from 'react'
+import { api, money, when, newKey } from '../api.js'
 import { useLoad } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import { usePayment } from '../components/PaymentModal.jsx'
@@ -46,11 +46,17 @@ export default function Orders({ userId, highlight, notify, goShop }) {
   const { data, error, loading, reload } = useLoad(() => (userId ? api.orders.list() : Promise.resolve(null)), [userId])
   const [busy, setBusy] = useState(null)
   const payment = usePayment({ notify, onDone: () => reload() })
+  // Stage 7: a key per (action, order), kept until that action succeeds: clicking again after a
+  // timeout repeats the SAME action and gets its answer, rather than starting a new one.
+  const keys = useRef({})
+  const keyFor = (action, id) => (keys.current[`${action}:${id}`] ??= newKey())
+  const done = (action, id) => delete keys.current[`${action}:${id}`]
 
   const payNow = async (o) => {
     setBusy(o.id)
     try {
-      payment.start(await api.orders.pay(o.id))
+      payment.start(await api.orders.pay(o.id, keyFor('pay', o.id)))
+      done('pay', o.id)
     } catch (e) {
       notify(e.message, 'error')
       reload()
@@ -62,7 +68,8 @@ export default function Orders({ userId, highlight, notify, goShop }) {
   const cancel = async (o) => {
     setBusy(o.id)
     try {
-      await api.orders.cancel(o.id)
+      await api.orders.cancel(o.id, keyFor('cancel', o.id))
+      done('cancel', o.id)
       notify(`Order #${o.id} cancelled; its items are back on the shelf`)
     } catch (e) {
       notify(e.message, 'error')

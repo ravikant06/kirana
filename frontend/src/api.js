@@ -1,6 +1,8 @@
 // Thin fetch wrapper. Every call is recorded so the Requests panel can show
-// exactly what the backend received and returned. No retries, no caching:
-// the frontend should never hide backend behaviour from you.
+// exactly what the backend received and returned. No caching, and no retries except one kind:
+// Stage 7, a request with an Idempotency-Key whose outcome is unknown (no response, 409 "in
+// progress", 502/503/504) is retried with the SAME key, like a payment SDK does. Every attempt
+// still shows up in the panel.
 
 let log = []
 const listeners = new Set()
@@ -27,10 +29,49 @@ function record(entry) {
 }
 
 export class ApiError extends Error {
-  constructor(status, problem) {
+  constructor(status, problem, retryAfter = null) {
     super(problem?.detail || problem?.title || `Request failed with status ${status}`)
     this.status = status
     this.problem = problem
+    this.retryAfter = retryAfter
+  }
+}
+
+// Stage 7: one key per user action (a tap of "Add", one checkout attempt), reused on its retries.
+export const newKey = () => crypto.randomUUID()
+
+const MAX_RETRIES = 2
+const sleep = (ms) => new Promise((r) => setTimeout(r, ms))
+
+// Retry only when we can't know whether the server acted. A definite answer (200, 400, 409
+// "Cart is empty", ...) is never retried.
+function unknownOutcome(status, problem) {
+  return status === 0 || status === 502 || status === 503 || status === 504
+    || (status === 409 && problem?.title === 'Request in progress')
+}
+
+// Retry-After when the server sent one (capped at 5 s), else 0.4 s, 0.8 s ... plus jitter.
+function backoff(attempt, retryAfter) {
+  if (retryAfter != null) return Math.min(5, retryAfter) * 1000
+  return 400 * 2 ** (attempt - 1) + Math.random() * 200
+}
+
+async function request(method, path, body, opts = {}) {
+  const attempts = opts.idempotencyKey ? 1 + MAX_RETRIES : 1
+  for (let attempt = 1; ; attempt++) {
+    const last = attempt >= attempts
+    if (opts.meta) {
+      const r = await requestOnce(method, path, body, { ...opts, attempt })
+      if (r.ok || last || !unknownOutcome(r.status, r.data)) return r
+      await sleep(backoff(attempt, r.retryAfter))
+      continue
+    }
+    try {
+      return await requestOnce(method, path, body, { ...opts, attempt })
+    } catch (e) {
+      if (last || !(e instanceof ApiError) || !unknownOutcome(e.status, e.problem)) throw e
+      await sleep(backoff(attempt, e.retryAfter))
+    }
   }
 }
 
@@ -38,12 +79,14 @@ export class ApiError extends Error {
 // opts.quiet:  leave it out of the Requests panel (background polling).
 // opts.meta:   never throw; return { ok, status, data, queries, ms } instead.
 // opts.service: 'ai' sends it to the AI service (/ai → kirana-ai on :8000) instead of Spring Boot.
-async function request(method, path, body, opts = {}) {
+// opts.idempotencyKey: sent as Idempotency-Key (Stage 7); enables the retries above.
+async function requestOnce(method, path, body, opts = {}) {
   const ai = opts.service === 'ai'
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
   const userId = opts.userId ?? currentUserId
   if (userId) headers['X-User-Id'] = String(userId)
+  if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey
   const log = opts.quiet ? () => {} : record
 
   const entry = {
@@ -53,6 +96,8 @@ async function request(method, path, body, opts = {}) {
     service: ai ? 'ai' : 'backend',
     userId,
     requestBody: body,
+    idempotencyKey: opts.idempotencyKey,
+    attempt: opts.attempt ?? 1,
     at: new Date(),
   }
   const started = performance.now()
@@ -95,9 +140,12 @@ async function request(method, path, body, opts = {}) {
     cost: res.headers.get('X-AI-Cost-USD'),
   }
   const ms = Math.round(performance.now() - started)
+  const retryAfterHeader = res.headers.get('Retry-After')
+  const retryAfter = retryAfterHeader === null ? null : Number(retryAfterHeader)
   log({
     ...entry,
     status: res.status,
+    replayed: res.headers.get('Idempotent-Replayed') === 'true',
     ms,
     queries: queries === null ? null : Number(queries),
     dbMs: dbMs === null ? null : Number(dbMs),
@@ -107,7 +155,7 @@ async function request(method, path, body, opts = {}) {
   })
 
   if (opts.meta) {
-    return { ok: res.ok, status: res.status, data, queries: queries === null ? null : Number(queries), ms }
+    return { ok: res.ok, status: res.status, data, queries: queries === null ? null : Number(queries), ms, retryAfter }
   }
   if (!res.ok) {
     if (!text && res.status >= 500) {
@@ -120,7 +168,7 @@ async function request(method, path, body, opts = {}) {
       })
     }
     const problem = data && typeof data === 'object' ? data : { status: res.status, detail: String(data || res.statusText) }
-    throw new ApiError(res.status, problem)
+    throw new ApiError(res.status, problem, retryAfter)
   }
   return data
 }
@@ -199,7 +247,8 @@ export const api = {
   },
   cart: {
     get: () => request('GET', '/cart'),
-    add: (productId, quantity) => request('POST', '/cart/items', { productId, quantity }),
+    add: (productId, quantity, key = newKey()) =>
+      request('POST', '/cart/items', { productId, quantity }, { idempotencyKey: key }),
     update: (productId, quantity) => request('PUT', `/cart/items/${q(productId)}`, { quantity }),
     remove: (productId) => request('DELETE', `/cart/items/${q(productId)}`),
   },
@@ -212,8 +261,9 @@ export const api = {
   // The rush simulator: set up throwaway shoppers quietly, then check out as each of them.
   rush: {
     createShopper: (name, email) => request('POST', '/users', { name, email }, { quiet: true }),
-    addToCart: (userId, productId) => request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true }),
-    checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true }),
+    addToCart: (userId, productId) =>
+      request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true, idempotencyKey: newKey() }),
+    checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true, idempotencyKey: newKey() }),
   },
   // Stage 5 Resilience lab
   system: {
@@ -228,10 +278,12 @@ export const api = {
   },
   orders: {
     // Stage 5: returns { order, payment, paymentProblem }. payment opens the gateway checkout.
-    place: (paymentProvider) => request('POST', '/orders', paymentProvider ? { paymentProvider } : undefined),
-    pay: (id) => request('POST', `/orders/${q(id)}/payment`),
+    // Stage 7: pass the same key again to retry the same action (a new key = a new action).
+    place: (paymentProvider, key = newKey()) =>
+      request('POST', '/orders', paymentProvider ? { paymentProvider } : undefined, { idempotencyKey: key }),
+    pay: (id, key = newKey()) => request('POST', `/orders/${q(id)}/payment`, undefined, { idempotencyKey: key }),
     verify: (id, body) => request('POST', `/orders/${q(id)}/payment/verify`, body),
-    cancel: (id) => request('POST', `/orders/${q(id)}/cancel`),
+    cancel: (id, key = newKey()) => request('POST', `/orders/${q(id)}/cancel`, undefined, { idempotencyKey: key }),
     list: () => request('GET', '/orders'),
     get: (id) => request('GET', `/orders/${q(id)}`),
   },

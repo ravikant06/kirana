@@ -19,6 +19,7 @@ import subprocess
 import time
 import urllib.error
 import urllib.request
+import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -26,10 +27,12 @@ MOCK_ADMIN = "http://localhost:8090/admin/mode"
 REDIS_CONTAINER = "kirana-redis-1"
 
 
-def call(api, method, path, body=None, user=None, timeout=60):
+def call(api, method, path, body=None, user=None, timeout=60, key=None):
     headers = {"Content-Type": "application/json"}
     if user:
         headers["X-User-Id"] = str(user)
+    if key:
+        headers["Idempotency-Key"] = key  # Stage 7: required on cart adds, checkout, pay, cancel
     req = urllib.request.Request(api + path, method=method, headers=headers,
                                  data=None if body is None else json.dumps(body).encode())
     start = time.perf_counter()
@@ -65,10 +68,11 @@ def checkout_scenario(api, name, product, n=20, concurrency=10):
     buyers = []
     for i in range(n):
         _, _, u = call(api, "POST", "/users", {"name": f"R{i}", "email": f"res-{name}-{time.time_ns()}-{i}@test.com"})
-        call(api, "POST", "/cart/items", {"productId": product, "quantity": 1}, user=u["id"])
+        call(api, "POST", "/cart/items", {"productId": product, "quantity": 1}, user=u["id"], key=str(uuid.uuid4()))
         buyers.append(u["id"])
     with ThreadPoolExecutor(concurrency) as pool:
-        results = list(pool.map(lambda uid: (uid, *call(api, "POST", "/orders", {"paymentProvider": "mock"}, user=uid)), buyers))
+        results = list(pool.map(lambda uid: (uid, *call(api, "POST", "/orders", {"paymentProvider": "mock"}, user=uid,
+                                                         key=str(uuid.uuid4()))), buyers))
     outcomes = {"payment_started": 0, "order_held_pay_later": 0, "checkout_busy_503": 0, "error": 0}
     for uid, status, ms, data in results:
         if status == 201 and data.get("payment"):
@@ -80,7 +84,7 @@ def checkout_scenario(api, name, product, n=20, concurrency=10):
         else:
             outcomes["error"] += 1
         if status == 201:
-            call(api, "POST", f"/orders/{data['order']['id']}/cancel", user=uid)  # give the stock back
+            call(api, "POST", f"/orders/{data['order']['id']}/cancel", user=uid, key=str(uuid.uuid4()))  # give the stock back
     return {"scenario": name, "requests": n, "concurrency": concurrency, **summary([r[2] for r in results]), "outcomes": outcomes}
 
 

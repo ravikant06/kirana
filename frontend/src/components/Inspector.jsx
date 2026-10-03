@@ -58,6 +58,11 @@ export default function Inspector({ open, onClose }) {
                     </span>
                   )}
                   {e.aiUsage && <span className="req-sql req-ai">{aiSummary(e.aiUsage)}</span>}
+                  {e.idempotencyKey && (
+                    <span className="req-sql">
+                      key{e.attempt > 1 ? ` · retry ${e.attempt - 1}` : ''}{e.replayed ? ' · replayed' : ''}
+                    </span>
+                  )}
                 </span>
               </button>
               {e.direct && <div className="req-note">Sent straight to MinIO. Spring Boot never saw this request.</div>}
@@ -73,6 +78,13 @@ export default function Inspector({ open, onClose }) {
                       {e.cache === 'HIT' && ' Answered from the Redis cache.'}
                       {e.cache === 'MISS' && ' Cache miss: loaded from Postgres and stored in Redis.'}
                       {e.cache === 'BYPASS' && ' Redis was unavailable, so Postgres answered directly.'}
+                    </div>
+                  )}
+                  {e.idempotencyKey && (
+                    <div className="req-meta">
+                      Idempotency-Key <code>{e.idempotencyKey}</code>
+                      {e.attempt > 1 && `, attempt ${e.attempt} of the same action`}.
+                      {e.replayed && ' The server had already done this action: it replayed the stored response and did nothing new.'}
                     </div>
                   )}
                   {e.aiUsage && (

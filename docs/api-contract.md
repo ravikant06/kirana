@@ -55,6 +55,25 @@ Every response carries `X-Query-Count` (SQL statements the request ran) and
 `X-Cache`: `HIT` (answered by Redis), `MISS` (loaded from Postgres), `BYPASS` (Redis
 unavailable). The Requests panel shows all three.
 
+### Idempotency-Key (Stage 7, required on the endpoints marked ★)
+
+`POST /cart/items`, `POST /orders`, `POST /orders/{id}/payment` and `POST /orders/{id}/cancel`
+require an `Idempotency-Key` header: a unique value (a UUID) per user action, sent again,
+unchanged, when retrying that action. Keys belong to the shopper (`X-User-Id`) and are kept 24 h.
+Follows the IETF draft *The Idempotency-Key HTTP Header Field*:
+
+| Situation | Response |
+|---|---|
+| no key | 400 validation ProblemDetail, `errors: [{ field: "Idempotency-Key" }]` |
+| first request with a key | handled normally; a success is stored with the key |
+| same key, that request finished | the stored status, body and `Location`, plus `Idempotent-Replayed: true` |
+| same key, that request still running | 409 `"Request in progress"`, `Retry-After: 1`: retry with the same key |
+| same key, different endpoint or body | 422 `"Idempotency-Key reused"`: use a new key for a new action |
+
+Failures are not stored: a request that failed (4xx or 5xx) without changing anything can be
+retried with the same key and runs again. Retry with the same key only when the outcome is
+unknown (no response, 409 in progress, 502/503/504).
+
 ### Rate limits (Stage 4)
 
 `POST /orders` and cart writes are limited per shopper (`X-User-Id`). Responses carry
@@ -144,10 +163,10 @@ While active, checkout refuses buyers once the gate's units run out, with the us
 
 | Method | Path                          | Body                                       | Returns            |
 |--------|-------------------------------|--------------------------------------------|--------------------|
-| POST   | /orders                       | optional `{ paymentProvider }`             | `Checkout` (201)   |
-| POST   | /orders/{id}/payment          | optional `{ paymentProvider }`             | `PaymentSession`   |
+| POST ★ | /orders                       | optional `{ paymentProvider }`             | `Checkout` (201)   |
+| POST ★ | /orders/{id}/payment          | optional `{ paymentProvider }`             | `PaymentSession`   |
 | POST   | /orders/{id}/payment/verify   | `{ gatewayOrderId, paymentId, signature }` | `Order`            |
-| POST   | /orders/{id}/cancel           |                                            | `Order`            |
+| POST ★ | /orders/{id}/cancel           |                                            | `Order`            |
 | GET    | /payments/providers           |                                            | `[Provider]`       |
 
     Checkout       = { order: Order, payment: PaymentSession | null, paymentProblem: string | null }
@@ -191,20 +210,21 @@ way there. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 | Method | Path                    | Body                      | Returns |
 |--------|-------------------------|---------------------------|---------|
 | GET    | /cart                   |                           | `Cart`  |
-| POST   | /cart/items             | `{ productId, quantity }` | `Cart`  |
+| POST ★ | /cart/items             | `{ productId, quantity }` | `Cart`  |
 | PUT    | /cart/items/{productId} | `{ quantity }`            | `Cart`  |
 | DELETE | /cart/items/{productId} |                           | `Cart`  |
 
     Cart     = { items: [CartItem], total }
     CartItem = { productId, productName, unitPrice, quantity, lineTotal, thumbnailUrl }
 
-`POST /cart/items` adds to the existing quantity if the product is already in the cart.
+`POST /cart/items` adds to the existing quantity if the product is already in the cart, which is
+why it needs an `Idempotency-Key` (★): a retry with the same key adds nothing.
 
 ### Orders (needs X-User-Id)
 
 | Method | Path         | Body | Returns       |
 |--------|--------------|------|---------------|
-| POST   | /orders      |      | `Order` (201) |
+| POST ★ | /orders      |      | see Checkout above |
 | GET    | /orders      |      | `[Order]`     |
 | GET    | /orders/{id} |      | `Order`       |
 

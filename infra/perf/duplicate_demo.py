@@ -2,8 +2,8 @@
 """
 Stage 7a: what happens when a client retries after losing the response.
 
-    python3 infra/perf/duplicate_demo.py                 # against the backend on :8080
-    python3 infra/perf/duplicate_demo.py --keys          # (7c+) send an Idempotency-Key per action
+    python3 infra/perf/duplicate_demo.py                 # against the backend on :8080, with keys
+    python3 infra/perf/duplicate_demo.py --no-keys       # as a client without keys (7a; 400 since 7b)
 
 The client talks to the API through Toxiproxy (localhost:28080 -> backend). For each action a
 "latency" toxic delays the RESPONSE by 3 s while the client waits only 1 s: the request reaches
@@ -11,7 +11,8 @@ the backend and is fully processed, but the client times out, as on a flaky mobi
 The toxic is then removed and the client retries the identical request, like any HTTP client
 or impatient user would. Each scenario prints what the client saw and what the server did.
 
-Without keys, P2 (add to cart) and P1/P3 (place order, cancel) show the problems Stage 7 fixes.
+Before Stage 7 (no keys), P2 (add to cart) and P1/P3 (place order, cancel) showed the problems
+Stage 7 fixes; since 7b a request without a key is refused with 400.
 """
 import argparse
 import json
@@ -78,7 +79,8 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--api", default="http://localhost:8080", help="the backend, directly (for setup and checks)")
     ap.add_argument("--proxy", default="http://localhost:28080", help="the same backend through Toxiproxy")
-    ap.add_argument("--keys", action="store_true", help="send an Idempotency-Key per action (Stage 7c)")
+    ap.add_argument("--no-keys", dest="keys", action="store_false",
+                    help="send no Idempotency-Key (what every client did before Stage 7)")
     args = ap.parse_args()
     api = args.api
     toxic(False)
@@ -96,7 +98,10 @@ def main():
     print(f"   client saw: {short(first)}, then {short(retry)}")
     print(f"   server: cart has {qty} tea  {'<-- wanted 1' if qty != 1 else 'ok'}\n")
     if qty != 1:
-        call(api, "PUT", f"/cart/items/{p['id']}", {"quantity": 1}, user=user, key=str(uuid.uuid4()) if args.keys else None)
+        call(api, "PUT", f"/cart/items/{p['id']}", {"quantity": 1}, user=user)
+    if qty == 0:
+        print("   (no key, so nothing was added: the rest needs a cart; stopping)")
+        return
 
     print("2. Place the order; the response is lost; the client retries")
     first, retry = lost_then_retry(args, "POST", "/orders", {"paymentProvider": "mock"}, user)

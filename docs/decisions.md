@@ -385,6 +385,14 @@ id, event id). Stored in Postgres, in the same transaction as the change; 409 + 
 while the first request is still running; 24 h retention. Redis variant only for comparison.
 Cost: every caller must generate and keep a key per action.
 
+**D70. Clients retry with the same key only when the outcome is unknown.** (7c) The frontend's
+API layer (like a payment SDK) sends a new key per user action and retries that request at most
+twice with the same key, after `Retry-After` or 0.4 s / 0.8 s + jitter, on: no response, 409
+"Request in progress", 502/503/504. A definite answer is never retried. Screens keep a key until
+their action succeeds (checkout attempt; pay / cancel per order), so a user's second click after
+a timeout repeats the same action; a 422 drops the key. Every attempt shows in the Requests panel
+with its key and "replayed". Scripts send keys. Cost: client code must manage keys.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

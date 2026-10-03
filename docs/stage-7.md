@@ -94,13 +94,13 @@ rule (D69).
 | File | What |
 |---|---|
 | `infra/toxiproxy/toxiproxy.json`, `infra/docker-compose.yml` | proxy `kirana-api`: `28080` → `host.docker.internal:8080` |
-| `infra/perf/duplicate_demo.py` | four scenarios: delay the response 3 s (client gives up after 1 s), retry, check what the server did; `--keys` (from 7c) sends one key per action |
+| `infra/perf/duplicate_demo.py` | four scenarios: delay the response 3 s (client gives up after 1 s), retry, check what the server did; sends one key per action (`--no-keys`: none, as before Stage 7) |
 
 ### Try it
 
 `docker compose up -d toxiproxy` (picks up the new route), backend on 8080, then
-`python3 infra/perf/duplicate_demo.py`. After 7b this run gets 400s (no key); after 7c,
-`--keys` shows every scenario fixed.
+`python3 infra/perf/duplicate_demo.py --no-keys` (the output above, on a pre-Stage-7 backend; since
+7b it gets 400s). Without `--no-keys` it sends a key per action and every scenario is fixed (7b).
 
 ---
 
@@ -193,7 +193,7 @@ retry resumes at once.
 
 ```
 no key:   400 Validation failed (Idempotency-Key)
---keys:
+with keys:
 1. Add 1 tea:   TimeoutError, then 200  → cart has 1 tea  ok
 2. Place order: TimeoutError, then 201  → 1 order; the client knows its order: #50051252
 3. Pay now:     TimeoutError, then 200  (same gateway order)
@@ -208,3 +208,68 @@ log: Idempotency-Key 13b4f4ff-… (user 2505903): POST /orders already done, sto
   (that is the point; `GET` the resource for current state).
 * Services know about recovery points (one line each). The alternative, a generic filter that
   can't see transactions, can't close the crash window.
+
+---
+
+## 7c. Every client sends keys
+
+**Done:** all callers of the four endpoints send an `Idempotency-Key`; there is no compatibility
+mode (D69). The frontend behaves like a payment SDK (D70).
+
+### The client side of the contract
+
+| Rule | Why |
+|---|---|
+| **a new key per user action** (a tap of "Add", one checkout attempt) | a second tap is a new intent: it must not be swallowed as a repeat |
+| **the same key for every retry of that action** | that's how the server recognises a repeat |
+| **retry only when the outcome is unknown**: no response, 409 "Request in progress", 502/503/504 | a definite answer (200, 400, 409 "Cart is empty") is the answer; retrying it changes nothing |
+| wait `Retry-After`, else 0.4 s, 0.8 s + jitter; at most 2 retries | don't hammer a struggling server, don't retry in lockstep |
+| keep the key until the action **succeeds** | a user clicking "Place order" again after a timeout repeats the same action and gets its order |
+| drop the key on 422 | it belonged to a different request |
+
+```mermaid
+flowchart TD
+    T["user taps Place order"] --> K{"checkout key?"}
+    K -->|none| N["key = new UUID"]
+    K -->|"kept from a failed try"| U["reuse it"]
+    N --> S["POST /orders, Idempotency-Key"]
+    U --> S
+    S -->|"no response / 409 in progress / 503"| W["wait Retry-After or backoff,<br/>same key (≤ 2 retries)"] --> S
+    S -->|"201 (new or replayed)"| D["show the order; forget the key"]
+    S -->|"409 Cart is empty, 400…"| E["show the error; keep the key<br/>(the server stored nothing)"]
+    S -->|422| X["forget the key"]
+```
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `frontend/src/api.js` | `newKey()`; `request()` retries on unknown outcomes with the same key (backoff, `Retry-After`); `cart.add`, `orders.place/pay/cancel`, `rush.*` take or make a key; every attempt is logged with its key, attempt number and `replayed` |
+| `frontend/src/pages/Cart.jsx` | one key per checkout attempt, kept until the order is placed |
+| `frontend/src/pages/Orders.jsx` | one key per (pay / cancel, order), kept until that succeeds |
+| `frontend/src/components/Inspector.jsx` | Requests panel: `key · retry 1 · replayed` on the row; the key and what "replayed" means in the detail |
+| `infra/perf/resilience_demo.py` | keys on cart adds, checkouts, cancels |
+| `infra/perf/duplicate_demo.py` | keys by default; `--no-keys` for the old behaviour (400 now) |
+| backend tests | every HTTP test of these endpoints sends a key (7b) |
+| `docs/api-contract.md` | the header, its rules (★ on the four endpoints), when to retry |
+
+The AI assistant's plan (`kirana-ai/docs/AI-PLAN.md`, phase P6) already specified
+`Idempotency-Key` for its cancel and cart writes; its code doesn't call these endpoints yet.
+
+### Checked
+
+The real `api.js`, run in Node against a scripted network:
+
+```
+1. lost then replay ->  {"order":{"id":42}}  keys sent: key-A, key-A
+2. definite 409 ->      409 Cart is empty | attempts: 1
+3. in progress then ok -> attempts: 2, same key: true, waited ~1 s (Retry-After)
+4. two taps ->          different keys: true
+```
+
+### Try it
+
+Restart the backend (V9) and reload the frontend. Add to cart and place an order: the Requests
+panel shows `key` on each POST. To see a retry, pause the backend for a moment while placing an
+order (Ctrl+Z in its terminal, then `fg` within a few seconds): the panel shows `retry 1`, and if
+the first attempt had got through, `replayed`.
