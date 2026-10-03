@@ -2,7 +2,9 @@ package com.kirana.messaging;
 
 import java.util.UUID;
 
+import com.kirana.payment.GatewayRefund;
 import com.kirana.service.CheckoutSaga;
+import com.kirana.service.RefundService;
 import org.apache.kafka.clients.consumer.ConsumerRecord;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,12 +40,15 @@ public class PaymentEventsListener {
     private static final Logger log = LoggerFactory.getLogger(PaymentEventsListener.class);
 
     private final CheckoutSaga saga;
+    private final RefundService refunds;
     private final Inbox inbox;
     private final TransactionTemplate tx;
     private final JsonMapper json;
 
-    public PaymentEventsListener(CheckoutSaga saga, Inbox inbox, TransactionTemplate tx, JsonMapper json) {
+    public PaymentEventsListener(CheckoutSaga saga, RefundService refunds, Inbox inbox, TransactionTemplate tx,
+                                 JsonMapper json) {
         this.saga = saga;
+        this.refunds = refunds;
         this.inbox = inbox;
         this.tx = tx;
         this.json = json;
@@ -68,6 +73,11 @@ public class PaymentEventsListener {
                     case PAID_AFTER_CLOSE -> "order was closed: late payment, refund needed";
                 };
                 case "PaymentFailed" -> "payment attempt failed; order stays awaiting payment";
+                case "RefundProcessed", "RefundFailed" -> {
+                    var state = type.equals("RefundProcessed") ? GatewayRefund.State.PROCESSED : GatewayRefund.State.FAILED;
+                    boolean changed = refunds.settle(paymentId, event.path("data").path("refundId").asString(), state);
+                    yield changed ? "refund " + state : "refund already settled";
+                }
                 default -> "unknown type, ignored";
             };
         });

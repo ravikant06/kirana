@@ -15,6 +15,8 @@ import org.springframework.data.jpa.repository.Query;
  * Orders are always loaded with their lines in one query (JOIN FETCH), which removed the
  * Stage 1 N+1 (P4). Not usable with pagination: a fetch join on a collection makes Hibernate
  * page in memory. If order history is ever paged, fetch order IDs first, then their lines.
+ * Order history also fetches refunds (6d) in the same query: still two statements in total.
+ * Joining a List (items) and a Set (refunds) is allowed; two Lists ("bags") would not be.
  */
 public interface OrderRepository extends JpaRepository<Order, Long> {
 
@@ -81,14 +83,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             """)
     List<Long> findRecentlyClosedIds(Instant closedAfter, Limit limit);
 
-    /** Unpaid orders that have a gateway order and are older than :before (for the reconciler). */
+    /** One gateway's unpaid orders that have a gateway order and are older than :before (reconciler). */
     @Query("""
             select o.id from Order o
             where o.status = com.kirana.entity.OrderStatus.CREATED and o.gatewayOrderId is not null
-              and o.createdAt < :before
+              and o.paymentProvider = :provider and o.createdAt < :before
             order by o.id
             """)
-    List<Long> findUnsettledIds(Instant before, Limit limit);
+    List<Long> findUnsettledIds(String provider, Instant before, Limit limit);
 
     /** Unpaid orders whose payment window has passed (for the expiry job). */
     @Query("""
@@ -101,6 +103,7 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
     @Query("""
             select o from Order o
             left join fetch o.items
+            left join fetch o.refunds
             where o.user.id = :userId
             order by o.createdAt desc, o.id desc
             """)

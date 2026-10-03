@@ -10,12 +10,13 @@ public final class OrderMapper {
     private OrderMapper() {
     }
 
-    /** Touches order.getItems(): a lazy collection. Needs an open session (experiment 4). */
+    /** Touches order.getItems() and getRefunds(): lazy collections. Needs an open session (experiment 4). */
     public static OrderResponse toResponse(Order order) {
         return new OrderResponse(order.getId(), order.getStatus(), order.getTotal(), order.getCreatedAt(),
                 order.getItems().stream().map(OrderMapper::toItem).toList(),
                 order.getPaymentProvider(), order.getPaymentDueAt(), order.getPaidAt(), order.getClosedReason(),
-                order.getLatePaymentId());
+                order.getLatePaymentId(),
+                order.getRefunds().stream().map(r -> r.getStatus().name()).findFirst().orElse(null));
     }
 
     private static OrderItemResponse toItem(OrderItem item) {

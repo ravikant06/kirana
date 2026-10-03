@@ -107,6 +107,35 @@ public class RazorpayStyleGateway implements PaymentGateway {
     }
 
     @Override
+    public boolean receivesWebhooks() {
+        return config.webhookSecret() != null && !config.webhookSecret().isBlank();
+    }
+
+    @Override
+    public GatewayRefund refund(String paymentId, long amountPaise, String receipt) {
+        String body = json.writeValueAsString(Map.of("amount", amountPaise, "receipt", receipt));
+        JsonNode r = send(HttpRequest.newBuilder(uri("/v1/payments/" + paymentId + "/refund"))
+                .header("Content-Type", "application/json")
+                .POST(HttpRequest.BodyPublishers.ofString(body)));
+        return toRefund(r);
+    }
+
+    @Override
+    public java.util.List<GatewayRefund> fetchRefunds(String paymentId) {
+        JsonNode r = send(HttpRequest.newBuilder(uri("/v1/payments/" + paymentId + "/refunds")).GET());
+        java.util.List<GatewayRefund> out = new java.util.ArrayList<>();
+        for (JsonNode item : r.path("items")) {
+            out.add(toRefund(item));
+        }
+        return out;
+    }
+
+    private static GatewayRefund toRefund(JsonNode r) {
+        return new GatewayRefund(r.get("id").asString(), r.get("payment_id").asString(), r.get("amount").asLong(),
+                GatewayRefund.state(r.path("status").asString()));
+    }
+
+    @Override
     public boolean verifyWebhook(String body, String signature) {
         String secret = config.webhookSecret();
         if (secret == null || secret.isBlank() || body == null || signature == null) {

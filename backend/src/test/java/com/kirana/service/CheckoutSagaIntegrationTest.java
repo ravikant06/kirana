@@ -367,6 +367,35 @@ class CheckoutSagaIntegrationTest {
             return GOOD.equals(signature);
         }
 
+        // Stage 6d refunds. refundTimesOut: the refund is made, then the caller hears a timeout.
+        final java.util.Map<String, List<com.kirana.payment.GatewayRefund>> refunds = new java.util.concurrent.ConcurrentHashMap<>();
+        final java.util.concurrent.atomic.AtomicInteger refundCalls = new java.util.concurrent.atomic.AtomicInteger();
+        volatile boolean refundTimesOut;
+
+        @Override public boolean receivesWebhooks() { return true; }
+
+        @Override
+        public com.kirana.payment.GatewayRefund refund(String paymentId, long amountPaise, String receipt) {
+            if (down) {
+                throw new PaymentUnavailableException("stub is down", null);
+            }
+            var r = new com.kirana.payment.GatewayRefund("rfnd_" + paymentId + "_" + refundCalls.incrementAndGet(), paymentId, amountPaise,
+                    com.kirana.payment.GatewayRefund.State.PENDING);
+            refunds.computeIfAbsent(paymentId, k -> new java.util.concurrent.CopyOnWriteArrayList<>()).add(r);
+            if (refundTimesOut) {
+                throw new PaymentUnavailableException("stub timed out (but the refund was made)", null);
+            }
+            return r;
+        }
+
+        @Override
+        public List<com.kirana.payment.GatewayRefund> fetchRefunds(String paymentId) {
+            if (down) {
+                throw new PaymentUnavailableException("stub is down", null);
+            }
+            return List.copyOf(refunds.getOrDefault(paymentId, List.of()));
+        }
+
         @Override
         public boolean verifyWebhook(String body, String signature) {
             return GOOD.equals(signature);

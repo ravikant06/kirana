@@ -43,7 +43,7 @@ public class PaymentWebhooks {
 
     /** The data part of a payments.v1 event. */
     public record PaymentEvent(String provider, String gatewayEventId, String gatewayOrderId, String paymentId,
-                               String status) {
+                               String status, String refundId) {
     }
 
     private final PaymentGateways gateways;
@@ -73,6 +73,8 @@ public class PaymentWebhooks {
         String type = switch (event) {
             case "payment.captured" -> "PaymentCaptured";
             case "payment.failed" -> "PaymentFailed";
+            case "refund.processed" -> "RefundProcessed"; // 6d: the gateway finished a refund
+            case "refund.failed" -> "RefundFailed";
             default -> null;
         };
         if (type == null) {
@@ -89,8 +91,12 @@ public class PaymentWebhooks {
         // The same gateway event always maps to the same outbox event id (a name-based UUID).
         String sourceId = gatewayEventId != null && !gatewayEventId.isBlank() ? gatewayEventId : body;
         UUID eventId = UUID.nameUUIDFromBytes((provider + ":" + sourceId).getBytes(StandardCharsets.UTF_8));
-        PaymentEvent data = new PaymentEvent(provider, gatewayEventId, gatewayOrderId,
-                payment.path("id").asString(), payment.path("status").asString());
+        JsonNode refund = root.path("payload").path("refund").path("entity");
+        PaymentEvent data = refund.isMissingNode()
+                ? new PaymentEvent(provider, gatewayEventId, gatewayOrderId, payment.path("id").asString(),
+                        payment.path("status").asString(), null)
+                : new PaymentEvent(provider, gatewayEventId, gatewayOrderId, payment.path("id").asString(),
+                        refund.path("status").asString(), refund.path("id").asString());
         try {
             tx.executeWithoutResult(s -> outbox.append(eventId, Topics.PAYMENTS, order.getId(), type, data));
         } catch (DataIntegrityViolationException e) {

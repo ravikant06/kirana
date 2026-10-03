@@ -1,8 +1,11 @@
 package com.kirana.service;
 
+import java.time.Duration;
 import java.time.Instant;
 
 import com.kirana.config.PaymentProperties;
+import com.kirana.payment.PaymentGateway;
+import com.kirana.payment.PaymentGateways;
 import com.kirana.payment.PaymentUnavailableException;
 import com.kirana.repository.OrderRepository;
 import org.slf4j.Logger;
@@ -33,18 +36,24 @@ public class PaymentJobs {
 
     private final OrderRepository orders;
     private final CheckoutSaga saga;
+    private final PaymentGateways gateways;
     private final PaymentProperties props;
 
-    public PaymentJobs(OrderRepository orders, CheckoutSaga saga, PaymentProperties props) {
+    public PaymentJobs(OrderRepository orders, CheckoutSaga saga, PaymentGateways gateways, PaymentProperties props) {
         this.orders = orders;
+        this.gateways = gateways;
         this.saga = saga;
         this.props = props;
     }
 
+    /** Per gateway: one that sends us webhooks needs only a slow safety net (6c). */
     @Scheduled(fixedDelay = 30_000, initialDelay = 30_000)
     public void reconcile() {
-        for (Long id : orders.findUnsettledIds(Instant.now().minus(props.reconcileAfter()), BATCH)) {
-            settle("reconcile", id, () -> saga.reconcile(id));
+        for (PaymentGateway g : gateways.all()) {
+            Duration after = g.receivesWebhooks() ? props.reconcileAfter() : props.reconcileAfterWithoutWebhooks();
+            for (Long id : orders.findUnsettledIds(g.id(), Instant.now().minus(after), BATCH)) {
+                settle("reconcile", id, () -> saga.reconcile(id));
+            }
         }
     }
 

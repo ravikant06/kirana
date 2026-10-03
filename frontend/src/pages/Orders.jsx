@@ -7,6 +7,14 @@ import { BoxIcon, CheckIcon, ChevronDown, ClockIcon, UserIcon, XIcon } from '../
 
 // What each status means to a shopper.
 const STATUS_LABEL = { CREATED: 'Awaiting payment', PAID: 'Paid', CANCELLED: 'Cancelled', FAILED: 'Not paid' }
+// Stage 6d: what happens to a payment that arrived after its order closed. [badge, badge class, explanation]
+const REFUND = {
+  DUE: ['Refund due', 'badge-failed', 'It will be refunded.'],
+  REQUESTED: ['Refund requested', 'badge-created', 'We are asking the payment gateway to refund it.'],
+  PENDING: ['Refund in progress', 'badge-created', 'The gateway is returning the money.'],
+  PROCESSED: ['Refunded', 'badge-paid', 'The money has been returned to you.'],
+  FAILED: ['Refund failed', 'badge-failed', 'The gateway refused the refund; our team will contact you.'],
+}
 
 // Placed -> Paid, or Placed -> Cancelled / Not paid. Only states the backend reports; nothing invented.
 function Track({ status }) {
@@ -64,9 +72,9 @@ export default function Orders({ userId, highlight, notify, goShop }) {
   const [open, setOpen] = useState(highlight ?? null)
   useEffect(() => setOpen(highlight ?? null), [highlight])
 
-  // Stage 6c: an unpaid order can become Paid without this tab doing anything (the gateway's
-  // webhook). While any order awaits payment, look again every 5 s.
-  const awaiting = (data || []).some((o) => o.status === 'CREATED')
+  // Stage 6c/6d: an order can change without this tab doing anything (webhooks, the refund
+  // consumer). While any order awaits payment or a refund, look again every 5 s.
+  const awaiting = (data || []).some((o) => o.status === 'CREATED' || (o.latePaymentId && o.refundStatus !== 'PROCESSED' && o.refundStatus !== 'FAILED'))
   useEffect(() => {
     if (!awaiting) return
     const t = setInterval(() => reload(), 5000)
@@ -135,8 +143,10 @@ export default function Orders({ userId, highlight, notify, goShop }) {
               )}
               {o.latePaymentId && (
                 <div className="order-pay">
-                  <span className="badge badge-failed">Refund due</span>
-                  <span className="muted">Your payment {o.latePaymentId} arrived after this order closed. It will be refunded.</span>
+                  <span className={`badge ${REFUND[o.refundStatus || 'DUE'][1]}`}>{REFUND[o.refundStatus || 'DUE'][0]}</span>
+                  <span className="muted">
+                    Your payment {o.latePaymentId} arrived after this order closed. {REFUND[o.refundStatus || 'DUE'][2]}
+                  </span>
                 </div>
               )}
             </div>

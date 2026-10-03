@@ -9,6 +9,7 @@ import com.kirana.entity.OrderStatus;
  * status CREATED means "awaiting payment" (stock held until paymentDueAt).
  * closedReason is set when an order ends CANCELLED or FAILED.
  * latePaymentId is set when money arrived after the order closed (a refund is due, Stage 6).
+ * refundStatus: REQUESTED | PENDING | PROCESSED | FAILED for that refund (Stage 6d), else null.
  */
 public record OrderResponse(
         Long id,
@@ -20,5 +21,6 @@ public record OrderResponse(
         Instant paymentDueAt,
         Instant paidAt,
         String closedReason,
-        String latePaymentId) {
+        String latePaymentId,
+        String refundStatus) {
 }

@@ -11,6 +11,7 @@ public record PaymentProperties(
         String currency,
         Duration window,
         Duration reconcileAfter,
+        Duration reconcileAfterWithoutWebhooks,
         Duration recheckClosedFor,
         Duration unknownGrace,
         Http http,

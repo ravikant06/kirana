@@ -87,4 +87,14 @@
 27. **Consumer groups own partitions.** A crashed consumer still owns its partitions until the
    broker's session timeout (45 s by default) expires; only then does a rebalance hand them to
    someone else. Events are not lost meanwhile, only late.
+28. **Calling a non-idempotent API from an at-least-once system.** Record the intent first (a
+   row with a unique business key), acknowledge, then act. Before acting, claim a lease so only
+   one worker acts at a time, and ask the other side whether it already happened (a timeout
+   doesn't mean it failed). Never retry the action blindly; retry "ask, then act".
+29. **A new consumer group replays the log.** It starts from the oldest record, so a consumer
+   added later still sees every past event, which is how the refund consumer refunded late
+   payments from before it existed. Kafka is a log, not a queue.
+30. **Mixed versions in one consumer group.** During a rolling deploy, old instances own some
+   partitions and acknowledge event types they don't know; those events are lost to the group.
+   Deploy consumers before the producers of new event types, and keep a polling safety net.
 

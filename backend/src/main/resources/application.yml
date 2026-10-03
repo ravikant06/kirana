@@ -108,7 +108,11 @@ kirana:
     default-provider: mock
     currency: INR
     window: 10m             # stock is held this long for payment, then the expiry job releases it
-    reconcile-after: 1m     # unpaid orders older than this are checked with the gateway
+    # Unpaid orders older than this are checked with the gateway. Webhooks (6c) settle orders in
+    # about a second, so polling is only the safety net and need not be quick. A gateway whose
+    # webhooks cannot reach us (Razorpay without a tunnel) keeps the quick check.
+    reconcile-after: 10m
+    reconcile-after-without-webhooks: 1m
     recheck-closed-for: 30m # Stage 6c: closed orders are re-checked this long for a late payment
     unknown-grace: 1h       # Stage 6c: past due but the gateway has no record: hold this long, then close
     http:

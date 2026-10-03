@@ -314,6 +314,24 @@ unknown-grace` (1 h), then closes it with an error log; the re-check job keeps w
 min after that. PENDING still closes immediately. Cost: the stock stays held up to an hour
 longer when the gateway has lost the order.
 
+**D61. The reconciler waits 10 min for gateways that send webhooks, 1 min for those that don't.**
+(Ravi) Webhooks settle orders in about a second (6c), so polling is only the safety net.
+`reconcile-after: 10m`; `reconcile-after-without-webhooks: 1m` applies to a gateway with no
+webhook secret (Razorpay without a tunnel). Cost: a lost mock webhook is noticed after ~10 min.
+
+**D62. Refunds: a `refunds` row per payment, then a leased, ask-first gateway call.** (Ravi, 6d)
+The refund consumer (group `kirana-refunds`, on `orders.v1`, `PaymentAfterClose` only) writes the
+inbox row and a `REQUESTED` refund row (`payment_id UNIQUE`) in one transaction, acknowledges,
+then tries the gateway once. Calling the gateway: claim a 30 s lease (conditional UPDATE), ask
+the gateway for the payment's refunds, create one only if there is none. The create call is
+never retried automatically. Gateway down or timed out: the row stays `REQUESTED`; `RefundJobs`
+tries again after the lease (every 15 s) and polls `PENDING` refunds older than 1 min. 4xx from
+the gateway: `FAILED`, for a person. The gateway finishes refunds asynchronously: the
+`refund.processed` webhook goes through the 6c path (`payments.v1`) and settles the row by
+payment id. Full refunds only. Costs: a refund can wait up to ~45 s after a failed attempt; a
+gateway refund that the mock forgot (restart) ends `FAILED`; a new consumer group replays all
+of `orders.v1`, so old late payments get refunded too (intended).
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

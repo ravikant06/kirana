@@ -437,6 +437,140 @@ Restart your backend first (it applies V6 and starts the consumer; the log shows
 
 ---
 
+## 6d. Refunds (G2)
+
+**Done:** a late payment is now actually refunded. A second consumer, `RefundListener` (its own
+group, `kirana-refunds`), reads `orders.v1`, picks out `PaymentAfterClose`, records a refund and
+asks the gateway to refund the payment, exactly once. The gateway finishes refunds later and says
+so by webhook, which takes the 6c path. The Orders page goes **Refund requested → Refund in
+progress → Refunded**.
+
+Also in this step (D61): the reconciler now waits **10 min** for gateways that send webhooks and
+keeps **1 min** for gateways that don't (Razorpay without a tunnel).
+
+**Problem solved (G2):** "REFUND NEEDED" used to be a log line. Now it's a refund. The hard part
+isn't calling the API, it's calling it **exactly once**:
+
+| Trap | Why it's dangerous | Defence |
+|---|---|---|
+| The event arrives twice (at-least-once) | two refunds | inbox (`processed_events`) + `refunds.payment_id UNIQUE` |
+| Consumer, retry job (and later several instances) act at the same moment | two refunds | **lease**: `UPDATE … SET claimed_until = now+30s WHERE status='REQUESTED' AND claimed_until < now`; only the one that gets 1 row calls the gateway |
+| The refund call **times out after the gateway refunded** | "failed, retry" → two refunds | never retry the create; the next attempt **asks first** (`GET /payments/{id}/refunds`) and adopts what it finds |
+| The gateway is down | refund lost, or the partition blocked by retries | the refund is a row (`REQUESTED`) before anything is called; a job retries; the consumer has already moved on |
+| The refund webhook is lost | stuck "in progress" | job polls `PENDING` refunds older than 1 min |
+
+### The refund's states
+
+```mermaid
+stateDiagram-v2
+    [*] --> REQUESTED: RefundListener<br/>(PaymentAfterClose)
+    REQUESTED --> REQUESTED: gateway down / timeout<br/>(lease runs out, job retries)
+    REQUESTED --> PENDING: gateway created it<br/>(or ask-first found it)
+    REQUESTED --> PROCESSED: refund.processed webhook<br/>arrives first (timeout case)
+    REQUESTED --> FAILED: gateway refused (4xx)
+    PENDING --> PROCESSED: refund.processed webhook<br/>or polling
+    PENDING --> FAILED: refund.failed
+    PROCESSED --> [*]
+    FAILED --> [*]: a person looks
+```
+
+### Use case: Bala gets his money back
+
+```mermaid
+sequenceDiagram
+    participant P as PaymentEventsListener (6c)
+    participant K1 as Kafka orders.v1
+    participant R as RefundListener<br/>group kirana-refunds
+    participant DB as Postgres
+    participant G as payment-mock
+    participant K2 as Kafka payments.v1
+    P->>DB: late payment → late_payment_id + outbox PaymentAfterClose
+    DB-->>K1: relay
+    K1->>R: PaymentAfterClose (order 50051052)
+    R->>DB: BEGIN; inbox row; INSERT refunds (REQUESTED); COMMIT
+    R->>K1: ack (offset committed: the refund is a row now)
+    R->>DB: claim lease (UPDATE … claimed_until)
+    R->>G: GET /v1/payments/pay_…/refunds → none
+    R->>G: POST /v1/payments/pay_…/refund → rfnd_… "pending"
+    R->>DB: REQUESTED → PENDING (gateway_refund_id)
+    Note over G: ~3 s later
+    G->>DB: webhook refund.processed → outbox (6c path)
+    DB-->>K2: relay
+    K2->>P: RefundProcessed
+    P->>DB: PENDING → PROCESSED (by payment id)
+    Note over DB: Orders page: "Refunded"
+```
+
+Why the gateway call comes **after** the acknowledgement: a slow gateway must not hold up the
+partition, and Kafka's own retries (3× in `KafkaConfig`) would repeat a call that isn't
+idempotent. Once the intent is a committed row, the offset can move on; `RefundJobs` owns retries.
+
+### Ask first, then act (the timeout case)
+
+```mermaid
+flowchart TD
+    A["execute(refund)"] --> L{"claim lease<br/>(conditional UPDATE)"}
+    L -->|0 rows| X["someone else is on it, or it's done: stop"]
+    L -->|1 row| Q["GET refunds for this payment"]
+    Q -->|"found one"| ADOPT["adopt it: PENDING/PROCESSED<br/>(WARN: an earlier attempt worked)"]
+    Q -->|none| C["POST refund (never auto-retried)"]
+    C -->|ok| P["PENDING"]
+    C -->|"timeout / 5xx / breaker open"| E["stay REQUESTED, record error<br/>retry after the lease, asking first again"]
+    C -->|4xx| F["FAILED: a person must look"]
+```
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `payment-mock/app.py` | `POST /v1/payments/{id}/refund` (not idempotent, like Razorpay), `GET /v1/payments/{id}/refunds`; refunds go `pending` → `processed` after `processing_s` with a `refund.processed` webhook; `/admin/refunds` `reply_delay_ms` makes the refund and answers late |
+| `db/migration/V7__refunds.sql` | `refunds` (`payment_id UNIQUE`, `status`, `gateway_refund_id`, `attempts`, `last_error`, `claimed_until`) |
+| `entity/Refund.java`, `RefundStatus.java`, `repository/RefundRepository.java` | the row; `claim` (lease), `markAtGateway`, `settle` (by payment id), `recordError`, `markFailed`, job queries |
+| `service/RefundService.java` | `request` (intent row), `execute` (lease → ask → create), `settle`, `poll` |
+| `messaging/RefundListener.java` | **second consumer**: group `kirana-refunds` on `orders.v1`; inbox + `request` in one transaction, ack, then `execute` once |
+| `service/RefundJobs.java` | every 15 s: retry `REQUESTED` with an expired lease; every 60 s: poll stale `PENDING` |
+| `payment/*` | `refund`, `fetchRefunds`, `receivesWebhooks` on the port; `GatewayRefund`; create is **not** retried by Resilience, the read is |
+| `service/PaymentWebhooks.java`, `messaging/PaymentEventsListener.java` | `refund.processed` / `refund.failed` → `RefundProcessed` / `RefundFailed` on `payments.v1` → `RefundService.settle` |
+| `entity/Order`, `OrderResponse`, `OrderMapper`, `OrderRepository` | `refundStatus`; refunds fetched in the order-history query (still **2 statements**: the Stage 2 test caught a 3rd) |
+| `service/PaymentJobs.java`, `application.yml` | reconciler per gateway: `reconcile-after: 10m`, `reconcile-after-without-webhooks: 1m` |
+| `frontend/…/Orders.jsx` | Refund requested / in progress / Refunded / failed |
+| Tests | `RefundIntegrationTest`: once despite duplicates; outage then retry; **timeout after the gateway refunded → still one refund**; 10 simultaneous attempts → one gateway call. Webhook test: late payment → refund → `refund.processed` → PROCESSED, through real Kafka. **87 tests pass.** |
+
+### Experiments (run on the real stack)
+
+| # | Setup | Result |
+|---|---|---|
+| 0 | start the 6d backend | `kirana-refunds` read `orders.v1` **from the beginning**, found 6c's late payment for order 50050903, and requested its refund. payment-mock answered **404**: it keeps payments in memory and had been rebuilt since. → `FAILED`, "a person must look". Replay works; a gateway that forgot the payment is exactly what FAILED is for. |
+| 1 | cancel, then pay | REQUESTED → gateway asked (none) → created → PENDING → `refund.processed` 3 s later → **Refunded, 4 s end to end** |
+| 2 | `reply_delay_ms: 5000` (refund made, answer after 5 s; we time out at 2 s) | attempt 1: `HttpTimeoutException`, stays REQUESTED. 32 s later the job: `the gateway already has rfnd_… (an earlier attempt worked); not refunding again`. Gateway: **1 refund**. Row: PROCESSED, 2 attempts. |
+| 2b | (by accident) your 8080 backend still ran **6c** in the same `kirana-payments` group | Kafka gave it partitions 0–1. The `RefundProcessed` event landed on partition 0: the 6c code logged `unknown type, ignored` and committed it. The 6d instance never saw it; the job's ask-first finished the refund anyway. **Lesson: during a rolling deploy, deploy consumers before the producers of new event types.** (6f) |
+
+### Try it
+
+Restart your backend (V7 runs; log: `kirana-refunds: partitions assigned: [orders.v1-0, orders.v1-1, orders.v1-2]`).
+It will immediately try the refunds of older late payments; those whose payments payment-mock
+has forgotten end FAILED (404).
+
+1. **Refund:** place an order, open its payment window, cancel the order in another tab, pay.
+   Orders: Cancelled + **Refund requested → in progress → Refunded** within ~5 s.
+   `grep -E "Refund|PaymentAfterClose|RefundProcessed" backend/logs/kirana.log`
+2. **The timeout case:** `curl -XPOST localhost:8090/admin/refunds -H 'Content-Type: application/json' -d '{"reply_delay_ms":5000}'`,
+   repeat 1, and look for `gateway unavailable … HttpTimeoutException` then `an earlier attempt worked`.
+   Reset with `{"reply_delay_ms":0}`.
+3. **Gateway down:** Lab → payment-mock **down**, repeat 1 → "Refund requested" stays; set it back
+   to normal → Refunded within ~45 s (`Refund job: trying refund … again`).
+4. `docker exec -it kirana-postgres-1 psql -U kirana -c "select id,order_id,status,gateway_refund_id,attempts,last_error from refunds order by id desc limit 5"`
+5. Kafka UI → Consumers: two groups now, `kirana-payments` (payments.v1) and `kirana-refunds` (orders.v1).
+
+### Known costs
+
+* After a failed attempt, a refund waits for the 30 s lease plus up to 15 s for the job.
+* `FAILED` has no screen yet; it's a log line and a row (`last_error`).
+* Only full refunds, one per payment.
+* `orders.v1` still has events nobody acts on (`OrderPaid`): fulfilment is 6e.
+
+---
+
 ## Watching it live (logs, Kafka UI, database)
 
 The backend also writes its log to `backend/logs/kirana.log` (when started from `backend/`).

@@ -103,6 +103,29 @@ class PaymentWebhookIntegrationTest {
     }
 
     @Test
+    void aLatePaymentWebhookEndsInAProcessedRefund() {
+        // 6c + 6d end to end: webhook -> PaymentAfterClose on orders.v1 -> RefundListener -> gateway
+        // refund (PENDING) -> refund.processed webhook -> payments.v1 -> PROCESSED.
+        long[] o = newOrder();
+        saga.cancel(o[0], o[1]);
+        webhooks.receive("stub", captured("pay_w3", "gw_" + o[1]), StubGateway.GOOD, "evt_c");
+        drainRelay(); // PaymentCaptured -> listener -> PaymentAfterClose into the outbox
+        await(() -> eventsFor(o[1], "PaymentAfterClose") == 1);
+        drainRelay(); // PaymentAfterClose -> orders.v1 -> RefundListener
+        await(() -> "PENDING".equals(orders.get(o[0], o[1]).refundStatus()));
+        assertThat(gateway.refunds.get("pay_w3")).hasSize(1);
+
+        String refundId = gateway.refunds.get("pay_w3").get(0).refundId();
+        String processed = """
+                {"entity":"event","event":"refund.processed","payload":{"payment":{"entity":\
+                {"id":"pay_w3","order_id":"gw_%d","status":"captured"}},"refund":{"entity":\
+                {"id":"%s","payment_id":"pay_w3","status":"processed","amount":1000}}}}""".formatted(o[1], refundId);
+        assertThat(webhooks.receive("stub", processed, StubGateway.GOOD, "evt_d")).isEqualTo(Result.ACCEPTED);
+        drainRelay();
+        await(() -> "PROCESSED".equals(orders.get(o[0], o[1]).refundStatus()));
+    }
+
+    @Test
     void theInboxSaysFirstOnlyOnce() {
         var id = java.util.UUID.randomUUID();
         assertThat(inbox.firstDelivery("test", id)).isTrue();

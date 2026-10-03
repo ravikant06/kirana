@@ -38,6 +38,18 @@ public interface PaymentGateway {
      */
     boolean verifyWebhook(String body, String signature);
 
+    /** True when webhooks from this gateway reach us (a webhook secret is configured). */
+    boolean receivesWebhooks();
+
+    /**
+     * Stage 6d: refunds amountPaise of a captured payment. NOT idempotent: every call may create
+     * a new refund, so callers must check fetchRefunds first and never retry this blindly.
+     */
+    GatewayRefund refund(String paymentId, long amountPaise, String receipt);
+
+    /** Every refund the gateway has for this payment. Safe to call any number of times. */
+    java.util.List<GatewayRefund> fetchRefunds(String paymentId);
+
     /** What the browser needs to open this gateway's checkout. */
     PaymentSession session(long orderId, GatewayOrder order);
 }

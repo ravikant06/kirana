@@ -159,7 +159,9 @@ until `paymentDueAt`). If the gateway is unavailable, `payment` is null and `pay
 says so; pay later with `POST /orders/{id}/payment`. Verify accepts only a valid gateway
 signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
 (`closedReason` says why). `latePaymentId` is set when money reached the gateway after the
-order closed (Stage 6c): a refund is due, and the order stays closed. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
+order closed (Stage 6c): a refund is due, and the order stays closed. `refundStatus` follows that
+refund (Stage 6d): `REQUESTED` → `PENDING` (at the gateway) → `PROCESSED`, or `FAILED` (needs a
+person); null until the refund consumer has recorded it. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `Retry-After`.
 
 ### Payment webhooks (Stage 6c, called by gateways, not the frontend)
@@ -199,7 +201,7 @@ order closed (Stage 6c): a refund is due, and the order stays closed. 503 `"Paym
 | GET    | /orders/{id} |      | `Order`       |
 
     Order     = { id, status, total, createdAt, items: [OrderItem],
-                  paymentProvider, paymentDueAt, paidAt, closedReason, latePaymentId }
+                  paymentProvider, paymentDueAt, paidAt, closedReason, latePaymentId, refundStatus }
     OrderItem = { productId, productName, unitPrice, quantity, lineTotal }
 
 `GET /orders` returns items inline on purpose. It is the endpoint for the N+1 experiment.

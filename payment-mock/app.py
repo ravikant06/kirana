@@ -14,6 +14,11 @@ Stage 6: webhooks, like Razorpay's. After every payment attempt it POSTs a signe
 (payment.captured / payment.failed) to WEBHOOK_URL, retrying with growing waits until it gets a 2xx:
     GET|POST /admin/webhooks          {"enabled": bool, "duplicate": bool, "url": "..."}
     GET  /admin/webhooks/deliveries   the last deliveries and their attempts
+Stage 6d: refunds, like Razorpay's (asynchronous: "pending", then "processed" + a webhook):
+    POST /v1/payments/{id}/refund     {"amount"?, "receipt"?, "notes"?}
+    GET  /v1/payments/{id}/refunds
+    GET|POST /admin/refunds           {"processing_s", "reply_delay_ms"} (reply_delay_ms: the refund is
+                                      made, but the answer comes late: the caller times out not knowing)
 
 State is in memory: restarting the mock forgets every order (the reconciler then sees UNKNOWN).
 """
@@ -49,6 +54,8 @@ _lock = threading.Lock()
 _orders: dict[str, dict] = {}        # order_id -> order
 _by_receipt: dict[str, str] = {}      # receipt -> order_id (idempotency)
 _payments: dict[str, list] = {}       # order_id -> [payment]
+_refunds: dict[str, list] = {}        # payment_id -> [refund]
+_refund_settings = {"processing_s": 3, "reply_delay_ms": 0}
 _mode = {"mode": "normal", "delay_ms": 3000, "failure_rate": 0.3}
 _webhooks = {
     "url": os.environ.get("WEBHOOK_URL", "http://host.docker.internal:8080/webhooks/payment/mock"),
@@ -135,6 +142,88 @@ def order_payments(order_id: str, request: Request):
     return {"entity": "collection", "count": len(items), "items": items}
 
 
+# ---------------------------------------------------------------- refunds (Stage 6d)
+
+class CreateRefund(BaseModel):
+    amount: int | None = None   # paise; default: everything not yet refunded
+    receipt: str | None = None
+    notes: dict | None = None
+
+
+def _find_payment(payment_id: str) -> dict | None:
+    for items in _payments.values():
+        for p in items:
+            if p["id"] == payment_id:
+                return p
+    return None
+
+
+def _not_found():
+    return HTTPException(404, {"error": {"code": "BAD_REQUEST_ERROR", "description": "The id provided does not exist"}})
+
+
+@app.post("/v1/payments/{payment_id}/refund")
+def create_refund(payment_id: str, body: CreateRefund, request: Request):
+    """Not idempotent, like Razorpay: every call that passes the checks makes a new refund."""
+    _check_auth(request)
+    with _lock:
+        payment = _find_payment(payment_id)
+        if payment is None:
+            raise _not_found()
+        if payment["status"] != "captured":
+            raise HTTPException(400, {"error": {"code": "BAD_REQUEST_ERROR", "description": "Payment is not captured"}})
+        refunded = sum(r["amount"] for r in _refunds.get(payment_id, []) if r["status"] != "failed")
+        amount = body.amount if body.amount is not None else payment["amount"] - refunded
+        if amount <= 0 or refunded + amount > payment["amount"]:
+            raise HTTPException(400, {"error": {"code": "BAD_REQUEST_ERROR",
+                                                "description": "The total refund amount is greater than the refund payment amount"}})
+        refund = {"id": _new_id("rfnd"), "entity": "refund", "amount": amount, "currency": payment["currency"],
+                  "payment_id": payment_id, "receipt": body.receipt, "notes": body.notes or {},
+                  "status": "pending", "created_at": int(time.time())}
+        _refunds.setdefault(payment_id, []).append(refund)
+    log.info("refund %s for payment %s (%d paise): pending", refund["id"], payment_id, amount)
+    threading.Thread(target=_process_refund, args=(refund, payment), daemon=True).start()
+    if _refund_settings["reply_delay_ms"]:
+        # The refund exists now. The caller hears about it only after this delay (or never, if it gave up).
+        log.info("refund %s: replying after %d ms", refund["id"], _refund_settings["reply_delay_ms"])
+        time.sleep(_refund_settings["reply_delay_ms"] / 1000)
+    return refund
+
+
+def _process_refund(refund: dict, payment: dict) -> None:
+    time.sleep(_refund_settings["processing_s"])
+    with _lock:
+        refund["status"] = "processed"
+    log.info("refund %s for payment %s: processed", refund["id"], payment["id"])
+    _send_webhook("refund.processed", payment, refund)
+
+
+@app.get("/v1/payments/{payment_id}/refunds")
+def payment_refunds(payment_id: str, request: Request):
+    _check_auth(request)
+    if _find_payment(payment_id) is None:
+        raise _not_found()
+    items = _refunds.get(payment_id, [])
+    return {"entity": "collection", "count": len(items), "items": items}
+
+
+class RefundSettings(BaseModel):
+    processing_s: float | None = None
+    reply_delay_ms: int | None = None
+
+
+@app.get("/admin/refunds")
+def get_refund_settings():
+    return _refund_settings
+
+
+@app.post("/admin/refunds")
+def set_refund_settings(r: RefundSettings):
+    for k, v in r.model_dump(exclude_none=True).items():
+        _refund_settings[k] = max(0, v)
+    return _refund_settings
+
+
 # ---------------------------------------------------------------- hosted checkout page
 
 class Attempt(BaseModel):
@@ -203,14 +292,16 @@ def set_mode(m: Mode):
 
 # ---------------------------------------------------------------- webhooks (Stage 6)
 
-def _send_webhook(event: str, payment: dict) -> None:
+def _send_webhook(event: str, payment: dict, refund: dict | None = None) -> None:
     if not _webhooks["enabled"]:
         return
     copies = 2 if _webhooks["duplicate"] else 1
     event_id = "evt_" + secrets.token_hex(8)  # the same id on every retry and every duplicate
     body = json.dumps({
-        "entity": "event", "account_id": "acc_kiranamock", "event": event, "contains": ["payment"],
-        "payload": {"payment": {"entity": payment}}, "created_at": int(time.time()),
+        "entity": "event", "account_id": "acc_kiranamock", "event": event,
+        "contains": ["refund", "payment"] if refund else ["payment"],
+        "payload": {"payment": {"entity": payment}, **({"refund": {"entity": refund}} if refund else {})},
+        "created_at": int(time.time()),
     }, separators=(",", ":")).encode()
     signature = hmac.new(WEBHOOK_SECRET.encode(), body, hashlib.sha256).hexdigest()
     for _ in range(copies):

@@ -2,6 +2,8 @@ package com.kirana.entity;
 
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.HashSet;
+import java.util.Set;
 import java.util.List;
 
 import jakarta.persistence.CascadeType;
@@ -19,6 +21,7 @@ import jakarta.persistence.OneToMany;
 import jakarta.persistence.OrderBy;
 import jakarta.persistence.SequenceGenerator;
 import jakarta.persistence.Table;
+import org.hibernate.annotations.BatchSize;
 import org.hibernate.annotations.CreationTimestamp;
 import org.hibernate.annotations.UpdateTimestamp;
 
@@ -59,6 +62,12 @@ public class Order {
     private String closedReason;
     private String latePaymentId; // Stage 6c: paid after it closed; a refund is needed
 
+    // Stage 6d. Usually empty, at most one per late payment. Loaded lazily, 50 orders' worth per
+    // query (@BatchSize), so listing orders does not bring back the N+1 (P4).
+    @OneToMany(mappedBy = "order")
+    @BatchSize(size = 50)
+    private Set<Refund> refunds = new HashSet<>();
+
     @CreationTimestamp
     @Column(nullable = false, updatable = false)
     private Instant createdAt;
@@ -96,6 +105,7 @@ public class Order {
     public Instant getPaidAt() { return paidAt; }
     public String getClosedReason() { return closedReason; }
     public String getLatePaymentId() { return latePaymentId; }
+    public Set<Refund> getRefunds() { return refunds; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }
 }

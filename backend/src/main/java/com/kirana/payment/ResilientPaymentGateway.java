@@ -48,6 +48,22 @@ public class ResilientPaymentGateway implements PaymentGateway {
     }
 
     @Override
+    public boolean receivesWebhooks() {
+        return delegate.receivesWebhooks();
+    }
+
+    /** Not retried: a retry after a timeout could refund twice (the first call may have worked). */
+    @Override
+    public GatewayRefund refund(String paymentId, long amountPaise, String receipt) {
+        return resilience.payment(id(), false, () -> delegate.refund(paymentId, amountPaise, receipt));
+    }
+
+    @Override
+    public java.util.List<GatewayRefund> fetchRefunds(String paymentId) {
+        return resilience.payment(id(), true, () -> delegate.fetchRefunds(paymentId));
+    }
+
+    @Override
     public boolean verifyWebhook(String body, String signature) {
         return delegate.verifyWebhook(body, signature);
     }
