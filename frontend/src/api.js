@@ -221,6 +221,7 @@ export const api = {
     resetBreaker: (name) => request('POST', `/system/breakers/${q(name)}/reset`),
     paymentFault: (body) => request('POST', '/system/chaos/payment', body),
     networkFault: (proxy, body) => request('POST', `/system/chaos/network/${q(proxy)}`, body),
+    redrive: (topic) => request('POST', `/system/kafka/dead-letters/${q(topic)}/redrive`),
   },
   payments: {
     providers: () => request('GET', '/payments/providers'),

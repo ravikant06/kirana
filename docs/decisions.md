@@ -344,6 +344,36 @@ The dual write is kept behind `kirana.fulfilment.mode: naive` (default `events`)
 it. Costs: during an outage, fulfilment of every order on that partition waits (visible as
 lag); a poison record would block its partition if it were classified as retryable.
 
+**D64. Records a consumer can't process go to a dead-letter topic, never dropped; re-drive is
+manual.** (6f) `orders.v1-dlt` and `payments.v1-dlt` (same partitions as the source). The
+default error handler retries 3× 1 s apart, then dead-letters; JSON errors and unknown event
+types skip the retries. Fulfilment's handler dead-letters a warehouse 4xx at once. The offset of
+a dead-lettered record is committed. Spring's headers carry the original topic/partition/offset,
+group and exception; Kirana logs `Dead-lettered …`. `POST /system/kafka/dead-letters/{topic}/redrive`
+(button in the lab) copies waiting dead letters back to their original topic once per original
+record, tracked by the `kirana-dlt-redrive` group's offsets. Costs: a re-driven record reaches
+every group of the topic (safe: all consumers are idempotent); a per-group retry topic would be
+cleaner. Re-driving before the fix just dead-letters it again.
+
+**D65. Consumers on payments.v1 must know every type; an unknown one is dead-lettered.** (6f)
+Found in 6d (an old instance acknowledged `RefundProcessed` as "unknown"). Consumers on
+`orders.v1` still ignore types they don't use: that's "not for me", not "unknown". Old versions
+can't be fixed after the fact, so the rule stays: deploy consumers before producers.
+
+**D66. Consumer session timeout 10 s (heartbeat 3 s).** (6f) A crashed instance's partitions move
+in ~10 s instead of 45 s (measured). Cost: a pause longer than 10 s (GC, debugger) triggers a
+rebalance. Static membership (`group.instance.id`) would avoid rebalances on quick restarts;
+not used.
+
+**D67. Outbox and inbox are cleaned hourly after 7 days.** (6f) Published `outbox` rows and
+`processed_events` rows older than `kirana.messaging.retention` (7d, = Kafka's default
+retention, the longest a duplicate can still arrive) are deleted in batches of 5,000.
+Unpublished outbox rows are never deleted.
+
+**D68. Consumer lag and dead letters are shown in the Resilience lab.** (6f) From the admin API:
+per group, end offset minus committed offset; per dead-letter topic, what the re-drive group
+hasn't read yet.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

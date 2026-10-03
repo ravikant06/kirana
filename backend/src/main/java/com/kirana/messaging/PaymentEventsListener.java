@@ -28,8 +28,7 @@ import tools.jackson.databind.json.JsonMapper;
  *
  * If the app dies between 1 and 2, Kafka delivers the record again; the inbox row makes the
  * second delivery a no-op. If step 1 throws, nothing commits and nothing is acknowledged: the
- * error handler (KafkaConfig) retries it a few times, then logs it and moves on (dead-letter
- * topic in 6f; until then the re-check job is the safety net).
+ * error handler (KafkaConfig) retries it a few times, then moves it to payments.v1-dlt (6f).
  */
 @Component
 @ConditionalOnProperty(name = "kirana.kafka.enabled", havingValue = "true")
@@ -78,7 +77,9 @@ public class PaymentEventsListener {
                     boolean changed = refunds.settle(paymentId, event.path("data").path("refundId").asString(), state);
                     yield changed ? "refund " + state : "refund already settled";
                 }
-                default -> "unknown type, ignored";
+                // Stage 6f: every payments.v1 type is meant for this consumer. One it doesn't know
+                // must not be acknowledged as done (6d, experiment 2b): dead-letter it instead.
+                default -> throw new UnknownEventTypeException(type);
             };
         });
         ack.acknowledge();

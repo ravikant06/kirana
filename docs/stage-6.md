@@ -681,6 +681,80 @@ It will immediately ship every paid order in `orders.v1` that has no shipment ye
 
 ---
 
+## 6f (part 1). Gap fixes: nothing dropped, nothing invisible, nothing forever
+
+The Kafka-mechanics experiments (keys, scaling, rebalancing, lag) are still to come. This part
+fixes the gaps 6b–6e left behind:
+
+| # | Gap | Fix | Decision |
+|---|---|---|---|
+| B1 | a record a consumer gave up on was **logged and dropped** (payments: after 3 retries; fulfilment: a warehouse 4xx) | **dead-letter topics** `orders.v1-dlt`, `payments.v1-dlt` + **re-drive** | D64 |
+| B2 | a crashed instance kept its partitions **45 s** (6c) | session timeout **10 s**, heartbeat 3 s | D66 |
+| B3 | lag was only visible in Kafka UI, though fulfilment now blocks on purpose | **lag per group and dead letters in the lab** | D68 |
+| B4 | an old instance acknowledged an event type it didn't know (6d, 2b) | `payments.v1`: **unknown type → dead letter**, never "done" | D65 |
+| B5 | `outbox` and `processed_events` grew forever | **hourly cleanup**, 7-day retention | D67 |
+
+### Where a failing record goes now
+
+```mermaid
+flowchart TD
+    R["record from orders.v1 / payments.v1"] --> L["listener"]
+    L -->|ok| A["ack (offset committed)"]
+    L -->|"throws"| C{"can retrying help?"}
+    C -->|"no: bad JSON, unknown type,<br/>warehouse 4xx"| D["dead-letter at once"]
+    C -->|"yes: DB hiccup, timeout"| T{"which consumer?"}
+    T -->|"payments, refunds"| R3["retry 3× (1 s)"] -->|still failing| D
+    T -->|"fulfilment, warehouse unavailable"| W["retry forever, 1→30 s<br/>(partition waits, lag grows)"]
+    D --> DL["&lt;topic&gt;-dlt, same partition<br/>headers: original topic/partition/offset,<br/>group, exception<br/>log: Dead-lettered …"]
+    DL --> CM["offset committed: the partition moves on"]
+    DL -.->|"after the fix: lab → Re-drive"| RD["copy back to the original topic<br/>once per original record"]
+    RD --> R
+```
+
+### Re-drive, and why it de-duplicates
+
+`orders.v1` has two consumer groups (refunds, fulfilment). A record both choke on is
+dead-lettered **twice**. Re-driving both copies would put it on `orders.v1` twice, and each copy
+reaches both groups again. So a re-drive sends each original record (topic, partition, offset)
+back **once**, and its progress is the offsets of its own group, `kirana-dlt-redrive` ("waiting"
+in the lab = that group's lag). A re-driven record is a new delivery to **every** group of the
+topic; that's safe only because every Kirana consumer is idempotent.
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `messaging/KafkaConfig.java` | the two `-dlt` topics; `DeadLetterPublishingRecoverer` (same partition); both error handlers recover into it (with a `Dead-lettered …` log line) and commit the offset; not-retryable: `JacksonException`, `UnknownEventTypeException` (+ `WarehouseRejectedException` for fulfilment) |
+| `messaging/UnknownEventTypeException.java`, `PaymentEventsListener.java` | an unknown `payments.v1` type throws (its transaction, inbox row included, rolls back) |
+| `messaging/DeadLetters.java` | re-drive: `assign()` the dead-letter partitions under group `kirana-dlt-redrive`, copy each original record back once (keeping `event-id`/`event-type`, adding `redriven-from`), commit |
+| `controller/SystemController.java` | `POST /system/kafka/dead-letters/{topic}/redrive` |
+| `messaging/KafkaStatus.java` | per group: state, instances, lag; per dead-letter topic: waiting |
+| `messaging/MessagingCleanup.java` | hourly, batches of 5,000: published outbox rows and `processed_events` older than 7 days |
+| `application.yml` | `session.timeout.ms: 10000`, `heartbeat.interval.ms: 3000`; `kirana.messaging.retention: 7d` |
+| `frontend/…/ResilienceLab.jsx`, `api.js`, `styles.css` | Kafka card: consumer-group table (instances, lag), dead letters with a **Re-drive** button |
+| Tests | `DeadLetterIntegrationTest`: poison → DLT with headers; unknown type → DLT and no inbox row; re-drive once; lab sees groups/lag; cleanup keeps unpublished and recent rows. **94 tests pass.** |
+
+### Checked on the real stack
+
+| What | Result |
+|---|---|
+| Lab status | 4 topics; `kirana-payments` 2 instances (your 8080 + 8081), `kirana-refunds` 1, `kirana-fulfilment` 1, lag 0; 0 dead letters |
+| Poison on `orders.v1` (`{"type":"OrderPaid", "orderId": "not-a-number`) | both groups dead-lettered it at once: **2 waiting**, **lag 0** (nothing blocked). Log: `Dead-lettered orders.v1 p0@12 (key poison-2) to orders.v1-dlt: …StreamReadException…` from each group |
+| Re-drive before fixing anything | `{"redriven":1}`: one copy sent, `skipped: orders.v1/2@3 was already re-driven (another group's copy)`; still poison → dead-lettered again (2 waiting) |
+| `kill -9` an instance | partitions back with the new instance **10 s** later (6c: ~45 s) |
+
+### Try it
+
+Restart your backend first (the new session timeout and error handling apply to new instances).
+
+1. Lab → Kafka: the consumer-group table and two dead-letter lines.
+2. Poison: `echo 'p1:not json' | docker exec -i kirana-kafka-1 /opt/kafka/bin/kafka-console-producer.sh --bootstrap-server localhost:9092 --topic orders.v1 --property parse.key=true --property key.separator=:`
+   → lab: `orders.v1-dlt: 2 waiting`; `grep Dead-lettered backend/logs/kirana.log`; Kafka UI → `orders.v1-dlt` → headers.
+   (Two poison records from my check are already waiting there; re-driving them just sends them back.)
+3. Warehouse 4xx → dead letter: not reproducible from the UI (Kirana never sends an empty order); covered by the error-handler rule.
+
+---
+
 ## Watching it live (logs, Kafka UI, database)
 
 The backend also writes its log to `backend/logs/kirana.log` (when started from `backend/`).

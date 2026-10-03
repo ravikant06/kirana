@@ -118,6 +118,35 @@ export default function ResilienceLab({ notify, embedded }) {
               {status.outbox.lastError && ` · ${status.outbox.lastError}`} · {status.outbox.published} published
             </p>
           )}
+          {status.kafka.groups?.length > 0 && (
+            <table className="lab-table">
+              <thead>
+                <tr><th>Consumer group</th><th>Reads</th><th>Instances</th><th>Lag</th></tr>
+              </thead>
+              <tbody>
+                {status.kafka.groups.map((g) => (
+                  <tr key={g.name}>
+                    <td><code>{g.name}</code></td>
+                    <td>{g.topic}</td>
+                    <td>{g.members}</td>
+                    <td className={g.lag > 0 ? 'lab-warn' : ''}>{g.lag < 0 ? '?' : g.lag}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+          {status.kafka.deadLetters?.map((d) => (
+            <p key={d.name} className={d.waiting > 0 ? 'lab-warn' : 'muted'}>
+              Dead letters in <code>{d.name}</code>: {d.waiting} waiting
+              {d.waiting > 0 && (
+                <>
+                  {' '}
+                  <button className="btn-quiet" onClick={() => act(() => api.system.redrive(d.name),
+                    `Re-drove ${d.name} back to ${d.name.replace(/-dlt$/, '')}`)}>Re-drive</button>
+                </>
+              )}
+            </p>
+          ))}
           <p className="muted">Look inside (messages, partitions, offsets, consumer lag): <a href="http://localhost:8085" target="_blank" rel="noreferrer">Kafka UI on localhost:8085</a></p>
         </div>
       )}

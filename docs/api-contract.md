@@ -166,6 +166,12 @@ once a paid order has been handed to the warehouse (Stage 6e); a paid order with
 way there. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `Retry-After`.
 
+### Kafka in the lab (Stage 6f, dev)
+
+`GET /system/status` → `kafka` also has `groups: [{ name, topic, state, members, lag }]` and
+`deadLetters: [{ name, waiting }]`. `POST /system/kafka/dead-letters/{topic}/redrive` →
+`{ topic, redriven }` (topic `orders.v1-dlt` or `payments.v1-dlt`; 404 otherwise, 409 if Kafka is off).
+
 ### Payment webhooks (Stage 6c, called by gateways, not the frontend)
 
 `POST /webhooks/payment/{provider}`. Raw Razorpay-shaped event body; headers

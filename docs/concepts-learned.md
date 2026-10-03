@@ -107,4 +107,14 @@
    the signal). If failures are per message, or the call isn't idempotent, record the intent,
    move on, and retry from a job. Never retry an error that can't succeed (4xx): that's a
    poison message.
+33. **Dead-letter topics.** A record that can't be processed is moved aside with its error, so
+   the partition keeps flowing and nothing is lost. Retry only what can succeed (timeouts),
+   dead-letter at once what can't (bad JSON, unknown type, 4xx). Re-drive after the fix, and
+   remember that a re-driven record is a new delivery to every consumer of that topic.
+34. **Lag is the health signal of a consumer.** End offset minus committed offset: growing lag
+   means the consumer is slower than the producer, stuck on a record, or down.
+35. **Session timeout is the failure-detection trade-off.** Shorter means faster takeover after
+   a crash, but more false rebalances on pauses. A graceful shutdown leaves the group at once.
+36. **Outboxes and inboxes need retention.** Keep inbox rows as long as a duplicate can still
+   arrive (the log's retention), published outbox rows as long as they help debugging.
 

@@ -25,7 +25,7 @@ import tools.jackson.databind.json.JsonMapper;
  *     else, it would only lose this one
  *   - the order is already PAID and its event is durable in Kafka: waiting costs time, not data
  * The backlog shows up as consumer lag (Kafka UI). A 4xx from the warehouse is different: retrying
- * can never help, so that record is logged and skipped (dead-letter topic in 6f).
+ * can never help, so that record goes straight to orders.v1-dlt (6f).
  */
 @Component
 @ConditionalOnExpression("${kirana.kafka.enabled:false} and '${kirana.fulfilment.mode:events}' == 'events'")

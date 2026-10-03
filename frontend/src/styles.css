@@ -900,4 +900,7 @@ code { font-family: var(--mono); font-size: 0.85em; }
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+.lab-table { width: 100%; border-collapse: collapse; font-size: 0.82rem; }
+.lab-table th, .lab-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
+.lab-table th { font-weight: 600; color: var(--muted); }
 .lab-warn { margin: 0; font-size: 0.85rem; color: var(--marigold-deep); font-weight: 700; }

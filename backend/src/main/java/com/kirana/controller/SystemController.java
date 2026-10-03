@@ -1,6 +1,7 @@
 package com.kirana.controller;
 
 import com.kirana.dto.SystemStatus;
+import com.kirana.messaging.DeadLetters;
 import com.kirana.messaging.KafkaStatus;
 import com.kirana.messaging.OutboxStats;
 import com.kirana.resilience.ChaosControls;
@@ -25,8 +26,11 @@ public class SystemController {
     private final ChaosControls chaos;
     private final KafkaStatus kafka;
     private final OutboxStats outbox;
+    private final DeadLetters deadLetters;
 
-    public SystemController(Resilience resilience, ChaosControls chaos, KafkaStatus kafka, OutboxStats outbox) {
+    public SystemController(Resilience resilience, ChaosControls chaos, KafkaStatus kafka, OutboxStats outbox,
+                            DeadLetters deadLetters) {
+        this.deadLetters = deadLetters;
         this.resilience = resilience;
         this.chaos = chaos;
         this.kafka = kafka;
@@ -41,6 +45,15 @@ public class SystemController {
                 new SystemStatus.Slots(bulkhead.getMetrics().getAvailableConcurrentCalls(),
                         bulkhead.getMetrics().getMaxAllowedConcurrentCalls()),
                 chaos.paymentMode(), chaos.networkFaults(), kafka.snapshot(), outbox.snapshot());
+    }
+
+    public record Redriven(String topic, int redriven) {
+    }
+
+    /** Stage 6f: send a dead-letter topic's records back to their original topic, once fixed. */
+    @PostMapping("/system/kafka/dead-letters/{topic}/redrive")
+    public Redriven redrive(@PathVariable String topic) {
+        return new Redriven(topic, deadLetters.redrive(topic));
     }
 
     @PostMapping("/system/breakers/{name}/reset")

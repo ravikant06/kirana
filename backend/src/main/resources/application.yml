@@ -56,6 +56,12 @@ spring:
       value-deserializer: org.apache.kafka.common.serialization.StringDeserializer
       enable-auto-commit: false
       auto-offset-reset: earliest   # a brand-new group starts from the oldest record, not "now"
+      properties:
+        # Stage 6f: how long the broker waits for a silent (crashed) member before giving its
+        # partitions to another instance. Default 45 s (seen in 6c); 10 s with a heartbeat every
+        # 3 s. Lower means faster takeover but more false alarms on a long GC pause.
+        session.timeout.ms: 10000
+        heartbeat.interval.ms: 3000
     listener:
       ack-mode: manual
 
@@ -148,6 +154,8 @@ kirana:
     enabled: false  # the chaos profile turns this on (fault controls in Manage)
     toxiproxy-url: http://localhost:8474
     payment-mock-admin-url: http://localhost:8090
+  messaging:
+    retention: 7d   # Stage 6f: published outbox rows and processed_events older than this are deleted
   outbox:
     relay-interval-ms: 500   # how often the relay looks for unpublished events
     batch-size: 100
