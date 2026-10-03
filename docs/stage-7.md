@@ -425,6 +425,7 @@ flowchart LR
 | Problem | Stage |
 |---|---|
 | Every instance runs every job (reconcile, expiry, re-check, refund retries, outbox and key cleanup): correct thanks to conditional updates and leases, but duplicated work and gateway calls; stale `PENDING` images never cleaned | **8** (distributed locking) |
+| **Outbox ordering across instances** (found reviewing `docs/flows.md`): with two relays, `FOR UPDATE SKIP LOCKED` lets relay B publish row 120 while relay A is still sending row 99. If both belong to one order, Kafka gets them out of order. One relay at a time (a lock or leader) or an outbox split by key fixes it | **8** |
 | Consumers live in the checkout process; mixed versions in one group (6d) | 9 |
 | One broker, in-memory mocks | 10–11 |
 | No metrics or alerts (lag, dead letters, failed refunds, 409 "in progress" rate) | 14 |

@@ -84,7 +84,7 @@ stateDiagram-v2
     [*] --> REQUESTED: RefundListener<br/>(PaymentAfterClose)
     REQUESTED --> PENDING: gateway created it<br/>(or "ask first" found it)
     REQUESTED --> PROCESSED: refund.processed webhook<br/>arrived first
-    REQUESTED --> FAILED: gateway 4xx
+    REQUESTED --> FAILED: gateway 4xx<br/>or refund.failed webhook
     PENDING --> PROCESSED: webhook or polling
     PENDING --> FAILED: refund.failed
 ```
@@ -114,26 +114,27 @@ sequenceDiagram
     Note over API: key existed? COMPLETED → replay stored 201 (stop here)<br/>IN_PROGRESS → 409 + Retry-After · different body → 422
     API->>API: bulkhead: 1 of 20 checkout slots (else 503 "Checkout busy")
     API->>API: validate payment provider (no network)
-    API->>PG: read cart lines (no transaction)
-    API->>R: ⇢ net · flash-sale gate, only for products with an armed sale: DECRBY (Lua)
+    API->>PG: read cart lines (a single SELECT, no transaction)
+    API->>R: ⇢ net · flash-sale gate: one Lua call per cart line, every checkout<br/>armed sale → DECRBY (or "sold out") · no sale → "not armed" · Redis down → treated as not armed
     rect rgba(0,160,0,0.12)
     Note over API,PG: TX-1 placeInDb — the order exists only if ALL of this commits
-    API->>PG: SELECT user · SELECT cart + cart_items
-    API->>PG: INSERT orders (CREATED, payment_due_at = now+10m) · INSERT order_items (price snapshot)
-    API->>PG: UPDATE inventory SET qty = qty − n WHERE qty ≥ n (one per product, in id order)
-    API->>PG: DELETE cart_items (cart row kept)
+    API->>PG: SELECT user · SELECT cart + cart_items (one join)
+    Note over API: order + lines built in memory (ids from orders_seq / order_items_seq, fetched once per 50)
+    API->>PG: UPDATE inventory SET qty = qty − n WHERE product_id = ? AND qty ≥ n<br/>(one per product, in product-id order, 0 rows → out of stock → rollback)
+    API->>PG: flush: INSERT orders (CREATED, payment_due_at = now+10m) · INSERT order_items (price snapshot)<br/>· DELETE cart_items (cart row kept)
     API->>PG: INSERT outbox (OrderPlaced → orders.v1)
     API->>PG: UPDATE idempotency_keys SET recovery_point = order_created, resource_id = 42 🔑
     end
-    API->>PG: read order 42 (no transaction)
+    Note over API,PG: (that is the real SQL order from the log: Hibernate runs the UPDATE queries at once<br/>and sends the INSERT/DELETE at the flush — inside one transaction the order doesn't change the outcome)
+    API->>PG: read order 42 (findById: its own short read-only transaction)
     API->>GW: ⇢ net · POST /v1/orders {amount in paise, receipt kirana-order-42}<br/>timeout 1 s connect / 2 s read · retry ×3 · circuit breaker
     GW-->>API: gateway order order_Abc
     rect rgba(0,160,0,0.12)
     Note over API,PG: TX-2 attach (conditional) 🔑
     API->>PG: UPDATE orders SET gateway_order_id = order_Abc, payment_provider<br/>WHERE id = 42 AND status = CREATED AND gateway_order_id IS NULL
     end
-    API->>PG: re-read: another request attached a different one first? use theirs
-    API->>PG: TX-3 (read-only) reload order 42 with its lines
+    API->>PG: re-read (read-only transaction): another request attached a different one first? use theirs
+    API->>PG: TX-3 (only reads) reload order 42 with its lines and refunds, for the response
     rect rgba(120,120,255,0.12)
     Note over API,PG: TX-4 (own transaction) store the answer
     API->>PG: UPDATE idempotency_keys SET COMPLETED, response = 201 + body + Location
@@ -150,23 +151,27 @@ sequenceDiagram
 | TX-0 | claim the idempotency key | `idempotency_keys` | must be visible to a concurrent duplicate **before** the work starts |
 | **TX-1** | order + order lines + stock decrement + cart emptied + `OrderPlaced` event + recovery point | `orders`, `order_items`, `inventory`, `cart_items`, `outbox`, `idempotency_keys` | the business change: all or nothing |
 | TX-2 | gateway order id attached | `orders` | a network call (gateway) sits between TX-1 and TX-2; never hold a transaction open across it |
-| TX-3 | read-only reload | — | |
+| TX-3 | reload for the response (reads only) | — | |
 | TX-4 | the response stored with the key | `idempotency_keys` | |
 
-So: **2 business write transactions** (TX-1, TX-2), **2 idempotency transactions** (TX-0, TX-4),
-1 read-only, plus up to 2 Redis calls and 1 gateway call (up to 3 attempts).
+So: **2 business write transactions** (TX-1, TX-2) and **2 idempotency transactions** (TX-0, TX-4).
+Counting everything, the request opens **7 short transactions** (those 4, plus 3 that only read:
+two `findById` and TX-3) and runs one SELECT outside any transaction (the cart lines). Measured
+in a test with SQL logging: **19 SQL statements** for one place-order request (including 3
+sequence fetches, which normally happen once per 50 rows). Network: 1 Redis call for the rate
+limit, 1 per cart line for the flash-sale gate, 1 gateway call (up to 3 attempts).
 
 ### What if a step fails
 
 | Step fails | What the shopper gets | What's left behind | Why it's safe |
 |---|---|---|---|
-| 2 rate limit | 429 + `Retry-After` | nothing | before any work |
+| 2 rate limit | 429 + `Retry-After` | nothing | before any work (a replay also spends a token: the limiter runs before the key is checked) |
 | 3 key claim: key COMPLETED | the stored 201 (same order) | nothing new | 🔑 replay |
 | 3 key claim: key IN_PROGRESS | 409 "Request in progress" + `Retry-After: 1` | nothing | the first attempt is still running |
 | 4 bulkhead full | 503 "Checkout busy" | key deleted | nothing happened, retry runs fresh |
 | 5 unknown or unavailable payment provider | 400 (`paymentProvider`) | key deleted | checked before any stock is taken |
 | 7 flash sale sold out | 409 "Out of stock" | key deleted | gate refused before any transaction |
-| TX-1: cart empty | 409 "Cart is empty" | key deleted; gate units given back | rolled back |
+| TX-1: cart empty | 409 "Cart is empty" | key deleted (no gate units were taken: no lines) | rolled back |
 | TX-1: out of stock (step 10 updates 0 rows) | 409 "Out of stock" | whole TX-1 rolled back (earlier lines' stock restored), gate units given back, key deleted | one transaction |
 | TX-1: two tabs checking out the same cart | 409 "Checkout already in progress" | the second rolled back (its cart-line DELETE found 0 rows) | optimistic check |
 | TX-1: database down | 503 "Database busy" | nothing | |
@@ -175,7 +180,7 @@ So: **2 business write transactions** (TX-1, TX-2), **2 idempotency transactions
 | **process crashes after TX-1** | (no answer: client times out) | order CREATED; key IN_PROGRESS + `order_created, 42` | 🔑 the client retries with k3; after the 30 s lock the retry **resumes** from the recovery point: no second order |
 | crash after the gateway call, before TX-2 | (no answer) | an unused gateway order at the gateway | harmless; the resume creates/attaches one, the orphan expires unpaid |
 | TX-4 fails | error, although the order exists | key IN_PROGRESS with recovery point | same resume as above |
-| gateway retry made two gateway orders (Razorpay doesn't de-duplicate receipts, D55) | normal | an orphan gateway order | TX-2 attaches only the first; the other is never paid |
+| an attempt timed out but the gateway had created its order; the retry created another (Razorpay doesn't de-duplicate receipts, D55) | normal | an orphan gateway order | we only learn, attach and show the id from the attempt that answered; the orphan is never shown to the browser, so it can't be paid, and expires |
 
 **Idempotency in this flow:** the client key (TX-0/TX-4 + recovery point in TX-1); the conditional
 attach in TX-2; one gateway order per Kirana order, reused forever after (D55).
@@ -212,6 +217,7 @@ sequenceDiagram
         API->>PG: UPDATE orders SET status = PAID, payment_id, paid_at WHERE id = 42 AND status = CREATED
         API->>PG: (1 row) INSERT outbox (OrderPaid → orders.v1)
         end
+        API->>PG: reload order (a transaction that only reads)
         API-->>B: 200 {order 42 PAID}
     and Path B: the gateway's webhook
         GW->>API: ⇢ net · POST /webhooks/payment/mock (raw body)<br/>X-Razorpay-Signature, X-Razorpay-Event-Id: evt_1
@@ -222,7 +228,7 @@ sequenceDiagram
         API->>PG: INSERT outbox (PaymentCaptured → payments.v1, key 42)
         end
         API-->>GW: 200 (only after the commit) — duplicate evt_1 → 200 "duplicate ignored"
-        Note over GW: no 2xx → retries after 1, 2, 4, 8, 16, 32 s
+        Note over GW: no 2xx → payment-mock retries after 1, 2, 4, 8, 16, 32 s (Razorpay: for about a day)
         RL->>K: ⇢ net · publish PaymentCaptured (≤ 0.5 s later)
         K->>L: deliver
         rect rgba(0,160,0,0.12)
@@ -248,7 +254,7 @@ flowchart TD
     LP -->|"0 rows"| DUP["already recorded: nothing"]
 ```
 
-Called by: verify (path A; a late payment answers **409 "refund needed"**), the webhook consumer
+Called by: verify (path A; a late payment answers **409 "Order already closed … A refund is needed"**), the webhook consumer
 (path B; never throws), the reconciler and expiry (section 5), the re-check job.
 
 ### What if a step fails
@@ -257,7 +263,8 @@ Called by: verify (path A; a late payment answers **409 "refund needed"**), the 
 |---|---|---|
 | browser closed after paying (path A never happens) | path B marks it PAID in ~0.5 s | webhook |
 | forged signature on verify | 400 | HMAC with a secret the browser doesn't have |
-| verify for an order that closed meanwhile | 409 "refund needed"; `late_payment_id` set; `PaymentAfterClose` | section 7 refunds it |
+| verify for an order that closed meanwhile | 409 "Order already closed"; `late_payment_id` set; `PaymentAfterClose` | section 7 refunds it |
+| verify for someone else's order, or a gateway order id that isn't this order's | 404 / 400 | checked before the signature |
 | webhook bad signature | 400; gateway keeps retrying | anyone can POST to a public URL |
 | webhook while Kirana is down | gateway retries; delivered after restart | at-least-once from the gateway |
 | webhook delivered twice | second insert hits `outbox.event_id UNIQUE` → 200 "duplicate ignored" | 🔑 |
@@ -265,7 +272,7 @@ Called by: verify (path A; a late payment answers **409 "refund needed"**), the 
 | consumer crashes after TX-L, before the offset commit | redelivered; `processed_events` says seen → skipped | 🔑 inbox |
 | consumer throws (DB hiccup) | retried 3× 1 s apart, then → `payments.v1-dlt` | dead letter, not dropped |
 | unknown event type | straight to `payments.v1-dlt` (TX rolled back) | never "acknowledged as done" |
-| webhooks never arrive at all (Razorpay without a tunnel) | reconciler finds it (1 min for gateways without webhooks) | section 5 |
+| webhooks never arrive at all (Razorpay without a tunnel) | reconciler finds it: orders older than 1 min for a gateway without webhooks, 10 min for one with them; it runs every 30 s | section 5 |
 
 ---
 
@@ -296,15 +303,15 @@ sequenceDiagram
     Note over B,R: CANCEL — POST /orders/42/cancel, Idempotency-Key k5
     B->>API: POST /orders/42/cancel
     API->>PG: TX-0 claim k5 🔑
-    API->>PG: read order (this shopper's, status must be CREATED — else 409)
+    API->>PG: read order (this shopper's, status must be CREATED — else 409) — no transaction
     rect rgba(0,160,0,0.12)
-    Note over API,PG: TX-1 close 🔑
+    Note over API,PG: TX-1 close 🔑 (real SQL order)
     API->>PG: UPDATE orders SET status = CANCELLED, closed_reason WHERE id = 42 AND status = CREATED
-    API->>PG: (1 row) SELECT order lines · UPDATE inventory SET qty = qty + n (per product, id order)
+    API->>PG: (1 row only — 0 rows → stop, someone else closed or paid it) UPDATE idempotency_keys SET recovery_point = order_closed
+    API->>PG: SELECT order lines · UPDATE inventory SET qty = qty + n (per product, id order)
     API->>PG: INSERT outbox (OrderClosed → orders.v1)
-    API->>PG: UPDATE idempotency_keys SET recovery_point = order_closed
     end
-    API->>R: ⇢ net · after commit: give flash-sale units back (if a sale is armed)
+    API->>R: ⇢ net · after commit: give flash-sale units back (one call per product, only counts if a sale is armed)
     API->>PG: TX-2 reload · TX-3 store response with k5
     API-->>B: 200 {order 42 CANCELLED}
 ```
@@ -345,7 +352,7 @@ flowchart TD
         E3 -->|"gateway down"| E8["WARN, next run"]
     end
     subgraph RCK["Re-check closed — every 2 min"]
-        C1["SELECT CANCELLED/FAILED orders, gateway order set,<br/>no late payment, closed in the last 30 min"] --> C2["⇢ net fetch status"]
+        C1["SELECT CANCELLED/FAILED orders, gateway order set,<br/>no late payment, updated_at in the last 30 min<br/>(≈ closed in the last 30 min)"] --> C2["⇢ net fetch status"]
         C2 -->|"captured"| C3["applyPayment → late payment<br/>(TX: late_payment_id + outbox PaymentAfterClose)"]
         C2 -->|"nothing"| C4["leave it"]
     end
@@ -397,7 +404,7 @@ sequenceDiagram
 | no event without its change, no change without its event | same transaction (outbox) |
 | delivered even if Kafka or the app was down | the row waits; relay retries every 0.5 s |
 | two app instances don't send the same row at once | `FOR UPDATE SKIP LOCKED` |
-| one order's events in order | key = order id → one partition; relay stops at the first failure |
+| one order's events in order | key = order id → one partition; relay stops at the first failure. **Only with one relay running.** With two instances, relay A can lock rows 1–100 while relay B skips them and publishes row 120, which may be a later event of an order whose earlier event is row 99. Fix: one relay at a time (a lock or leader, Stage 8) or split the outbox by key |
 | duplicates (relay crash after send, before marking) | possible (at-least-once) → every consumer de-duplicates 🔑 |
 | consumer failure | retry, then dead-letter topic; re-drive from the lab |
 | a crashed consumer's partitions | moved to another instance after the 10 s session timeout |
@@ -503,8 +510,8 @@ after the PAID commit, in the shopper's request: slow, lost on failure, and can 
 | Operation | Write transactions | Network calls |
 |---|---|---|
 | Add to cart | key claim · TX (cart create-if-absent + insert-or-increment + recovery point) · key store | Redis rate limit |
-| Place order | key claim · **TX-1** (order, lines, stock, cart, outbox, recovery point) · **TX-2** (attach gateway order) · key store | Redis rate limit, Redis flash gate (if armed), gateway create order |
-| Verify payment | **TX** applyPayment (order PAID + outbox) | none (HMAC is local) |
+| Place order | key claim · **TX-1** (order, lines, stock, cart, outbox, recovery point) · **TX-2** (attach gateway order) · key store (+ 3 read-only) | Redis rate limit, Redis flash gate (1 per cart line), gateway create order |
+| Verify payment | **TX** applyPayment (order PAID + outbox), then a reload | none (HMAC is local) |
 | Webhook | **TX** outbox insert | none in the request |
 | Pay now | key claim · (TX attach, only if none) · key store | gateway, only if no gateway order yet |
 | Cancel | key claim · **TX** (close, stock back, outbox, recovery point) · key store | Redis give-back after commit |
@@ -559,10 +566,11 @@ after the PAID commit, in the shopper's request: slow, lost on failure, and can 
 
 **"What exactly happens when I click Place order?"**
 > The browser sends `POST /orders` with an `Idempotency-Key`. After the Redis rate limit, the key
-> is claimed in its own small transaction so a concurrent duplicate sees it. If a flash sale is
-> on, Redis hands out the units first. Then **one transaction** creates the order and its lines,
-> decrements stock with a conditional `UPDATE … WHERE qty ≥ n` per product in id order, empties
-> the cart, writes an `OrderPlaced` row to the outbox, and marks the key "order_created, 42". Only
+> is claimed in its own small transaction so a concurrent duplicate sees it. The flash-sale gate
+> asks Redis for each cart line (only products with an armed sale are limited there). Then **one
+> transaction** decrements stock with a conditional `UPDATE … WHERE qty ≥ n` per product in id
+> order (sorted to avoid deadlocks), inserts the order and its lines, empties the cart, writes an
+> `OrderPlaced` row to the outbox, and marks the key "order_created, 42". Only
 > after that commits do we call the gateway (outside any transaction, with timeouts, retries and
 > a circuit breaker) to create its order, and a **second transaction** attaches the gateway order
 > id with a conditional update. The response is stored with the key and returned: 201 with the
@@ -570,8 +578,9 @@ after the PAID commit, in the shopper's request: slow, lost on failure, and can 
 
 **"How many transactions?"**
 > Two business transactions: place (order + stock + cart + event, all or nothing) and attach.
-> Plus two small ones for the idempotency key. They're separate because a network call sits
-> between them, and you never hold a database transaction across a network call.
+> Plus two small ones for the idempotency key, and three that only read; about 19 SQL statements
+> in all. Place and attach are separate because a network call sits between them, and you never
+> hold a database transaction across a network call.
 
 **"What if the payment gateway is down?"**
 > The order is already committed with stock held, so we return 201 with "payment temporarily
@@ -588,7 +597,8 @@ after the PAID commit, in the shopper's request: slow, lost on failure, and can 
 > The gateway's signed webhook. We verify the HMAC over the raw body, store it in the outbox in
 > one transaction, answer 200, and a Kafka consumer marks the order paid with a conditional
 > update, de-duplicating by event id. If the webhook never comes, the reconciler polls the
-> gateway.
+> gateway for unpaid orders older than 10 minutes (1 minute for a gateway that can't send us
+> webhooks).
 
 **"Money arrived after the order expired?"**
 > Every path ends in the same `applyPayment`: the PAID update matches 0 rows, so it records
