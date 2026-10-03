@@ -187,8 +187,19 @@ export default function App() {
     }
   }, [userId])
 
+  // Re-read the cart on every page change and whenever this tab comes back into view: another
+  // tab may have changed it (placed the order, added items), and the badge must not lag the page.
   useEffect(() => {
     refreshCart()
+  }, [refreshCart, view.name])
+  useEffect(() => {
+    const onVisible = () => document.visibilityState === 'visible' && refreshCart()
+    document.addEventListener('visibilitychange', onVisible)
+    window.addEventListener('focus', onVisible)
+    return () => {
+      document.removeEventListener('visibilitychange', onVisible)
+      window.removeEventListener('focus', onVisible)
+    }
   }, [refreshCart])
 
   const go = (name, extra = {}) => {

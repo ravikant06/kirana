@@ -50,6 +50,7 @@ export default function Cart({ userId, onCartChanged, onOrdered, notify, goShop 
       if (e.status === 422) checkoutKey.current = null // the key belonged to a different request
       setOrderError(e)
       await reload()
+      onCartChanged() // the cart may have changed elsewhere (another tab placed the order)
     } finally {
       setBusy(false)
     }
