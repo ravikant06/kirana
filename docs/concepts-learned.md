@@ -117,4 +117,17 @@
    a crash, but more false rebalances on pauses. A graceful shutdown leaves the group at once.
 36. **Outboxes and inboxes need retention.** Keep inbox rows as long as a duplicate can still
    arrive (the log's retention), published outbox rows as long as they help debugging.
-
+37. **Idempotency vs an idempotency key.** Idempotency is a property (twice = once). A key is one
+   way to get it when the request itself carries no identity: the client names the action, the
+   server stores "key → response" and replays it. Internal flows get the same property from ids
+   they already have (event id, payment id, order id) and conditional updates.
+38. **The IETF Idempotency-Key rules.** Missing key 400; same key + same request finished →
+   replay; still running → 409 + Retry-After; same key + different request → 422. Clients make a
+   new key per action, reuse it only to retry, and retry only when the outcome is unknown.
+39. **Recovery points (atomic phases).** Storing the response after the work leaves a crash
+   window. Write "I got this far" in the same transaction as each step's work; a retry whose
+   first attempt died resumes from there instead of repeating it.
+40. **Exactly-once effect = at-least-once delivery + idempotent effect.** Kafka's idempotent
+   producer and transactions only cover Kafka-to-Kafka. When the effect is in a database or
+   another service, make the effect idempotent. And keep the idempotency record where the effect
+   is (same transaction), which is why the keys stay in Postgres, not Redis.

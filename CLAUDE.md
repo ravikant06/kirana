@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D69), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D71), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -85,24 +85,27 @@ conditional updates). The gap is Kirana's own HTTP API: a client retry carries n
 
 Steps, each reported to Ravi in `docs/stage-7.md` (what, why, new code, flow diagrams):
 
-- **7a** Reproduce P1–P3: a script whose response is delayed on the way back (Toxiproxy in
+- **7a** ✅ Reproduce P1–P3: a script whose response is delayed on the way back (Toxiproxy in
   front of the API), so the client times out after the server did the work, then retries.
-- **7b** Idempotency keys in Postgres: `Idempotency-Key` header **required** on
+- **7b** ✅ Idempotency keys in Postgres: `Idempotency-Key` header **required** on
   `POST /cart/items`, `POST /orders`, `POST /orders/{id}/payment`, `POST /orders/{id}/cancel`
   (400 without it). Table `idempotency_keys` (user, key, endpoint, request hash, status,
   stored response). Saved in the same transaction as the change. Same key → stored response
   replayed; same key, different request → 422; first request still running → 409 + Retry-After.
   Keys kept 24 h, then cleaned up.
-- **7c** Every client updated: frontend (one key per user action, reused on retry), perf
+- **7c** ✅ Every client updated: frontend (one key per user action, reused on retry), perf
   scripts, tests, curl examples in docs and the API contract. No compatibility mode.
-- **7d** Redis implementation behind a switch, for comparison: measure it, then break it
+- **7d** ✅ Redis implementation behind a switch, for comparison: measure it, then break it
   (Redis down, crash between steps) to show why Postgres stays the source of truth.
-- **7e** The full picture: Stage 6's consumer idempotency in the same framework; Kafka's
+- **7e** ✅ The full picture: Stage 6's consumer idempotency in the same framework; Kafka's
   idempotent producer and transactions (why exactly-once doesn't reach Postgres or a gateway);
   limits (key scope, retention, non-deterministic responses).
 
 Decisions (Ravi): recommended set, except the key is required (no optional mode) and every
-client is fixed (D69).
+client is fixed (D69). Built: D70 (client retries), D71 (Postgres stays; Redis measured and broken).
+
+**Stage 7 done** (summary and open problems: `docs/stage-7.md` §7e). Next: wrap up with Ravi and
+plan Stage 8 (distributed locking), then replace this section with that plan.
 
 ## Do not jump ahead
 

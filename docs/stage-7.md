@@ -350,3 +350,81 @@ transaction with, or as a fast first filter in front of a durable check.
 `IDEMPOTENCY_STORE=redis`, run it with `--label redis`; then `docker pause kirana-redis-1` and add
 something to the cart (503), `docker unpause kirana-redis-1`. Restart without the variable to go
 back to Postgres.
+
+---
+
+## 7e. The whole picture: one idea, seven places
+
+Every arrow in Kirana that can deliver something twice now has an answer. They are all the same
+idea: **give the action an identity, and make the effect happen at most once per identity**.
+Only the source of the identity differs.
+
+```mermaid
+flowchart LR
+    C["Client"] -->|"① Idempotency-Key (7b)"| K["Kirana API"]
+    K -->|"② one gateway order per order (D55)<br/>refund: ask first (6d)"| G["Gateway"]
+    G -->|"③ webhook event id → outbox event_id (6c)"| K
+    K -->|"④ outbox row, relay: idempotent producer"| KF["Kafka"]
+    KF -->|"⑤ event id → processed_events (6c)"| CO["Consumers"]
+    CO -->|"⑥ Idempotency-Key: kirana-order-{id} (6e)"| W["Warehouse"]
+    K -.->|"⑦ conditional UPDATE … WHERE status=…<br/>(everywhere, Stage 5)"| DB[("Postgres")]
+```
+
+| # | Duplicate comes from | Identity | Where it's remembered | Effect at most once because |
+|---|---|---|---|---|
+| ① | a client retry | `Idempotency-Key` (client-made) | `idempotency_keys` | claim + recovery points in the work's transaction |
+| ② | our retry to the gateway | our order id / payment id | `orders.gateway_order_id`, `refunds.payment_id UNIQUE` | reuse the stored id; ask before refunding |
+| ③ | the gateway's webhook retry | gateway event id | `outbox.event_id UNIQUE` | the second insert is rejected |
+| ④ | the producer's network retry | producer id + sequence number | the broker | Kafka's idempotent producer drops the repeat |
+| ⑤ | Kafka redelivery (at-least-once) | event id | `processed_events` | inbox row in the same transaction as the work |
+| ⑥ | our retry to the warehouse | `kirana-order-{id}` (server-made) | the warehouse | it replays the first shipment |
+| ⑦ | any of the above reaching the state | the row's current status | the row | `UPDATE … WHERE status = 'CREATED'`: only one caller gets 1 row |
+
+### Kafka's own "idempotence" and "exactly once": what they cover
+
+* **Idempotent producer** (`enable.idempotence: true`, on since 6a). The broker numbers each
+  producer's records per partition and drops a re-sent batch it already has. It covers the
+  network between *one producer session* and the broker. It does **not** cover the relay sending
+  an outbox row, crashing before marking it published, and sending it again after restart: that's
+  a new send, so consumers still need ⑤.
+* **Transactions / exactly-once semantics.** A Kafka transaction makes "consume from topic A,
+  produce to topic B, commit A's offset" atomic, *inside Kafka*. Kirana's consumers don't produce
+  to Kafka as their effect; they write Postgres and call a gateway or a warehouse, which Kafka's
+  transaction can't include. So Kirana uses the general rule:
+
+  > **exactly-once *effect* = at-least-once *delivery* + an idempotent effect.**
+
+  That's why every consumer was built idempotent instead of reaching for Kafka transactions.
+
+### Which endpoints need a key, and which don't
+
+| Endpoint | Naturally idempotent? | Key |
+|---|---|---|
+| `GET` anything | yes (reads) | no |
+| `PUT /cart/items/{id}` (set quantity), `DELETE /cart/items/{id}` | yes: "set to 3", "remove": same result twice | no |
+| `POST /orders/{id}/payment/verify` | yes: conditional update, a repeat answers "PAID" | no |
+| `POST /cart/items` (add) | **no**: "add 1" twice is 2 | **required** |
+| `POST /orders` | **no**: creates | **required** |
+| `POST /orders/{id}/cancel` | effect yes, **answer no** (second gets 409) | **required** |
+| `POST /orders/{id}/payment` | yes (D55) | required anyway: one rule for every mutating shopper POST (D69) |
+
+### Limits of idempotency keys
+
+| Limit | What it means here |
+|---|---|
+| **Retention** | after 24 h a key is forgotten; a retry after that runs as new. Clients don't retry that late. |
+| **Scope** | per shopper; the same key from two shoppers is two keys. Per request: endpoint + body hash, so `{"quantity":1}` and `{"quantity": 1}` are the same (re-serialised), but a new field is a different request (422). |
+| **A snapshot, not live state** | the replay is the *first* response; the order may have been paid since. `GET` it for current state. |
+| **Only as good as the client** | a client that makes a new key per retry gets no protection; one that reuses a key for a new action gets the old answer (or 422). |
+| **Not a lock between different actions** | two taps = two keys = two adds, by design. Stopping accidental double taps is the UI's job (disable the button). |
+| **Storage** | each key stores its response body (an order with its lines). Bounded by retention and cleanup. |
+| **Only at the edge** | downstream steps use server-made identities (order id, payment id, event id), never the client's key. |
+
+### What Stage 7 leaves open (for the next stages)
+
+| Problem | Stage |
+|---|---|
+| Every instance runs every job (reconcile, expiry, re-check, refund retries, outbox and key cleanup): correct thanks to conditional updates and leases, but duplicated work and gateway calls; stale `PENDING` images never cleaned | **8** (distributed locking) |
+| Consumers live in the checkout process; mixed versions in one group (6d) | 9 |
+| One broker, in-memory mocks | 10–11 |
+| No metrics or alerts (lag, dead letters, failed refunds, 409 "in progress" rate) | 14 |
