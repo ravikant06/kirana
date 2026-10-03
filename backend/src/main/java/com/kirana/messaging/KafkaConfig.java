@@ -1,13 +1,18 @@
 package com.kirana.messaging;
 
+import com.kirana.warehouse.WarehouseRejectedException;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.boot.kafka.autoconfigure.ConcurrentKafkaListenerContainerFactoryConfigurer;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.kafka.config.ConcurrentKafkaListenerContainerFactory;
 import org.springframework.kafka.config.TopicBuilder;
+import org.springframework.kafka.core.ConsumerFactory;
 import org.springframework.kafka.listener.CommonErrorHandler;
 import org.springframework.kafka.listener.DefaultErrorHandler;
+import org.springframework.util.backoff.ExponentialBackOff;
 import org.springframework.util.backoff.FixedBackOff;
 
 /**
@@ -43,5 +48,24 @@ public class KafkaConfig {
     @Bean
     CommonErrorHandler kafkaErrorHandler() {
         return new DefaultErrorHandler(new FixedBackOff(1000L, 3));
+    }
+
+    /**
+     * Stage 6e: the fulfilment consumer's own container factory, with a different error policy.
+     * Warehouse unavailable: retry the same record forever, 1 s doubling to 30 s apart (the call
+     * is idempotent, and the outage affects every record alike; see FulfilmentListener). The
+     * warehouse rejecting the request (4xx): never retry, log and skip.
+     */
+    @Bean
+    ConcurrentKafkaListenerContainerFactory<Object, Object> fulfilmentListenerFactory(
+            ConcurrentKafkaListenerContainerFactoryConfigurer configurer, ConsumerFactory<Object, Object> consumerFactory) {
+        ConcurrentKafkaListenerContainerFactory<Object, Object> factory = new ConcurrentKafkaListenerContainerFactory<>();
+        configurer.configure(factory, consumerFactory); // the same settings as every listener (manual ack, ...)
+        ExponentialBackOff backOff = new ExponentialBackOff(1000L, 2.0);
+        backOff.setMaxInterval(30_000L); // no max elapsed time: keep trying until the warehouse is back
+        DefaultErrorHandler handler = new DefaultErrorHandler(backOff);
+        handler.addNotRetryableExceptions(WarehouseRejectedException.class);
+        factory.setCommonErrorHandler(handler);
+        return factory;
     }
 }

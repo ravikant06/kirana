@@ -61,6 +61,8 @@ public class Order {
     private Instant paidAt;
     private String closedReason;
     private String latePaymentId; // Stage 6c: paid after it closed; a refund is needed
+    private String shipmentId;          // Stage 6e: the warehouse's shipment, once sent
+    private Instant sentToWarehouseAt;
 
     // Stage 6d. Usually empty, at most one per late payment. Loaded lazily, 50 orders' worth per
     // query (@BatchSize), so listing orders does not bring back the N+1 (P4).
@@ -105,6 +107,8 @@ public class Order {
     public Instant getPaidAt() { return paidAt; }
     public String getClosedReason() { return closedReason; }
     public String getLatePaymentId() { return latePaymentId; }
+    public String getShipmentId() { return shipmentId; }
+    public Instant getSentToWarehouseAt() { return sentToWarehouseAt; }
     public Set<Refund> getRefunds() { return refunds; }
     public Instant getCreatedAt() { return createdAt; }
     public Instant getUpdatedAt() { return updatedAt; }

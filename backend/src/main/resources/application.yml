@@ -133,6 +133,15 @@ kirana:
       key-id: ${RAZORPAY_KEY_ID:}
       key-secret: ${RAZORPAY_KEY_SECRET:}
       webhook-secret: ${RAZORPAY_WEBHOOK_SECRET:}   # only if you expose a webhook URL (tunnel)
+  fulfilment:
+    # Stage 6e. events: an OrderPaid consumer sends paid orders to the warehouse (retries until
+    # it answers). naive: the payment step calls the warehouse right after its commit, the dual
+    # write, kept only to reproduce its problems. Needs a restart to change.
+    mode: ${FULFILMENT_MODE:events}
+    warehouse-url: ${WAREHOUSE_URL:http://localhost:8091}
+    api-key: kirana-warehouse-key   # warehouse-mock's (infra/docker-compose.yml); not a real secret
+    connect-timeout: 1s
+    read-timeout: 2s
   resilience:
     enabled: true   # false = no retries, breakers or bulkhead (for before/after measurements)
   chaos:

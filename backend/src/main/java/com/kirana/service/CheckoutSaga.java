@@ -9,6 +9,7 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 import com.kirana.cache.FlashSaleCounter;
+import com.kirana.config.FulfilmentProperties;
 import com.kirana.config.PaymentProperties;
 import com.kirana.dto.CheckoutResponse;
 import com.kirana.dto.OrderResponse;
@@ -64,10 +65,15 @@ public class CheckoutSaga {
     private final OrderEvents events;
     private final TransactionTemplate tx;
     private final PaymentProperties props;
+    private final FulfilmentService fulfilment;
+    private final FulfilmentProperties fulfilmentProps;
 
     public CheckoutSaga(OrderService orderService, OrderRepository orders, InventoryRepository inventory,
                         FlashSaleCounter flashSale, PaymentGateways gateways, OrderEvents events,
-                        TransactionTemplate tx, PaymentProperties props) {
+                        TransactionTemplate tx, PaymentProperties props, FulfilmentService fulfilment,
+                        FulfilmentProperties fulfilmentProps) {
+        this.fulfilment = fulfilment;
+        this.fulfilmentProps = fulfilmentProps;
         this.orderService = orderService;
         this.orders = orders;
         this.inventory = inventory;
@@ -247,6 +253,9 @@ public class CheckoutSaga {
             if (orders.markPaid(orderId, paymentId, now) == 1) {
                 Order o = orders.findById(orderId).orElseThrow();
                 events.publish(new OrderEvent.OrderPaid(orderId, o.getPaymentProvider(), paymentId));
+                if (fulfilmentProps.naive()) {
+                    shipRightAfterCommit(orderId);
+                }
                 return PaymentResult.PAID;
             }
             Order order = orders.findById(orderId).orElseThrow();
@@ -257,6 +266,27 @@ public class CheckoutSaga {
                 events.publish(new OrderEvent.PaymentAfterClose(orderId, order.getPaymentProvider(), paymentId));
             }
             return PaymentResult.PAID_AFTER_CLOSE;
+        });
+    }
+
+    /**
+     * Stage 6e, mode "naive": THE DUAL WRITE, kept to reproduce its problems. After the PAID
+     * commit, call the warehouse directly, in whatever thread confirmed the payment (often the
+     * shopper's verify request). If the warehouse is down or slow, or the app dies right after the
+     * commit, the order is paid and never shipped, and nothing will ever try again. Mode "events"
+     * replaces this with FulfilmentListener, a consumer of OrderPaid.
+     */
+    private void shipRightAfterCommit(Long orderId) {
+        TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+            @Override
+            public void afterCommit() {
+                try {
+                    fulfilment.send(orderId);
+                } catch (RuntimeException e) {
+                    log.error("Fulfilment (naive): order {} is PAID but the warehouse call failed ({}). "
+                            + "Nothing will retry it: this order will never ship.", orderId, e.getMessage());
+                }
+            }
         });
     }
 

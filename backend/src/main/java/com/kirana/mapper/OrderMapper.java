@@ -16,7 +16,8 @@ public final class OrderMapper {
                 order.getItems().stream().map(OrderMapper::toItem).toList(),
                 order.getPaymentProvider(), order.getPaymentDueAt(), order.getPaidAt(), order.getClosedReason(),
                 order.getLatePaymentId(),
-                order.getRefunds().stream().map(r -> r.getStatus().name()).findFirst().orElse(null));
+                order.getRefunds().stream().map(r -> r.getStatus().name()).findFirst().orElse(null),
+                order.getShipmentId(), order.getSentToWarehouseAt());
     }
 
     private static OrderItemResponse toItem(OrderItem item) {

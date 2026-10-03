@@ -28,7 +28,7 @@ Optional: IntelliJ IDEA, a database GUI such as DBeaver (or `psql`), and `curl`.
 
 Not needed in Stage 1: Kubernetes, Redis, Kafka, or a locally installed Postgres or MinIO.
 
-Ports used: `5432` Postgres, `9000` MinIO API, `9001` MinIO console, `6380` Redis (Stage 4), `8090` payment-mock and `8474` Toxiproxy (Stage 5), `9094` Kafka and `8085` Kafka UI (Stage 6),
+Ports used: `5432` Postgres, `9000` MinIO API, `9001` MinIO console, `6380` Redis (Stage 4), `8090` payment-mock and `8474` Toxiproxy (Stage 5), `9094` Kafka, `8085` Kafka UI and `8091` warehouse-mock (Stage 6),
 `8080` backend, `5173` frontend. Stop anything already using them first.
 
 ## First-time setup

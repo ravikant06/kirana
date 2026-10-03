@@ -332,6 +332,18 @@ payment id. Full refunds only. Costs: a refund can wait up to ~45 s after a fail
 gateway refund that the mock forgot (restart) ends `FAILED`; a new consumer group replays all
 of `orders.v1`, so old late payments get refunded too (intended).
 
+**D63. Fulfilment: a consumer of `OrderPaid` calls an idempotent warehouse, retrying the same
+record until it succeeds.** (6e) warehouse-mock (8091) de-duplicates by `Idempotency-Key:
+kirana-order-{id}`, so the call is safe to repeat; the shipment id is recorded with a conditional
+UPDATE (`WHERE shipment_id IS NULL`). No inbox and no intent row: the remote side is idempotent.
+`FulfilmentListener` (group `kirana-fulfilment`) calls the warehouse before acknowledging; its
+own container factory retries a `WarehouseUnavailableException` forever (1 s doubling to 30 s),
+blocking the partition, because an outage affects every `OrderPaid` alike and the event is
+durable. A 4xx (`WarehouseRejectedException`) is not retried: logged and skipped (DLQ in 6f).
+The dual write is kept behind `kirana.fulfilment.mode: naive` (default `events`) to reproduce
+it. Costs: during an outage, fulfilment of every order on that partition waits (visible as
+lag); a poison record would block its partition if it were classified as retryable.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

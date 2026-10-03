@@ -97,4 +97,14 @@
 30. **Mixed versions in one consumer group.** During a rolling deploy, old instances own some
    partitions and acknowledge event types they don't know; those events are lost to the group.
    Deploy consumers before the producers of new event types, and keep a polling safety net.
+31. **The dual write, seen live.** Calling another system right after your commit couples your
+   latency to theirs (verify took 2 s), loses the call on any failure (nothing retries), and
+   can leave the two systems disagreeing (the warehouse shipped, Kirana didn't know). An event
+   in the outbox, consumed with retries against an idempotent API, fixes all three, and a new
+   consumer group can even replay history to repair what the naive version lost.
+32. **Blocking retry vs record-and-retry-later.** If the dependency's failure hits every message
+   alike and the call is idempotent, retry the same record and let the partition wait (lag is
+   the signal). If failures are per message, or the call isn't idempotent, record the intent,
+   move on, and retry from a job. Never retry an error that can't succeed (4xx): that's a
+   poison message.
 

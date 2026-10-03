@@ -10,6 +10,7 @@ import com.kirana.entity.OrderStatus;
  * closedReason is set when an order ends CANCELLED or FAILED.
  * latePaymentId is set when money arrived after the order closed (a refund is due, Stage 6).
  * refundStatus: REQUESTED | PENDING | PROCESSED | FAILED for that refund (Stage 6d), else null.
+ * shipmentId / sentToWarehouseAt: set once a paid order has been handed to the warehouse (6e).
  */
 public record OrderResponse(
         Long id,
@@ -22,5 +23,7 @@ public record OrderResponse(
         Instant paidAt,
         String closedReason,
         String latePaymentId,
-        String refundStatus) {
+        String refundStatus,
+        String shipmentId,
+        Instant sentToWarehouseAt) {
 }

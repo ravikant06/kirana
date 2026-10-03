@@ -73,6 +73,14 @@ services:
     ports:
       - "8090:8090"   # API + hosted checkout page: http://localhost:8090/docs
 
+  warehouse-mock:
+    # Stage 6e: a stand-in fulfilment partner. Kirana sends it paid orders to ship.
+    build: ../warehouse-mock
+    environment:
+      WAREHOUSE_API_KEY: kirana-warehouse-key
+    ports:
+      - "8091:8091"   # API: http://localhost:8091/docs
+
   toxiproxy:
     # Stage 5: a TCP proxy that injects network faults (latency, timeouts, dropped
     # connections) between the backend and Redis, MinIO and payment-mock. Only used when the

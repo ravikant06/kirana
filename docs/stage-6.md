@@ -571,6 +571,116 @@ has forgotten end FAILED (404).
 
 ---
 
+## 6e. Fulfilment (the dual write, reproduced and fixed)
+
+**Done:** a paid order is now handed to a warehouse. **warehouse-mock** (new, port 8091) stands
+in for a logistics partner. A third consumer, `FulfilmentListener` (group `kirana-fulfilment`),
+reads `OrderPaid` from `orders.v1` and asks the warehouse to ship. The Orders page shows
+**Placed → Paid → Sent to warehouse** with the shipment id.
+
+**Problem solved: the dual write.** 6b explained it; 6e shows it. The obvious way to ship a paid
+order is to call the warehouse right after the "paid" commit. That's still in the code, behind
+`kirana.fulfilment.mode: naive`, so it can be reproduced:
+
+```mermaid
+flowchart LR
+    subgraph Naive["mode: naive (the dual write)"]
+        N1["verify (shopper's request)<br/>order → PAID, COMMIT"] --> N2["afterCommit:<br/>POST warehouse (in the same request)"]
+        N2 -->|"slow"| N3["shopper waits"]
+        N2 -->|"down / timeout / crash"| N4["order PAID, never shipped<br/>nothing retries"]
+        N2 -->|"timeout, but it worked"| N5["warehouse shipped,<br/>Kirana doesn't know"]
+    end
+    subgraph Events["mode: events (6e)"]
+        E1["verify: order → PAID<br/>+ outbox OrderPaid, COMMIT"] --> E2["relay → orders.v1"]
+        E2 --> E3["FulfilmentListener<br/>(group kirana-fulfilment)"]
+        E3 -->|"Idempotency-Key:<br/>kirana-order-{id}"| E4["warehouse-mock"]
+        E4 -->|"503 / timeout"| E5["retry the SAME record<br/>1, 2, 4 … 30 s (partition waits)"]
+        E5 --> E3
+        E4 -->|"201 / 200 replayed"| E6["shipment_id saved<br/>(WHERE shipment_id IS NULL), ack"]
+    end
+```
+
+### Why this consumer is built differently from the refund consumer
+
+| | Refunds (6d) | Fulfilment (6e) |
+|---|---|---|
+| Is the remote call idempotent? | **No** (each call can refund again) | **Yes** (warehouse de-duplicates by `Idempotency-Key`) |
+| Protection against doing it twice | intent row + lease + ask first | the warehouse itself + conditional UPDATE; **no inbox, no intent row** |
+| When is the offset acknowledged? | **before** the call (the row is the promise) | **after** the call succeeds |
+| Remote down | record, move on, a job retries later | **retry the same record, block the partition** |
+| Why | a failure of one refund says nothing about the next; repeating the call is dangerous | an outage fails every `OrderPaid` alike, so skipping ahead ships nothing extra; repeating is safe; waiting costs time, not data |
+| 4xx (the remote will never accept it) | `FAILED`, for a person | not retried: logged, skipped (dead-letter topic in 6f) |
+
+### Use case: Asha pays while the warehouse is down
+
+```mermaid
+sequenceDiagram
+    participant A as Asha (verify)
+    participant DB as Postgres
+    participant K as Kafka orders.v1
+    participant F as FulfilmentListener
+    participant W as warehouse-mock
+    A->>DB: order → PAID + outbox OrderPaid (one commit)
+    DB-->>A: 200 Paid (17 ms; the warehouse isn't on this path)
+    DB-->>K: relay: OrderPaid p1@8
+    K->>F: OrderPaid (order 50051152)
+    F->>W: POST /v1/shipments (Idempotency-Key kirana-order-50051152)
+    W-->>F: 503
+    Note over F,K: not acked; wait 1 s, 2 s, 4 s, 8 s, 16 s…<br/>Kafka UI: kirana-fulfilment lag 1 on partition 1
+    F->>W: POST again (same key)
+    W-->>F: 201 shp_40fd7fa43c
+    F->>DB: UPDATE orders SET shipment_id=… WHERE shipment_id IS NULL
+    F->>K: ack (offset 9)
+```
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `warehouse-mock/` (new service), `infra/docker-compose.yml` | FastAPI on 8091: `POST /v1/shipments` (requires `Idempotency-Key`; repeat → same shipment, `Idempotent-Replayed: true`), `GET /v1/shipments?order_id=`, `/admin/mode` normal/slow/down |
+| `db/migration/V8__fulfilment.sql` | `orders.shipment_id`, `orders.sent_to_warehouse_at` |
+| `warehouse/WarehouseClient.java` (+ `Shipment`, `WarehouseUnavailableException`, `WarehouseRejectedException`) | the HTTP call, explicit timeouts (1 s connect, 2 s read), 5xx/timeout vs 4xx |
+| `config/FulfilmentProperties.java`, `application.yml` | `kirana.fulfilment.mode` (`events` / `naive`, env `FULFILMENT_MODE`), warehouse URL, key, timeouts |
+| `service/FulfilmentService.java` | read the order and its lines, call the warehouse outside any transaction, record the shipment once. Uses `REQUIRES_NEW`: the naive path runs in `afterCommit()`, where a joined transaction would never commit |
+| `service/CheckoutSaga.java` | mode `naive` only: the dual write in `afterCommit()` of the PAID transition |
+| `messaging/FulfilmentListener.java` | **third consumer**: group `kirana-fulfilment`, `OrderPaid` only; call, then ack; rethrow on unavailable |
+| `messaging/KafkaConfig.java` | `fulfilmentListenerFactory`: its own error handler (exponential back-off to 30 s, unlimited; `WarehouseRejectedException` not retryable) |
+| `OrderRepository`, `Order`, `OrderResponse`, `OrderMapper` | `markSentToWarehouse`; `shipmentId`, `sentToWarehouseAt` |
+| `frontend/…/Orders.jsx` | third step "Sent to warehouse", shipment line, refresh while a paid order isn't sent yet |
+| Tests | `FulfilmentIntegrationTest` (real Kafka, mocked warehouse): sent once although `OrderPaid` arrives twice; an outage (2 failures) is waited out, not skipped. Tests never reach the real warehouse-mock. **89 tests pass.** |
+
+### Experiments (run on the real stack)
+
+| # | Setup | Result |
+|---|---|---|
+| 1 | `naive`, warehouse **slow** (5 s; we wait 2 s) | the shopper's verify took **2.03 s**; log: `order … is PAID but the warehouse call failed (HttpTimeoutException). Nothing will retry it`. Kirana: no shipment. **The warehouse: 1 shipment** (it finished after we gave up). The systems disagree. |
+| 2 | restart in `events` mode | the new group `kirana-fulfilment` replayed `orders.v1`: **6 `OrderPaid`** (5 older paid orders from 6b/6c that had never shipped, plus the naive one). For the naive one the warehouse answered with the **same shipment** (`idempotency key replayed`): repaired, still 1 shipment. |
+| 3 | `events`, warehouse **down** ~25 s | verify **17 ms**; retries at 1, 2, 4, 8, 16 s on `p1@8`; `kafka-consumer-groups --describe`: **lag 1** on partition 1; warehouse back → shipped 5 s later; 1 shipment. |
+
+### Try it
+
+Restart your backend (V8; log `kirana-fulfilment: partitions assigned: [orders.v1-0, orders.v1-1, orders.v1-2]`).
+It will immediately ship every paid order in `orders.v1` that has no shipment yet.
+
+1. Pay an order. Orders: **Sent to warehouse** within a second; `curl "localhost:8091/v1/shipments?order_id=<id>"`.
+2. **Outage:** `curl -XPOST localhost:8091/admin/mode -H 'Content-Type: application/json' -d '{"mode":"down"}'`, pay an order
+   (Paid instantly, "Sent to warehouse" waiting). Watch `grep "warehouse unavailable" backend/logs/kirana.log`
+   and Kafka UI → Consumers → `kirana-fulfilment` → lag. Set `{"mode":"normal"}`: shipped within 30 s.
+3. **The dual write:** stop the backend, start it with `FULFILMENT_MODE=naive`, turn webhooks off
+   (`curl -XPOST localhost:8090/admin/webhooks -H 'Content-Type: application/json' -d '{"enabled":false}'`),
+   set the warehouse `{"mode":"slow","delay_ms":5000}`, pay in the UI: the "paid" message takes 2 s
+   longer, the order never shows a shipment, `curl localhost:8091/v1/shipments` shows one.
+   Restart without `FULFILMENT_MODE` and watch the replay fix it. (Webhooks back on: `{"enabled":true}`.)
+
+### Known costs
+
+* During a warehouse outage every order on the partition waits (by design); lag must be watched.
+* `WarehouseRejectedException` is logged and skipped: that order never ships until a person
+  acts. 6f adds a dead-letter topic.
+* The mode switch needs a restart.
+
+---
+
 ## Watching it live (logs, Kafka UI, database)
 
 The backend also writes its log to `backend/logs/kirana.log` (when started from `backend/`).

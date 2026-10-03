@@ -16,13 +16,15 @@ const REFUND = {
   FAILED: ['Refund failed', 'badge-failed', 'The gateway refused the refund; our team will contact you.'],
 }
 
-// Placed -> Paid, or Placed -> Cancelled / Not paid. Only states the backend reports; nothing invented.
-function Track({ status }) {
+// Placed -> Paid -> Sent to warehouse (6e), or Placed -> Cancelled / Not paid.
+// Only states the backend reports; nothing invented.
+function Track({ status, shipmentId }) {
   const closed = status === 'CANCELLED' || status === 'FAILED'
   const steps = [
     ['Placed', 'done'],
     closed ? [STATUS_LABEL[status], 'bad'] : ['Paid', status === 'PAID' ? 'done' : 'now'],
   ]
+  if (status === 'PAID') steps.push(['Sent to warehouse', shipmentId ? 'done' : 'now'])
   return (
     <ol className="track" aria-label="Order progress">
       {steps.map(([label, state], i) => (
@@ -72,9 +74,9 @@ export default function Orders({ userId, highlight, notify, goShop }) {
   const [open, setOpen] = useState(highlight ?? null)
   useEffect(() => setOpen(highlight ?? null), [highlight])
 
-  // Stage 6c/6d: an order can change without this tab doing anything (webhooks, the refund
-  // consumer). While any order awaits payment or a refund, look again every 5 s.
-  const awaiting = (data || []).some((o) => o.status === 'CREATED' || (o.latePaymentId && o.refundStatus !== 'PROCESSED' && o.refundStatus !== 'FAILED'))
+  // Stage 6c-6e: an order can change without this tab doing anything (webhooks, the refund and
+  // fulfilment consumers). While any order is waiting on one of them, look again every 5 s.
+  const awaiting = (data || []).some((o) => o.status === 'CREATED' || (o.status === 'PAID' && !o.shipmentId) || (o.latePaymentId && o.refundStatus !== 'PROCESSED' && o.refundStatus !== 'FAILED'))
   useEffect(() => {
     if (!awaiting) return
     const t = setInterval(() => reload(), 5000)
@@ -128,7 +130,12 @@ export default function Orders({ userId, highlight, notify, goShop }) {
               <ChevronDown size={18} className={`order-caret ${open === o.id ? 'is-open' : ''}`} />
             </button>
             <div className="order-sub">
-              <Track status={o.status} />
+              <Track status={o.status} shipmentId={o.shipmentId} />
+              {o.shipmentId && (
+                <div className="order-pay">
+                  <span className="muted">Shipment {o.shipmentId} · handed to the warehouse {when(o.sentToWarehouseAt)}</span>
+                </div>
+              )}
               {o.status === 'CREATED' && (
                 <div className="order-pay">
                   <span className="muted">

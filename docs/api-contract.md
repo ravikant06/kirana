@@ -161,7 +161,9 @@ signature (400 otherwise). Statuses: `CREATED`, `PAID`, `CANCELLED`, `FAILED`
 (`closedReason` says why). `latePaymentId` is set when money reached the gateway after the
 order closed (Stage 6c): a refund is due, and the order stays closed. `refundStatus` follows that
 refund (Stage 6d): `REQUESTED` → `PENDING` (at the gateway) → `PROCESSED`, or `FAILED` (needs a
-person); null until the refund consumer has recorded it. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
+person); null until the refund consumer has recorded it. `shipmentId` / `sentToWarehouseAt` are set
+once a paid order has been handed to the warehouse (Stage 6e); a paid order without them is on its
+way there. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `Retry-After`.
 
 ### Payment webhooks (Stage 6c, called by gateways, not the frontend)
@@ -201,7 +203,8 @@ person); null until the refund consumer has recorded it. 503 `"Payment unavailab
 | GET    | /orders/{id} |      | `Order`       |
 
     Order     = { id, status, total, createdAt, items: [OrderItem],
-                  paymentProvider, paymentDueAt, paidAt, closedReason, latePaymentId, refundStatus }
+                  paymentProvider, paymentDueAt, paidAt, closedReason, latePaymentId, refundStatus,
+                  shipmentId, sentToWarehouseAt }
     OrderItem = { productId, productName, unitPrice, quantity, lineTotal }
 
 `GET /orders` returns items inline on purpose. It is the endpoint for the N+1 experiment.

@@ -69,6 +69,14 @@ public interface OrderRepository extends JpaRepository<Order, Long> {
             """)
     int postponeDue(Long id, Instant due, Instant now);
 
+    /** Stage 6e: record the warehouse's shipment, once. */
+    @Modifying
+    @Query("""
+            update Order o set o.shipmentId = :shipmentId, o.sentToWarehouseAt = :now, o.updatedAt = :now
+            where o.id = :id and o.status = com.kirana.entity.OrderStatus.PAID and o.shipmentId is null
+            """)
+    int markSentToWarehouse(Long id, String shipmentId, Instant now);
+
     Optional<Order> findByPaymentProviderAndGatewayOrderId(String paymentProvider, String gatewayOrderId);
 
     /**
