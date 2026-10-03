@@ -97,7 +97,10 @@ reported to Ravi in `docs/stage-6.md` (what, why, new code, flow diagrams) befor
 - **6f** Kafka mechanics: keys and partitions, consumer groups and rebalancing, lag, retries
   and dead-letter topic (poison event). Gap fixes ✅ (D64–D68: dead-letter topics + re-drive,
   unknown types dead-lettered, 10 s session timeout, lag in the lab, outbox/inbox cleanup).
-  Experiments (keys/partitions, scaling, rebalancing, lag) not run yet.
+  Experiments (keys/partitions, scaling, rebalancing, lag) skipped by Ravi for now.
+
+**Stage 6 wrapped up** (summary and open problems P1–P8: `docs/stage-6.md`, "Stage 6 wrap-up").
+Next: Ravi approves the Stage 7 (idempotency) plan, then this section is replaced with it.
 
 Decisions (Ravi, recommended set): Apache Kafka (official image, KRaft, one node); Kafka UI;
 Spring for Apache Kafka with explicit config (manual offsets, explicit error handling);

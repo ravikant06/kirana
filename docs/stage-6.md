@@ -779,3 +779,41 @@ One order, start to finish (real output; note the thread on each line):
 15:11:22.477 [payments-listener] payments.v1 p0@2: PaymentCaptured for order 50050952 -> order PAID
 15:11:22.983 [scheduling-1]     Outbox relay: OrderPaid for order 50050952 -> orders.v1 partition 0 offset 6
 ```
+
+---
+
+## Stage 6 wrap-up
+
+### What Stage 6 fixed
+
+| Gap from Stage 5 | Fix | Step | Measured |
+|---|---|---|---|
+| Events lost on a crash (in-memory) | transactional outbox + relay | 6b | backend `kill -9`'d with Kafka down: events delivered after restart, in order |
+| **G1** money taken after expiry, nobody noticed | webhooks → `payments.v1` → consumer; re-check job | 6c | tab closed: PAID in **0.5 s**; late payment detected once |
+| **G3** "unknown" closed the order | hold up to 1 h, then close; re-check watches | 6c | test |
+| **G2** "REFUND NEEDED" was a log line | refund consumer: intent row, lease, ask first | 6d | late payment refunded in **4 s**; timeout-after-refund → still **1 refund** |
+| Paid orders went nowhere; naive call = dual write | `OrderPaid` consumer → idempotent warehouse, blocking retry | 6e | naive: verify **2.03 s**, order lost, systems disagreed; events: verify **17 ms**, outage waited out, replay repaired history |
+| Failed records dropped; 45 s takeover; invisible lag; tables grow | dead-letter topics + re-drive; 10 s session; lag in lab; 7-day cleanup | 6f | poison → DLT, lag 0; takeover **10 s** |
+
+Decisions D56–D68. Concepts 25–36 in `concepts-learned.md`. Three consumer groups now:
+`kirana-payments` (payments.v1), `kirana-refunds` and `kirana-fulfilment` (orders.v1).
+
+Roadmap coverage: producers, consumers, topics, partitions, consumer groups, offsets, ordering,
+retries, dead-letter queues, at-least-once delivery and idempotent consumers were built and
+observed. **Not done:** the 6f experiments (keys → partitions, scaling instances, a 4th idle
+consumer, graceful vs crash rebalancing, lag build-up and drain); Ravi chose to skip them for now.
+They fit naturally in Stage 9–11, when several instances run anyway. **Backpressure** was met
+only indirectly (fulfilment's blocking retry, lag as the signal; the relay's batch size).
+
+### Problems the code has now (they motivate the next stages)
+
+| # | Problem | Seen where | Stage |
+|---|---|---|---|
+| P1 | **A retried "Place order" can't get its answer back.** The first request placed the order; the retry finds the cart empty and gets 409 "Cart is empty" (or "Checkout already in progress"). The client never learns order #42 exists. D55 was a stopgap. | Stage 5, D55 | **7** |
+| P2 | **A retried "Add to cart" adds twice** (`addOrIncrement`): one tap after a timeout, quantity 2. | code check | **7** |
+| P3 | Cancel / Pay now retried: the second gets 409 instead of the first's result. | Stage 5 | **7** |
+| P4 | Every instance runs every job (reconcile, expiry, re-check, refund retries, cleanup): correct thanks to conditional updates and leases, but duplicated gateway calls and work. Stale `PENDING` images are never cleaned. | Stage 5–6 | **8** |
+| P5 | All consumers live in the checkout process: one deploy for everything; old and new versions in one group dropped an event (6d). | 6d | 9 |
+| P6 | Re-drive reaches every group of a topic (per-group retry topics would be cleaner). | 6f | 9 |
+| P7 | One broker, replication factor 1; mocks keep state in memory (a restart forgets payments). | 6a, 6d | 10–11 |
+| P8 | Lag, dead letters and refunds stuck in `FAILED` are visible only in the lab and logs: no metrics, no alerts. | 6e, 6f | 14 |
