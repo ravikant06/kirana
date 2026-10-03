@@ -26,7 +26,7 @@ introduced only when the application has a real problem that motivates it.
 
 - `docs/roadmap.md`: all 14 stages and the learning method. The destination, not a
   task list: only the current stage is planned in detail (below).
-- `docs/decisions.md`: every design decision so far (D1–D68), why, and its cost.
+- `docs/decisions.md`: every design decision so far (D1–D69), why, and its cost.
   These are settled. Do not reverse one without raising it with Ravi.
 - `docs/api-contract.md`: the API the frontend expects. The backend must satisfy it.
 - `backend/src/main/resources/db/migration/V1__init_schema.sql`: the schema.
@@ -72,41 +72,37 @@ Each package has a `package-info.java` stating its rules. Follow them.
   fresh, never stored.
 - Keep changes small and reviewable: one milestone at a time, not everything at once.
 
-## Stage 6 plan (current stage): Kafka, motivated by real money bugs
+## Stage 7 plan (current stage): idempotency at the API edge
 
-Stages 1–5 are complete (D1–D55; Stage 5 summary in `docs/stage-6.md` §0 and decisions).
-Stage 5 left real correctness gaps around payments (found with Ravi, 2026-10-02):
+Stages 1–6 are complete (D1–D68). Stage 6 (Kafka: outbox, webhooks, refund and fulfilment
+consumers, dead-letter topics) is summarized in `docs/stage-6.md` ("Stage 6 wrap-up").
+Internal flows already de-duplicate by their own ids (event ids, payment ids, order ids,
+conditional updates). The gap is Kirana's own HTTP API: a client retry carries no identity.
 
-- **G1** a payment captured just after expiry, with the browser never reporting it, is never
-  noticed (the reconciler only checks CREATED orders): money taken, order FAILED, silence.
-- **G2** a late payment that *is* reported only logs "REFUND NEEDED"; nobody refunds.
-- **G3** expiry treats a gateway "UNKNOWN" (404) as "not paid".
-- Paid orders trigger nothing (no fulfilment); adding it naively is a dual write.
+- **P1** a retried "Place order" can't get its answer back (409 "Cart is empty"; the order exists).
+- **P2** a retried "Add to cart" adds twice (`addOrIncrement`).
+- **P3** a retried cancel gets 409 instead of the first result.
 
-Stage 6 fixes them with webhooks, a transactional outbox, Kafka and consumers. Steps, each
-reported to Ravi in `docs/stage-6.md` (what, why, new code, flow diagrams) before the next:
+Steps, each reported to Ravi in `docs/stage-7.md` (what, why, new code, flow diagrams):
 
-- **6a** ✅ Kafka infra: broker (KRaft) + Kafka UI in compose, Spring Kafka wired explicitly,
-  topics, connectivity in the Resilience lab, Testcontainers Kafka.
-- **6b** ✅ Transactional outbox: `outbox` table, `OutboxOrderEvents` behind the Stage 5 seam,
-  polling relay → Kafka. Experiment: crash after commit, event still delivered.
-- **6c** ✅ Late-payment detection (G1, G3): payment-mock webhooks → `payments.v1`; closed orders
-  re-checked; UNKNOWN never closes an order. (D58–D60)
-- **6d** ✅ Refunds (G2): refund consumer calls the gateway's refund API, idempotent by payment id. (D61–D62)
-- **6e** ✅ Fulfilment: warehouse-mock + consumer of `OrderPaid` (dual write reproduced first). (D63)
-- **6f** Kafka mechanics: keys and partitions, consumer groups and rebalancing, lag, retries
-  and dead-letter topic (poison event). Gap fixes ✅ (D64–D68: dead-letter topics + re-drive,
-  unknown types dead-lettered, 10 s session timeout, lag in the lab, outbox/inbox cleanup).
-  Experiments (keys/partitions, scaling, rebalancing, lag) skipped by Ravi for now.
+- **7a** Reproduce P1–P3: a script whose response is delayed on the way back (Toxiproxy in
+  front of the API), so the client times out after the server did the work, then retries.
+- **7b** Idempotency keys in Postgres: `Idempotency-Key` header **required** on
+  `POST /cart/items`, `POST /orders`, `POST /orders/{id}/payment`, `POST /orders/{id}/cancel`
+  (400 without it). Table `idempotency_keys` (user, key, endpoint, request hash, status,
+  stored response). Saved in the same transaction as the change. Same key → stored response
+  replayed; same key, different request → 422; first request still running → 409 + Retry-After.
+  Keys kept 24 h, then cleaned up.
+- **7c** Every client updated: frontend (one key per user action, reused on retry), perf
+  scripts, tests, curl examples in docs and the API contract. No compatibility mode.
+- **7d** Redis implementation behind a switch, for comparison: measure it, then break it
+  (Redis down, crash between steps) to show why Postgres stays the source of truth.
+- **7e** The full picture: Stage 6's consumer idempotency in the same framework; Kafka's
+  idempotent producer and transactions (why exactly-once doesn't reach Postgres or a gateway);
+  limits (key scope, retention, non-deterministic responses).
 
-**Stage 6 wrapped up** (summary and open problems P1–P8: `docs/stage-6.md`, "Stage 6 wrap-up").
-Next: Ravi approves the Stage 7 (idempotency) plan, then this section is replaced with it.
-
-Decisions (Ravi, recommended set): Apache Kafka (official image, KRaft, one node); Kafka UI;
-Spring for Apache Kafka with explicit config (manual offsets, explicit error handling);
-polling outbox relay (Debezium CDC explained, not built); consumers inside the backend
-(separate consumer groups) until Stage 9; hybrid saga (checkout orchestrated, side effects
-choreographed); mock webhooks (real Razorpay webhooks optional, needs a tunnel).
+Decisions (Ravi): recommended set, except the key is required (no optional mode) and every
+client is fixed (D69).
 
 ## Do not jump ahead
 

@@ -85,6 +85,7 @@ services:
     # Stage 5: a TCP proxy that injects network faults (latency, timeouts, dropped
     # connections) between the backend and Redis, MinIO and payment-mock. Only used when the
     # backend runs with the "chaos" profile; otherwise the backend talks to them directly.
+    # Stage 7: also in front of the backend's own API (28080), so a client can lose a response.
     image: ghcr.io/shopify/toxiproxy:2.12.0
     command: ["-host=0.0.0.0", "-config=/config/toxiproxy.json"]
     volumes:
@@ -94,6 +95,9 @@ services:
       - "26379:26379"   # -> redis
       - "29000:29000"   # -> minio
       - "28090:28090"   # -> payment-mock
+      - "28080:28080"   # -> the backend on your machine (Stage 7: lose responses on the way back)
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     depends_on: [redis, minio, payment-mock]
 
   kafka:

@@ -374,6 +374,17 @@ Unpublished outbox rows are never deleted.
 per group, end offset minus committed offset; per dead-letter topic, what the re-drive group
 hasn't read yet.
 
+## Stage 7
+
+**D69. Idempotency keys at the API edge: required, on every mutating shopper endpoint.** (Ravi)
+`Idempotency-Key` header on `POST /cart/items`, `POST /orders`, `POST /orders/{id}/payment`,
+`POST /orders/{id}/cancel`; a request without one gets 400. No optional or compatibility mode:
+every client (frontend, scripts, tests, docs) is updated. One key = one user action, reused
+only when retrying that action; downstream steps keep using server-made ids (order id, payment
+id, event id). Stored in Postgres, in the same transaction as the change; 409 + `Retry-After`
+while the first request is still running; 24 h retention. Redis variant only for comparison.
+Cost: every caller must generate and keep a key per action.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.
