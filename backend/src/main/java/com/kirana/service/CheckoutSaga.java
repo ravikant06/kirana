@@ -17,6 +17,7 @@ import com.kirana.entity.Order;
 import com.kirana.entity.OrderItem;
 import com.kirana.entity.OrderStatus;
 import com.kirana.exception.ConflictException;
+import com.kirana.idempotency.IdempotencyContext;
 import com.kirana.exception.InvalidFieldException;
 import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.OrderMapper;
@@ -87,7 +88,12 @@ public class CheckoutSaga {
     /** Steps 1 and 2. A gateway outage does not lose the order: it stays CREATED and can be paid later. */
     public CheckoutResponse start(Long userId, String provider) {
         PaymentGateway gateway = gateways.forCheckout(provider); // validate before taking any stock
-        OrderResponse order = orderService.place(userId); // publishes OrderPlaced inside TX1 (Stage 6)
+        // Stage 7: an earlier attempt of this request (same Idempotency-Key) placed the order and
+        // then died before answering: continue with that order instead of placing another.
+        Long placedBefore = IdempotencyContext.past(IdempotencyContext.ORDER_CREATED).orElse(null);
+        OrderResponse order = placedBefore != null
+                ? reload(placedBefore)
+                : orderService.place(userId); // publishes OrderPlaced inside TX1 (Stage 6)
         try {
             PaymentSession session = request(order.id(), gateway);
             return new CheckoutResponse(reload(order.id()), session, null);
@@ -125,6 +131,9 @@ public class CheckoutSaga {
 
     /** Step 3b by the shopper. */
     public OrderResponse cancel(Long userId, Long orderId) {
+        if (IdempotencyContext.past(IdempotencyContext.ORDER_CLOSED).isPresent()) {
+            return reload(orderId); // Stage 7: an earlier attempt cancelled it, then died before answering
+        }
         requireAwaitingPayment(requireOwned(userId, orderId));
         close(orderId, OrderStatus.CANCELLED, "Cancelled by the shopper");
         return reload(orderId);
@@ -305,6 +314,7 @@ public class CheckoutSaga {
             if (orders.close(orderId, to, reason, Instant.now()) == 0) {
                 return; // someone else settled it first
             }
+            IdempotencyContext.reach(IdempotencyContext.ORDER_CLOSED, orderId); // Stage 7; no-op for the expiry job
             Order order = orders.findWithItemsById(orderId).orElseThrow();
             Map<Long, Integer> byProduct = order.getItems().stream()
                     .sorted(Comparator.comparing((OrderItem i) -> i.getProduct().getId())) // lock order: no deadlocks

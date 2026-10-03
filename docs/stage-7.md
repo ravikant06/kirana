@@ -101,3 +101,110 @@ rule (D69).
 `docker compose up -d toxiproxy` (picks up the new route), backend on 8080, then
 `python3 infra/perf/duplicate_demo.py`. After 7b this run gets 400s (no key); after 7c,
 `--keys` shows every scenario fixed.
+
+---
+
+## 7b. Idempotency keys in Postgres
+
+**Done:** the four mutating shopper endpoints require an `Idempotency-Key` header and run each
+key at most once. The rules follow the IETF draft *The Idempotency-Key HTTP Header Field*
+(the same rules Stripe, Adyen and PayPal use):
+
+| Situation | Answer |
+|---|---|
+| no key | **400** `errors: [{field: "Idempotency-Key", …}]` |
+| new key | run it; store the response with the key |
+| key seen, that request **finished** | **replay** the stored status, body and `Location`; header `Idempotent-Replayed: true` |
+| key seen, that request **still running** | **409** "Request in progress" + `Retry-After: 1` |
+| key seen, **different** request (endpoint or body) | **422** "Idempotency-Key reused" |
+| key seen, its attempt **died** (lock expired) | run again, **resuming after its last recovery point** |
+
+Keys are per shopper (`user_id` + key), kept 24 h, then deleted hourly.
+
+### The hard part: "save the key" and "do the work" must agree
+
+The obvious version is: claim the key, do the work, store the response. It has a hole:
+
+| Crash between… | Naive result |
+|---|---|
+| doing the work and storing the response | the key says "in progress" but the work happened. When the lock expires, a retry does it **again**: the duplicate we set out to prevent |
+
+The fix is **recovery points**, the technique Stripe described for its own API: each step that
+changes something writes "I got here" onto the key row **in the same transaction as the change**.
+
+```mermaid
+sequenceDiagram
+    participant C as Client
+    participant I as IdempotentRequests
+    participant DB as Postgres
+    participant S as CheckoutSaga / OrderService
+    participant G as Gateway
+    C->>I: POST /orders, Idempotency-Key: k3
+    I->>DB: INSERT idempotency_keys (k3, IN_PROGRESS, lock 30 s) — own tx, COMMIT
+    I->>S: start()
+    S->>DB: TX1: order + stock + outbox row<br/>+ UPDATE idempotency_keys SET recovery_point='order_created', resource_id=42
+    S->>DB: COMMIT (all together, or none)
+    S->>G: create gateway order (idempotent per order, D55)
+    S-->>I: CheckoutResponse (order 42 + payment session)
+    I->>DB: UPDATE idempotency_keys SET status=COMPLETED, response=… — own tx
+    I-->>C: 201 Location: /orders/42
+    Note over C,DB: retry with k3 → stored 201 replayed (no new order, no "Cart is empty")
+```
+
+And if the process dies after TX1:
+
+```mermaid
+flowchart LR
+    A["retry with k3"] --> B{"claim"}
+    B -->|"IN_PROGRESS, lock still held"| R["409 + Retry-After: 1"]
+    B -->|"IN_PROGRESS, lock expired<br/>recovery_point = order_created, 42"| RES["resume: skip placing,<br/>reload order 42, request payment,<br/>store response"]
+    B -->|"IN_PROGRESS, lock expired<br/>no recovery point"| NEW["nothing committed: run normally"]
+    B -->|COMPLETED| REP["replay stored response"]
+```
+
+| Endpoint | Recovery point (same transaction as) | Resume does |
+|---|---|---|
+| `POST /cart/items` | `cart_updated` (the increment) | return the cart, don't add again |
+| `POST /orders` | `order_created` + order id (TX1: order, stock, outbox) | continue with that order: payment session, response |
+| `POST /orders/{id}/cancel` | `order_closed` + order id (the close + stock release) | return the order |
+| `POST /orders/{id}/payment` | none needed: already idempotent (D55) | run again |
+
+Failures: only successful responses are stored. A failed attempt that committed nothing (cart
+empty, out of stock, checkout busy) **deletes** its claim, so a retry with the same key runs again
+against current state. One that committed part of its work keeps the key and is unlocked, so the
+retry resumes at once.
+
+### New and changed code
+
+| File | What |
+|---|---|
+| `db/migration/V9__idempotency_keys.sql` | `idempotency_keys`: PK (user, key), endpoint, request hash (SHA-256 of endpoint + body), status, recovery point + resource id, lock, stored status/body/Location |
+| `idempotency/IdempotentRequests.java` | the rules above; called by controllers; replays raw stored JSON |
+| `idempotency/IdempotencyStore.java`, `PostgresIdempotencyStore.java` | claim (`INSERT … ON CONFLICT DO NOTHING`, else `SELECT … FOR UPDATE` and decide), `reach` (joins the caller's transaction), complete, fail; claim/complete/fail in their own `REQUIRES_NEW` transactions |
+| `idempotency/IdempotencyContext.java` | the current request's key on this thread, for services: `past(point)` to resume, `reach(point, id)` to mark; no-op for jobs and consumers |
+| `idempotency/IdempotencyCleanup.java` | hourly delete of keys older than 24 h |
+| `CartController`, `OrderController` | header on the four endpoints; replays skip the checkout bulkhead |
+| `CartService.add`, `OrderService.placeInDb`, `CheckoutSaga.start/cancel/close` | recovery points and resumes |
+| `GlobalExceptionHandler` | 409 + `Retry-After`, 422 |
+| `application.yml` | `kirana.idempotency.store` (postgres), `lock-timeout: 30s`, `retention: 24h` |
+| Tests | `IdempotencyIntegrationTest` (11): no key 400; retried add adds once with the same body; different body 422; keys per shopper; retried order → same order; retried cancel → 200; 4 simultaneous → 1 order (others 409); failed attempt forgotten; **died after placing → resumed, not repeated**; **died after the increment → not incremented again**; cleanup. Existing HTTP tests now send keys; the flash-sale "refused at the gate" request costs 3 statements, not 1 (claim + release). **106 tests pass.** |
+
+### Result (real stack, `duplicate_demo.py`)
+
+```
+no key:   400 Validation failed (Idempotency-Key)
+--keys:
+1. Add 1 tea:   TimeoutError, then 200  → cart has 1 tea  ok
+2. Place order: TimeoutError, then 201  → 1 order; the client knows its order: #50051252
+3. Pay now:     TimeoutError, then 200  (same gateway order)
+4. Cancel:      TimeoutError, then 200  → CANCELLED  ok
+log: Idempotency-Key 13b4f4ff-… (user 2505903): POST /orders already done, stored 201 replayed
+```
+
+### Costs
+
+* Two extra statements per request (claim, complete), three on a refused one.
+* The stored response is the one from the first attempt: a replay doesn't show later changes
+  (that is the point; `GET` the resource for current state).
+* Services know about recovery points (one line each). The alternative, a generic filter that
+  can't see transactions, can't close the crash window.

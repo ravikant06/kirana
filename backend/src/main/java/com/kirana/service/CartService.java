@@ -9,6 +9,7 @@ import com.kirana.dto.CartResponse;
 import com.kirana.entity.Cart;
 import com.kirana.entity.CartItem;
 import com.kirana.exception.InvalidFieldException;
+import com.kirana.idempotency.IdempotencyContext;
 import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.CartMapper;
 import com.kirana.repository.CartRepository;
@@ -50,6 +51,10 @@ public class CartService {
     @Transactional
     public CartResponse add(Long userId, Long productId, int quantity) {
         users.require(userId);
+        if (IdempotencyContext.past(IdempotencyContext.CART_UPDATED).isPresent()) {
+            // Stage 7: an earlier attempt of this request already added it, then died before answering.
+            return carts.findWithItemsByUserId(userId).map(this::toResponse).orElseGet(CartService::empty);
+        }
         products.requireLive(productId);
         carts.createIfAbsent(userId);
         Long cartId = carts.findIdByUserId(userId)
@@ -57,6 +62,7 @@ public class CartService {
         if (carts.addOrIncrement(cartId, productId, quantity, CartLimits.MAX_QUANTITY) == 0) {
             throw new InvalidFieldException("quantity", "at most %d of one product per cart".formatted(CartLimits.MAX_QUANTITY));
         }
+        IdempotencyContext.reach(IdempotencyContext.CART_UPDATED, cartId); // commits with the increment
         return carts.findWithItemsByUserId(userId).map(this::toResponse)
                 .orElseThrow(() -> new IllegalStateException("Cart missing for user " + userId));
     }

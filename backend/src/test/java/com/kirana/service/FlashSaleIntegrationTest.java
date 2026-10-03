@@ -95,10 +95,11 @@ class FlashSaleIntegrationTest {
         flashSales.arm(tea);
         long buyer = buyersWithOneInCart(tea, 1, "late").getFirst();
 
-        mvc.perform(post("/orders").header("X-User-Id", buyer))
+        mvc.perform(post("/orders").header("X-User-Id", buyer).header("Idempotency-Key", java.util.UUID.randomUUID().toString()))
                 .andExpect(status().isConflict())
                 .andExpect(jsonPath("$.title").value("Out of stock"))
-                .andExpect(header().string("X-Query-Count", "1")); // the cart read; no transaction
+                // the cart read, plus Stage 7's key: claimed (INSERT), then forgotten (DELETE): nothing happened
+                .andExpect(header().string("X-Query-Count", "3"));
     }
 
     private List<Throwable> placeTogether(List<Long> buyers) throws Exception {

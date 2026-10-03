@@ -5,15 +5,19 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.kirana.idempotency.IdempotencyStore;
+import com.kirana.idempotency.IdempotentRequests;
 import com.kirana.service.CartService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @WebMvcTest(CartController.class)
+@Import(IdempotentRequests.class)
 class CartControllerTest {
 
     @Autowired
@@ -21,6 +25,19 @@ class CartControllerTest {
 
     @MockitoBean
     CartService carts;
+
+    @MockitoBean
+    IdempotencyStore keys;
+
+    @Test
+    void missingIdempotencyKeyIs400() throws Exception {
+        mvc.perform(post("/cart/items").header("X-User-Id", "1").contentType(MediaType.APPLICATION_JSON)
+                        .content("""
+                                {"productId": 1, "quantity": 1}
+                                """))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.errors[0].field").value("Idempotency-Key"));
+    }
 
     @Test
     void missingUserHeaderIs400() throws Exception {
@@ -31,7 +48,8 @@ class CartControllerTest {
 
     @Test
     void quantityMustBePositive() throws Exception {
-        mvc.perform(post("/cart/items").header("X-User-Id", "1").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/cart/items").header("X-User-Id", "1").header("Idempotency-Key", "k1")
+                        .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"productId": 1, "quantity": 0}
                                 """))

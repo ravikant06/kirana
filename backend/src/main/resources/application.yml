@@ -154,6 +154,12 @@ kirana:
     enabled: false  # the chaos profile turns this on (fault controls in Manage)
     toxiproxy-url: http://localhost:8474
     payment-mock-admin-url: http://localhost:8090
+  idempotency:
+    # Stage 7 (D69). postgres: keys in the database, recovery points commit with the work.
+    # redis: the 7d comparison (faster, not atomic with the database).
+    store: ${IDEMPOTENCY_STORE:postgres}
+    lock-timeout: 30s   # an attempt that died stops blocking retries after this
+    retention: 24h      # then the key is forgotten (deleted hourly; Redis: expires)
   messaging:
     retention: 7d   # Stage 6f: published outbox rows and processed_events older than this are deleted
   outbox:

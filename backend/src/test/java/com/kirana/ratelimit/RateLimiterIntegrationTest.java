@@ -67,9 +67,9 @@ class RateLimiterIntegrationTest {
     void theSixthCheckoutInAMinuteIsRefusedWith429() throws Exception {
         String user = Long.toString(900_000 + (System.nanoTime() % 1000));
         for (int i = 0; i < 5; i++) {
-            mvc.perform(post("/orders").header("X-User-Id", user)).andExpect(status().isNotFound()); // no such user, but counted
+            mvc.perform(post("/orders").header("X-User-Id", user).header("Idempotency-Key", java.util.UUID.randomUUID().toString())).andExpect(status().isNotFound()); // no such user, but counted
         }
-        mvc.perform(post("/orders").header("X-User-Id", user))
+        mvc.perform(post("/orders").header("X-User-Id", user).header("Idempotency-Key", java.util.UUID.randomUUID().toString()))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(header().exists("Retry-After"))
                 .andExpect(jsonPath("$.title").value("Too many requests"));

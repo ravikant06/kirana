@@ -19,6 +19,8 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.transaction.CannotCreateTransactionException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import com.kirana.idempotency.IdempotencyInProgressException;
+import com.kirana.idempotency.IdempotencyKeyReusedException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.context.request.WebRequest;
@@ -82,6 +84,20 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
                 .header(HttpHeaders.RETRY_AFTER, "1")
                 .body(problem(HttpStatus.SERVICE_UNAVAILABLE, "Checkout busy",
                         "Too many checkouts are running right now. Please try again in a moment."));
+    }
+
+    /** Stage 7: the first attempt with this Idempotency-Key is still running (IETF draft: 409). */
+    @ExceptionHandler(IdempotencyInProgressException.class)
+    public ResponseEntity<ProblemDetail> idempotencyInProgress(IdempotencyInProgressException ex) {
+        return ResponseEntity.status(HttpStatus.CONFLICT)
+                .header(HttpHeaders.RETRY_AFTER, "1")
+                .body(problem(HttpStatus.CONFLICT, "Request in progress", ex.getMessage()));
+    }
+
+    /** Stage 7: the Idempotency-Key was used for a different request (IETF draft: 422). */
+    @ExceptionHandler(IdempotencyKeyReusedException.class)
+    public ProblemDetail idempotencyKeyReused(IdempotencyKeyReusedException ex) {
+        return problem(HttpStatus.UNPROCESSABLE_CONTENT, "Idempotency-Key reused", ex.getMessage());
     }
 
     /** 429 with Retry-After, so well-behaved clients know when to come back. */

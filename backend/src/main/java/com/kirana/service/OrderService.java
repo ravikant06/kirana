@@ -17,6 +17,7 @@ import com.kirana.entity.Order;
 import com.kirana.entity.Product;
 import com.kirana.entity.User;
 import com.kirana.exception.ConflictException;
+import com.kirana.idempotency.IdempotencyContext;
 import com.kirana.exception.NotFoundException;
 import com.kirana.exception.OutOfStockException;
 import com.kirana.mapper.OrderMapper;
@@ -145,6 +146,8 @@ public class OrderService {
         orders.flush();
         // Inside TX1: the outbox row commits together with the order, or not at all (Stage 6).
         events.publish(new OrderEvent.OrderPlaced(order.getId(), userId, order.getTotal()));
+        // Stage 7: and so does "this request's order is #id", for a retry whose first attempt died.
+        IdempotencyContext.reach(IdempotencyContext.ORDER_CREATED, order.getId());
         return OrderMapper.toResponse(order);
     }
 

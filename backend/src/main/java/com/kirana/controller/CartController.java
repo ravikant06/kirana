@@ -1,10 +1,12 @@
 package com.kirana.controller;
 
+import com.kirana.idempotency.IdempotentRequests;
 import com.kirana.dto.AddCartItemRequest;
 import com.kirana.dto.CartResponse;
 import com.kirana.dto.UpdateCartItemRequest;
 import com.kirana.service.CartService;
 import jakarta.validation.Valid;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -20,9 +22,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class CartController {
 
     private final CartService carts;
+    private final IdempotentRequests idempotency;
 
-    public CartController(CartService carts) {
+    public CartController(CartService carts, IdempotentRequests idempotency) {
         this.carts = carts;
+        this.idempotency = idempotency;
     }
 
     @GetMapping
@@ -30,9 +34,13 @@ public class CartController {
         return carts.get(userId);
     }
 
+    /** Stage 7: adds to the quantity, so a retry must not run twice: Idempotency-Key required. */
     @PostMapping("/items")
-    public CartResponse add(@RequestHeader(Headers.USER_ID) Long userId, @Valid @RequestBody AddCartItemRequest req) {
-        return carts.add(userId, req.productId(), req.quantity());
+    public ResponseEntity<?> add(@RequestHeader(Headers.USER_ID) Long userId,
+                                 @RequestHeader(name = IdempotentRequests.HEADER, required = false) String key,
+                                 @Valid @RequestBody AddCartItemRequest req) {
+        return idempotency.execute(userId, key, "POST /cart/items", req,
+                () -> carts.add(userId, req.productId(), req.quantity()));
     }
 
     @PutMapping("/items/{productId}")
