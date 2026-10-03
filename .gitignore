@@ -5,6 +5,8 @@ hs_err_pid*.log
 replay_pid*.log
 .mvn/wrapper/maven-wrapper.jar
 
+backend/logs/
+
 # ---------------------------------------------------------------- Node / Vite
 node_modules/
 dist/

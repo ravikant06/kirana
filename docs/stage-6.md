@@ -434,3 +434,30 @@ Restart your backend first (it applies V6 and starts the consumer; the log shows
 * Real Razorpay webhooks need a public URL (a tunnel such as ngrok) and
   `RAZORPAY_WEBHOOK_SECRET`; the endpoint already supports `/webhooks/payment/razorpay`.
 * Refunds are still only an event (`PaymentAfterClose`); 6d makes something act on it.
+
+---
+
+## Watching it live (logs, Kafka UI, database)
+
+The backend also writes its log to `backend/logs/kirana.log` (when started from `backend/`).
+Follow only the Stage 6 flow, without the SQL lines:
+
+```bash
+tail -f backend/logs/kirana.log | grep --line-buffered -E \
+  "Outbox|Webhook from|payments.v1 p|REFUND|Reconciler|Re-check|Expiry|partitions assigned"
+docker logs -f kirana-payment-mock-1 2>&1 | grep --line-buffered -E "payment pay_|webhook"
+```
+
+One order, start to finish (real output; note the thread on each line):
+
+```
+15:11:21.185 [http-nio-exec-3]  Outbox: OrderPlaced for order 50050952 queued as d0b86d4d…          ← TX1 (request thread)
+15:11:21.433 [scheduling-1]     Outbox relay: OrderPlaced for order 50050952 -> orders.v1 partition 0 offset 5
+             (mock)             payment pay_Khl1… for order_RBt2…: captured
+             (mock)             webhook evt_db62… payment.captured for order_RBt2…: attempt 1 -> 200
+15:11:22.366 [http-nio-exec-4]  Webhook from mock: payment.captured for order 50050952 … queued as 237aafcf…
+15:11:22.463 [scheduling-1]     Outbox relay: PaymentCaptured for order 50050952 -> payments.v1 partition 0 offset 2
+15:11:22.476 [payments-listener] Outbox: OrderPaid for order 50050952 queued as 8b1d3eac…           ← consumer's transaction
+15:11:22.477 [payments-listener] payments.v1 p0@2: PaymentCaptured for order 50050952 -> order PAID
+15:11:22.983 [scheduling-1]     Outbox relay: OrderPaid for order 50050952 -> orders.v1 partition 0 offset 6
+```

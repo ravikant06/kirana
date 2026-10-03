@@ -156,6 +156,10 @@ management:
       show-details: always
 
 logging:
+  # Also write the log to a file (backend/logs/kirana.log when started from backend/), so the
+  # Stage 6 flow can be followed with tail + grep instead of the scrolling terminal.
+  file:
+    name: ${KIRANA_LOG_FILE:logs/kirana.log}
   level:
     # Stage 1 observation: print every SQL statement Hibernate sends.
     org.hibernate.SQL: DEBUG

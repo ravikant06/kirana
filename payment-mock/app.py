@@ -22,6 +22,7 @@ import base64
 import hashlib
 import hmac
 import json
+import logging
 import os
 import random
 import secrets
@@ -55,6 +56,7 @@ _webhooks = {
     "duplicate": False,  # on: every event is delivered twice (consumers must not double-apply)
 }
 _deliveries: deque = deque(maxlen=30)
+log = logging.getLogger("uvicorn.error")  # shows up in `docker logs` next to uvicorn's lines
 RETRY_DELAYS = [1, 2, 4, 8, 16, 32]  # seconds between attempts, then give up (Razorpay retries for ~24 h)
 
 
@@ -157,6 +159,7 @@ def attempt(order_id: str, body: Attempt):
             payment["error_description"] = "Payment declined by the test bank"
             order["status"] = "attempted"
         _payments[order_id].append(payment)
+    log.info("payment %s for %s: %s", payment["id"], order_id, payment["status"])
     _send_webhook("payment.captured" if payment["status"] == "captured" else "payment.failed", payment)
     if payment["status"] == "captured":
         # What Razorpay's checkout hands the browser: the server must verify this signature.
@@ -227,13 +230,22 @@ def _deliver(event_id: str, event: str, body: bytes, signature: str, url: str) -
         try:
             with urllib.request.urlopen(req, timeout=5) as res:
                 record["attempts"].append({"n": attempt, "status": res.status})
+                log.info("webhook %s %s for %s: attempt %d -> %d", event_id, event, _order_of(body), attempt, res.status)
                 if 200 <= res.status < 300:
                     record["delivered"] = True
                     return
         except urllib.error.HTTPError as e:
             record["attempts"].append({"n": attempt, "status": e.code})
+            log.info("webhook %s %s for %s: attempt %d -> %d", event_id, event, _order_of(body), attempt, e.code)
         except Exception as e:  # connection refused, timeout: the shop is down
             record["attempts"].append({"n": attempt, "error": type(e).__name__})
+            log.info("webhook %s %s for %s: attempt %d -> %s (shop unreachable)", event_id, event, _order_of(body),
+                     attempt, type(e).__name__)
+    log.warning("webhook %s %s: gave up after %d attempts", event_id, event, len(record["attempts"]))
+
+
+def _order_of(body: bytes) -> str:
+    return json.loads(body)["payload"]["payment"]["entity"]["order_id"]
 
 
 class WebhookSettings(BaseModel):

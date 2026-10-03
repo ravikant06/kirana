@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.concurrent.TimeUnit;
 
 import org.apache.kafka.clients.producer.ProducerRecord;
+import org.apache.kafka.clients.producer.RecordMetadata;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
@@ -82,10 +83,13 @@ public class OutboxRelay {
                     ProducerRecord<String, String> record = new ProducerRecord<>(r.topic(), r.key(), r.payload());
                     record.headers().add("event-id", r.eventId().getBytes());
                     record.headers().add("event-type", r.type().getBytes());
-                    kafka.send(record).get(10, TimeUnit.SECONDS); // wait for the broker's acknowledgement
+                    // Wait for the broker's acknowledgement; it says where the record was stored.
+                    RecordMetadata stored = kafka.send(record).get(10, TimeUnit.SECONDS).getRecordMetadata();
                     jdbc.update("UPDATE outbox SET published_at = ?, attempts = attempts + 1, last_error = NULL WHERE id = ?",
                             java.sql.Timestamp.from(Instant.now()), r.id());
                     ok++;
+                    log.info("Outbox relay: {} for order {} -> {} partition {} offset {} (event {})", r.type(), r.key(),
+                            stored.topic(), stored.partition(), stored.offset(), r.eventId());
                 } catch (Exception e) {
                     String reason = e.getClass().getSimpleName() + ": " + String.valueOf(e.getMessage());
                     jdbc.update("UPDATE outbox SET attempts = attempts + 1, last_error = ? WHERE id = ?",
