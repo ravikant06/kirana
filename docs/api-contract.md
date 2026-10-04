@@ -103,13 +103,17 @@ the newest shoppers. It never returns the whole table.
 |--------|----------------|--------------------------------|------------------------|
 | GET    | /products      | `?page=&size=`                 | `Page<ProductSummary>` |
 | GET    | /products/{id} |                                | `ProductDetail`        |
-| POST   | /products      | `{ name, description, price }` | `ProductDetail` (201)  |
-| PUT    | /products/{id} | `{ name, description, price, version }` | `ProductDetail` |
+| POST   | /products      | `{ name, description, price, category? }` | `ProductDetail` (201)  |
+| PUT    | /products/{id} | `{ name, description, price, version, category? }` | `ProductDetail` |
 | DELETE | /products/{id} |                                | 204                    |
 
-    ProductSummary = { id, name, price, stock, thumbnailUrl }
+    ProductSummary = { id, name, price, stock, thumbnailUrl, category }
     ProductDetail  = { id, name, description, price, stock,
-                       images: [Image], createdAt, updatedAt, version }
+                       images: [Image], createdAt, updatedAt, version, category }
+
+`category` (AI track, Phase 4 prep) is optional free text, at most 100 characters; blank means
+none. The admin form offers a fixed list (`CATEGORIES` in `frontend/src/api.js`), and the AI's
+product search filters on those exact values. PUT replaces it like the other fields.
 
 `PUT /products/{id}` must include `version`: the one the client loaded (400 without it).
 If someone saved the product since, the answer is 409 `"Product changed"`; reload and

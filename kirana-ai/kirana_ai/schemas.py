@@ -39,6 +39,7 @@ class Step(BaseModel):
     where: dict[str, Any] = Field(default_factory=dict)   # filters the model chose
     count: int                                             # hits (or documents) returned
     below_floor: int = 0                                   # hits dropped by the relevance floor
+    product_ids: list[int] = Field(default_factory=list)   # search_products: what the UI shows as cards
 
 
 class Usage(BaseModel):

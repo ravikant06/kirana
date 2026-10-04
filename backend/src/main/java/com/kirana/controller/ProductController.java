@@ -1,6 +1,7 @@
 package com.kirana.controller;
 
 import java.net.URI;
+import java.util.List;
 
 import com.kirana.dto.PageResponse;
 import com.kirana.dto.ProductDetail;
@@ -36,6 +37,12 @@ public class ProductController {
     public PageResponse<ProductSummary> list(@RequestParam(defaultValue = "0") int page,
                                              @RequestParam(defaultValue = "12") int size) {
         return products.list(page, size);
+    }
+
+    /** AI track, Phase 4: live price and stock by id, e.g. /products/batch?ids=3,1,7 */
+    @GetMapping("/batch")
+    public List<ProductSummary> batch(@RequestParam List<Long> ids) {
+        return products.batch(ids);
     }
 
     @GetMapping("/{id}")

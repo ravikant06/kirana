@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, money, uploadToStorage } from '../api.js'
+import { api, CATEGORIES, money, uploadToStorage } from '../api.js'
 import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
@@ -153,6 +153,7 @@ function ProductForm({ product, onSaved, onReload }) {
     name: product?.name || '',
     description: product?.description || '',
     price: product?.price ?? '',
+    category: product?.category || '',
   })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -164,7 +165,7 @@ function ProductForm({ product, onSaved, onReload }) {
     setError(null)
     // Price is sent exactly as typed (a string). Decide in the backend how to parse it.
     // version: the one this form loaded. If someone saved since, the backend answers 409.
-    const body = { name: form.name, description: form.description, price: form.price, version: product?.version }
+    const body = { name: form.name, description: form.description, price: form.price, category: form.category, version: product?.version }
     try {
       const saved = product ? await api.products.update(product.id, body) : await api.products.create(body)
       onSaved(saved)
@@ -187,6 +188,17 @@ function ProductForm({ product, onSaved, onReload }) {
         <span>Description</span>
         <textarea rows="3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         {fieldErr('description') && <em className="field-err">{fieldErr('description')}</em>}
+      </label>
+      <label>
+        <span>Category</span>
+        <select className="kb-select" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+          <option value="">(none)</option>
+          {/* a product saved earlier with a category not in the list still shows it */}
+          {[...CATEGORIES, ...(form.category && !CATEGORIES.includes(form.category) ? [form.category] : [])].map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {fieldErr('category') && <em className="field-err">{fieldErr('category')}</em>}
       </label>
       <label>
         <span>Price (₹)</span>

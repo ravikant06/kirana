@@ -1,0 +1,1202 @@
+[
+ {
+  "product_id": 1,
+  "query": "bananas bunch",
+  "title": "File:Bunch of bananas on sale.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Bunch_of_bananas_on_sale.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Wilfredor\" class=\"mw-redirect\" title=\"User:Wilfredor\">Wilfredor</a>"
+ },
+ {
+  "product_id": 2,
+  "query": "alphonso mango",
+  "title": "File:Alphonso mango.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Alphonso_mango.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"https://en.wikipedia.org/wiki/User:G_patkar\" class=\"extiw\" title=\"wikipedia:User:G patkar\">G patkar</a> at <a href=\"https://en.wikipedia.org/wiki/\" class=\"extiw\" title=\"wikipedia:\">English Wikipedia</a>"
+ },
+ {
+  "product_id": 3,
+  "query": "red apples",
+  "title": "File:Red Apple.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Red_Apple.jpg",
+  "licence": "CC BY 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/24340456@N03\">Abhijit Tembhekar</a> from Mumbai, India"
+ },
+ {
+  "product_id": 4,
+  "query": "pomegranate fruit",
+  "title": "File:Pomegranate02 edit.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Pomegranate02_edit.jpg",
+  "licence": "GFDL 1.2",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Fir0002\" title=\"User:Fir0002\">Fir0002</a>"
+ },
+ {
+  "product_id": 5,
+  "query": "papaya fruit",
+  "title": "File:Papaya - longitudinal section close-up view.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Papaya_-_longitudinal_section_close-up_view.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Iifar\" title=\"User:Iifar\">Ivar Leidus</a>"
+ },
+ {
+  "product_id": 6,
+  "query": "watermelon",
+  "title": "File:Citrullus lanatus 03.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Citrullus_lanatus_03.JPG",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Prenn\" title=\"User:Prenn\">Prenn</a>"
+ },
+ {
+  "product_id": 7,
+  "query": "red onions",
+  "title": "File:Red Onion on White.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Red_Onion_on_White.JPG",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Colin\" title=\"User:Colin\">Colin</a>"
+ },
+ {
+  "product_id": 8,
+  "query": "tomatoes",
+  "title": "File:Organic home-grown tomatoes - unripe to ripe.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Organic_home-grown_tomatoes_-_unripe_to_ripe.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Podzemnik\" title=\"User:Podzemnik\">Michal Klajban</a>"
+ },
+ {
+  "product_id": 9,
+  "query": "potatoes",
+  "title": "File:Potato flowers 2016 G1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Potato_flowers_2016_G1.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:George_Chernilevsky\" title=\"User:George Chernilevsky\">George Chernilevsky</a>"
+ },
+ {
+  "product_id": 10,
+  "query": "spinach leaves",
+  "title": "File:Spinach leaves.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Spinach_leaves.jpg",
+  "licence": "CC BY 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Nillerdk\" title=\"User:Nillerdk\">Nillerdk</a>"
+ },
+ {
+  "product_id": 11,
+  "query": "coriander leaves",
+  "title": "File:Coriander Leaves.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Coriander_Leaves.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Rupeshm364&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Rupeshm364 (page does not exist)\">Rupeshm364</a>"
+ },
+ {
+  "product_id": 12,
+  "query": "green chillies",
+  "title": "File:Man turns drying chili peppers, Turkey.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Man_turns_drying_chili_peppers,_Turkey.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Rotadefterim\" title=\"User:Rotadefterim\">Rotadefterim</a>"
+ },
+ {
+  "product_id": 50,
+  "query": "moong dal",
+  "title": "File:Moong Dal paratha.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Moong_Dal_paratha.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Libreravi\" title=\"User:Libreravi\">Ravi Dwivedi</a>"
+ },
+ {
+  "product_id": 51,
+  "query": "chana dal",
+  "title": "File:Sa-whitegreen-chickpea.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Sa-whitegreen-chickpea.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sanjay_ach\" title=\"User:Sanjay ach\">Sanjay Acharya</a>"
+ },
+ {
+  "product_id": 52,
+  "query": "red lentils",
+  "title": "File:Split Red Lentil.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Split_Red_Lentil.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sanjay_ach\" title=\"User:Sanjay ach\">Sanjay Acharya</a>"
+ },
+ {
+  "product_id": 53,
+  "query": "kidney beans",
+  "title": "File:Red Speckled Kidney Beans.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Red_Speckled_Kidney_Beans.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sanjay_ach\" title=\"User:Sanjay ach\">Sanjay Acharya</a>"
+ },
+ {
+  "product_id": 54,
+  "query": "chickpeas",
+  "title": "File:India - Varanasi green peas - 2714.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:India_-_Varanasi_green_peas_-_2714.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "Jorge Royan"
+ },
+ {
+  "product_id": 55,
+  "query": "poha flattened rice",
+  "title": "File:Poha.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Poha.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "Sanjay Acharya, aka <a href=\"https://en.wikipedia.org/wiki/User:Sanjay_ach\" class=\"extiw\" title=\"en:User:Sanjay ach\">Sanjay ach</a> at <a class=\"external text\" data-mw-original-href=\"http://en.wikipedia.org\" href=\"https://en.wikipedia.org\">en.wikipedia</a>"
+ },
+ {
+  "product_id": 56,
+  "query": "semolina",
+  "title": "File:Sa semolina far.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Sa_semolina_far.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sanjay_ach\" title=\"User:Sanjay ach\">Sanjay ach</a>"
+ },
+ {
+  "product_id": 57,
+  "query": "sugar",
+  "title": "File:Sour rainbow belts.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Sour_rainbow_belts.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:PetarM\" title=\"User:PetarM\">Petar Milošević</a>"
+ },
+ {
+  "product_id": 58,
+  "query": "jaggery",
+  "title": "File:Jaggery preparation0.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Jaggery_preparation0.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Ezhuttukari\" title=\"User:Ezhuttukari\">Ezhuttukari</a>"
+ },
+ {
+  "product_id": 59,
+  "query": "salt",
+  "title": "File:Marakkanam Salt Pans.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Marakkanam_Salt_Pans.JPG",
+  "licence": "CC BY 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Dey.sandip\" title=\"User:Dey.sandip\">Dey.sandip</a>"
+ },
+ {
+  "product_id": 97,
+  "query": "protein bar",
+  "title": "File:Three protein bars.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Three_protein_bars.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Mx._Granger\" title=\"User:Mx. Granger\">Mx. Granger</a>"
+ },
+ {
+  "product_id": 98,
+  "query": "popcorn",
+  "title": "File:Popcorn Christian Church.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Popcorn_Christian_Church.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"https://en.wikipedia.org/wiki/User:Nyttend\" class=\"extiw\" title=\"w:User:Nyttend\">Nyttend</a>"
+ },
+ {
+  "product_id": 99,
+  "query": "digestive biscuits",
+  "title": "File:Digestive biscuits.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Digestive_biscuits.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Caesura\" title=\"User:Caesura\">User:Caesura</a>"
+ },
+ {
+  "product_id": 100,
+  "query": "trail mix",
+  "title": "File:Planters-Trail-Mix.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Planters-Trail-Mix.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Evan-Amos\" title=\"User:Evan-Amos\">Evan-Amos</a>"
+ },
+ {
+  "product_id": 101,
+  "query": "black tea leaves",
+  "title": "File:Darjeeling, India, Darjeeling tea, Black tea.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Darjeeling,_India,_Darjeeling_tea,_Black_tea.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Argenberg\" title=\"User:Argenberg\">Vyacheslav Argenberg</a>"
+ },
+ {
+  "product_id": 102,
+  "query": "green tea",
+  "title": "File:Pu'er tea, Green tea, Chinese tea, Rostov-on-Don, Russia.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Pu%27er_tea,_Green_tea,_Chinese_tea,_Rostov-on-Don,_Russia.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Argenberg\" title=\"User:Argenberg\">Vyacheslav Argenberg</a>"
+ },
+ {
+  "product_id": 103,
+  "query": "filter coffee",
+  "title": "File:Indian filter coffee in Dabarah.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Indian_filter_coffee_in_Dabarah.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": ""
+ },
+ {
+  "product_id": 104,
+  "query": "instant coffee",
+  "title": "File:From coffee bean to instant coffee 01.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:From_coffee_bean_to_instant_coffee_01.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Heiti_Paves\" title=\"User:Heiti Paves\">Heiti Paves</a>"
+ },
+ {
+  "product_id": 105,
+  "query": "coconut water",
+  "title": "File:Coconut water vendor.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Coconut_water_vendor.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Wilfredor\" class=\"mw-redirect\" title=\"User:Wilfredor\">Wilfredor</a>"
+ },
+ {
+  "product_id": 106,
+  "query": "mango juice",
+  "title": "File:Mangos - single and halved.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Mangos_-_single_and_halved.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Iifar\" title=\"User:Iifar\">Ivar Leidus</a>"
+ },
+ {
+  "product_id": 145,
+  "query": "floor cleaner",
+  "title": "File:Floor cleaner.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Floor_cleaner.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Julyroy\" title=\"User:Julyroy\">Julyroy</a>"
+ },
+ {
+  "product_id": 146,
+  "query": "toilet cleaner",
+  "title": "File:ToiletcleanersbyAlofok (4).JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:ToiletcleanersbyAlofok_(4).JPG",
+  "licence": "CC BY-SA 3.0",
+  "artist": "User:Alofok"
+ },
+ {
+  "product_id": 147,
+  "query": "garbage bags",
+  "title": "File:Garbage bags outside in neighborhood at twilight.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Garbage_bags_outside_in_neighborhood_at_twilight.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Yitzilitt\" title=\"User:Yitzilitt\">Yitzilitt</a>"
+ },
+ {
+  "product_id": 148,
+  "query": "paper towels",
+  "title": "File:Paper towel.png",
+  "page": "https://commons.wikimedia.org/wiki/File:Paper_towel.png",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Mets501\" title=\"User:Mets501\">Mets501</a>"
+ },
+ {
+  "product_id": 149,
+  "query": "scouring pad",
+  "title": "File:Haushaltsschwaemme.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Haushaltsschwaemme.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Moebius1&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Moebius1 (page does not exist)\">Moebius1</a>"
+ },
+ {
+  "product_id": 150,
+  "query": "aluminium foil",
+  "title": "File:140531 Forellen auf dem Grill.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:140531_Forellen_auf_dem_Grill.jpg",
+  "licence": "CC BY-SA 3.0 de",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Code\" title=\"User:Code\">Ansgar Koreng</a>"
+ },
+ {
+  "product_id": 144,
+  "query": "liquid detergent",
+  "title": "File:White Cat Dishwashing liquid on the shelf in the supermarket in Suzhou.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:White_Cat_Dishwashing_liquid_on_the_shelf_in_the_supermarket_in_Suzhou.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Shwangtianyuan\" title=\"User:Shwangtianyuan\">Shwangtianyuan</a>"
+ },
+ {
+  "product_id": 143,
+  "query": "laundry detergent",
+  "title": "File:Woman in the shadow of a conical hat made of repurposed bags of laundry detergent in Don Det Laos.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Woman_in_the_shadow_of_a_conical_hat_made_of_repurposed_bags_of_laundry_detergent_in_Don_Det_Laos.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Basile_Morin\" title=\"User:Basile Morin\">Basile Morin</a>"
+ },
+ {
+  "product_id": 142,
+  "query": "dishwashing liquid",
+  "title": "File:Afwasmiddel Una Aldi.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Afwasmiddel_Una_Aldi.JPG",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Onderwijsgek\" title=\"User:Onderwijsgek\">Onderwijsgek</a>"
+ },
+ {
+  "product_id": 141,
+  "query": "sanitary pads",
+  "title": "File:A Sanitary Towel on White Background.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:A_Sanitary_Towel_on_White_Background.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Linn.KnowSex\" title=\"User:Linn.KnowSex\">Linn.KnowSex</a>"
+ },
+ {
+  "product_id": 140,
+  "query": "sunscreen",
+  "title": "File:LRP sunscreen bottle.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:LRP_sunscreen_bottle.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Netstars22\" title=\"User:Netstars22\">Netstars22</a>"
+ },
+ {
+  "product_id": 139,
+  "query": "hand wash",
+  "title": "File:Pupil washes hands during COVID-19 pandemic in Ghana.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Pupil_washes_hands_during_COVID-19_pandemic_in_Ghana.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Amuzujoe\" title=\"User:Amuzujoe\">Amuzujoe</a>"
+ },
+ {
+  "product_id": 138,
+  "query": "sandalwood soap",
+  "title": "File:De Vergulde Hand, Sandalwood zeep, foto3.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:De_Vergulde_Hand,_Sandalwood_zeep,_foto3.JPG",
+  "licence": "CC0",
+  "artist": "Alf van Beem"
+ },
+ {
+  "product_id": 137,
+  "query": "toothbrush",
+  "title": "File:Toothbrush x3 20050716 002.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Toothbrush_x3_20050716_002.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Bergsten\" title=\"User:Bergsten\">Jonas Bergsten</a>"
+ },
+ {
+  "product_id": 136,
+  "query": "toothpaste",
+  "title": "File:Toothpasteonbrush.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Toothpasteonbrush.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Thegreenj~commonswiki\" title=\"User:Thegreenj~commonswiki\">Thegreenj</a>"
+ },
+ {
+  "product_id": 135,
+  "query": "hair oil",
+  "title": "File:Fig2.Anjus Organic hair oil and shampoo.png",
+  "page": "https://commons.wikimedia.org/wiki/File:Fig2.Anjus_Organic_hair_oil_and_shampoo.png",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Buggas_beauty_care&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Buggas beauty care (page does not exist)\">Buggas beauty care</a>"
+ },
+ {
+  "product_id": 134,
+  "query": "shampoo bottle",
+  "title": "File:Dove shampoo bottle in black background.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Dove_shampoo_bottle_in_black_background.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Ranjima_np&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Ranjima np (page does not exist)\">Ranjima np</a>"
+ },
+ {
+  "product_id": 133,
+  "query": "face wash",
+  "title": "File:Fit Me Face Wash review.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Fit_Me_Face_Wash_review.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "Adam"
+ },
+ {
+  "product_id": 132,
+  "query": "kulfi",
+  "title": "File:Kulfi 2.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Kulfi_2.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Gaurav_Dhwaj_Khadka\" title=\"User:Gaurav Dhwaj Khadka\">Gaurav Dhwaj Khadka</a>"
+ },
+ {
+  "product_id": 131,
+  "query": "vanilla ice cream",
+  "title": "File:Apple cake with vanilla ice cream 2.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Apple_cake_with_vanilla_ice_cream_2.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:W.carter\" title=\"User:W.carter\">W.carter</a>"
+ },
+ {
+  "product_id": 130,
+  "query": "momos dumplings",
+  "title": "File:Steamed Momos - KOLKATA.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Steamed_Momos_-_KOLKATA.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:TAPAS_KUMAR_HALDER&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:TAPAS KUMAR HALDER (page does not exist)\">TAPAS KUMAR HALDER</a>"
+ },
+ {
+  "product_id": 129,
+  "query": "french fries",
+  "title": "File:Cajun fries from Popeyes Louisiana Kitchen, Stratford, Ontario, 2025-08-04.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Cajun_fries_from_Popeyes_Louisiana_Kitchen,_Stratford,_Ontario,_2025-08-04.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Crisco_1492\" title=\"User:Crisco 1492\">Chris Woodrich</a>"
+ },
+ {
+  "product_id": 128,
+  "query": "aloo tikki",
+  "title": "File:Aloo Tikki - Homemade - Assam - DSC 002.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Aloo_Tikki_-_Homemade_-_Assam_-_DSC_002.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Gitika_Gayan&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Gitika Gayan (page does not exist)\">Gitika Gayan</a>"
+ },
+ {
+  "product_id": 127,
+  "query": "parotta flatbread",
+  "title": "File:Parotta and chicken gravy - Chennai - Tamil Nadu - Parotta and chicken gravy1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Parotta_and_chicken_gravy_-_Chennai_-_Tamil_Nadu_-_Parotta_and_chicken_gravy1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Dhanish_Ram_1756&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Dhanish Ram 1756 (page does not exist)\">Dhanish Ram 1756</a>"
+ },
+ {
+  "product_id": 126,
+  "query": "sweet corn kernels",
+  "title": "File:Pot of Steamed Sweet Corn Kernels at Davao City.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Pot_of_Steamed_Sweet_Corn_Kernels_at_Davao_City.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:PAULIX04\" title=\"User:PAULIX04\">PAULIX04</a>"
+ },
+ {
+  "product_id": 125,
+  "query": "green peas",
+  "title": "File:India - Varanasi green peas - 2714.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:India_-_Varanasi_green_peas_-_2714.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "Jorge Royan"
+ },
+ {
+  "product_id": 124,
+  "query": "ragi finger millet",
+  "title": "File:Ragi roti.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Ragi_roti.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Medhi_jyoti\" title=\"User:Medhi jyoti\">Medhi jyoti</a>"
+ },
+ {
+  "product_id": 123,
+  "query": "dosa batter",
+  "title": "File:Neer Dosa Batter 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Neer_Dosa_Batter_1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Yakshitha\" title=\"User:Yakshitha\">Yakshitha</a>"
+ },
+ {
+  "product_id": 122,
+  "query": "fruit jam",
+  "title": "File:Fruits jam variants.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Fruits_jam_variants.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:毒島みるく\" title=\"User:毒島みるく\">毒島みるく</a>"
+ },
+ {
+  "product_id": 121,
+  "query": "honey jar",
+  "title": "File:Three French monofloral honey jars.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Three_French_monofloral_honey_jars.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Hayden_Soloviev\" title=\"User:Hayden Soloviev\">Hayden Soloviev</a>"
+ },
+ {
+  "product_id": 120,
+  "query": "peanut butter",
+  "title": "File:Peanut-Butter-Jelly-Sandwich.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Peanut-Butter-Jelly-Sandwich.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Evan-Amos\" title=\"User:Evan-Amos\">Evan-Amos</a>"
+ },
+ {
+  "product_id": 119,
+  "query": "chocolate cereal",
+  "title": "File:Box of Kellog's Krave Double Chocolate cereal.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Box_of_Kellog%27s_Krave_Double_Chocolate_cereal.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:VarunRajendran\" title=\"User:VarunRajendran\">VarunRajendran</a>"
+ },
+ {
+  "product_id": 118,
+  "query": "muesli",
+  "title": "File:Muesli.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Muesli.jpg",
+  "licence": "CC BY-SA 2.5",
+  "artist": "Original description was: I, <a href=\"//commons.wikimedia.org/wiki/User:VirtualSteve\" title=\"User:VirtualSteve\">VirtualSteve</a> took this photograph on February 19, 2006."
+ },
+ {
+  "product_id": 117,
+  "query": "corn flakes",
+  "title": "File:Spoonful of cereal.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Spoonful_of_cereal.jpg",
+  "licence": "Public domain",
+  "artist": "Scott Bauer, USDA ARS"
+ },
+ {
+  "product_id": 116,
+  "query": "oats porridge",
+  "title": "File:Porridge oats with blueberries and cinnamon.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Porridge_oats_with_blueberries_and_cinnamon.jpg",
+  "licence": "CC BY 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/11049823@N08\">Ash TheFreecycler</a>"
+ },
+ {
+  "product_id": 115,
+  "query": "rolled oats",
+  "title": "File:Rolled oats.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Rolled_oats.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"https://en.wikipedia.org/wiki/user:Hankwang\" class=\"extiw\" title=\"en:user:Hankwang\">en:user:Hankwang</a>"
+ },
+ {
+  "product_id": 114,
+  "query": "almond milk",
+  "title": "File:Home-made almond milk, November 2012.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Home-made_almond_milk,_November_2012.jpg",
+  "licence": "CC BY 2.0",
+  "artist": "Amazing Almonds"
+ },
+ {
+  "product_id": 113,
+  "query": "kombucha",
+  "title": "File:Kombucha mushroom.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Kombucha_mushroom.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:LivingShadow\" title=\"User:LivingShadow\">Simon A. Eugster</a>"
+ },
+ {
+  "product_id": 112,
+  "query": "chocolate malt drink",
+  "title": "File:Chocolate Malt with Sprinkles.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Chocolate_Malt_with_Sprinkles.jpg",
+  "licence": "CC BY 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/90037546@N00\">Simon Doggett</a> from London, UK"
+ },
+ {
+  "product_id": 111,
+  "query": "rose syrup",
+  "title": "File:Rose syrup bottles.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Rose_syrup_bottles.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sgconlaw\" title=\"User:Sgconlaw\">Sgconlaw</a>"
+ },
+ {
+  "product_id": 110,
+  "query": "lemon soda",
+  "title": "File:Lemonade and teacup.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Lemonade_and_teacup.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Fumikas_Sagisavas\" title=\"User:Fumikas Sagisavas\">Fumikas Sagisavas</a>"
+ },
+ {
+  "product_id": 109,
+  "query": "cola soft drink",
+  "title": "File:Bec Cola @ Mâche @ Montreal (30308793542).jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Bec_Cola_@_M%C3%A2che_@_Montreal_(30308793542).jpg",
+  "licence": "CC BY 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/22539273@N00\">Guilhem Vellut</a> from Annecy, France"
+ },
+ {
+  "product_id": 108,
+  "query": "water bottle",
+  "title": "File:Metal Water Bottles.jpeg",
+  "page": "https://commons.wikimedia.org/wiki/File:Metal_Water_Bottles.jpeg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Amraepowell&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Amraepowell (page does not exist)\">Amraepowell</a>"
+ },
+ {
+  "product_id": 107,
+  "query": "orange juice",
+  "title": "File:Orange juice 1 edit1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Orange_juice_1_edit1.jpg",
+  "licence": "Public domain",
+  "artist": "<ul><li>Agency of the United States Department of Agriculture</li>\n<li>Edited Version by: <a href=\"//commons.wikimedia.org/wiki/User:Arad\" title=\"User:Arad\">Arad</a></li></ul>"
+ },
+ {
+  "product_id": 96,
+  "query": "milk chocolate bar",
+  "title": "File:HERSHEY'S Chocolate Bar Greatest Milk Chocolate.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:HERSHEY%27S_Chocolate_Bar_Greatest_Milk_Chocolate.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Kfarren23&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Kfarren23 (page does not exist)\">Kfarren23</a>"
+ },
+ {
+  "product_id": 95,
+  "query": "dark chocolate",
+  "title": "File:2023 Gorzka czekolada.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:2023_Gorzka_czekolada.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Jacek_Halicki\" title=\"User:Jacek Halicki\">Jacek Halicki</a>"
+ },
+ {
+  "product_id": 94,
+  "query": "peanut chikki",
+  "title": "File:Peanut Chikki With Caramel.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Peanut_Chikki_With_Caramel.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Prakrutim&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Prakrutim (page does not exist)\">Prakrutim</a>"
+ },
+ {
+  "product_id": 93,
+  "query": "potato chips",
+  "title": "File:Potato-Chips.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Potato-Chips.jpg",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Evan-Amos\" title=\"User:Evan-Amos\">Evan-Amos</a>"
+ },
+ {
+  "product_id": 92,
+  "query": "chips snack",
+  "title": "File:Kerala banana chips Upperi varuthath.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Kerala_banana_chips_Upperi_varuthath.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://flickr.com/people/39107352@N08\">Ramesh NG</a>"
+ },
+ {
+  "product_id": 91,
+  "query": "khakhra",
+  "title": "File:Khakhra.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Khakhra.JPG",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Jay87.mehta&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Jay87.mehta (page does not exist)\">Jay87.mehta</a>"
+ },
+ {
+  "product_id": 90,
+  "query": "bhujia namkeen",
+  "title": "File:Street vendor selling namkeen, bhujia and mixtures at Jaisalmer.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Street_vendor_selling_namkeen,_bhujia_and_mixtures_at_Jaisalmer.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/23930118@N04\">Ana Raquel S. Hernandes</a> from Sao Paulo, Brazil"
+ },
+ {
+  "product_id": 89,
+  "query": "roasted chickpeas",
+  "title": "File:Leblebi.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Leblebi.jpg",
+  "licence": "Public domain",
+  "artist": "Physicistjedi"
+ },
+ {
+  "product_id": 88,
+  "query": "mixed dry fruits",
+  "title": "File:Mixed Dry Fruit Kheer - Home - Chandigarh - India - 00011.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Mixed_Dry_Fruit_Kheer_-_Home_-_Chandigarh_-_India_-_00011.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Yuvraj_Singh_97&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Yuvraj Singh 97 (page does not exist)\">Yuvraj Singh 97</a>"
+ },
+ {
+  "product_id": 87,
+  "query": "cashew nuts",
+  "title": "File:Anacardium occidentale from Margarita island.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Anacardium_occidentale_from_Margarita_island.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Wilfredor\" class=\"mw-redirect\" title=\"User:Wilfredor\">Wilfredor</a>"
+ },
+ {
+  "product_id": 86,
+  "query": "almonds",
+  "title": "File:Almonds - in shell, shell cracked open, shelled, blanched.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Almonds_-_in_shell,_shell_cracked_open,_shelled,_blanched.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Iifar\" title=\"User:Iifar\">Ivar Leidus</a>"
+ },
+ {
+  "product_id": 85,
+  "query": "makhana",
+  "title": "File:Foxnut Makhana - Nawada District - Bihar - 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Foxnut_Makhana_-_Nawada_District_-_Bihar_-_1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:FacetsOfNonStickPans&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:FacetsOfNonStickPans (page does not exist)\">FacetsOfNonStickPans</a>"
+ },
+ {
+  "product_id": 84,
+  "query": "chaat masala",
+  "title": "File:Chaatmasala.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Chaatmasala.jpg",
+  "licence": "CC BY 2.0",
+  "artist": "Khurram Shehzad / Flickr user: Lekum's ( <a rel=\"nofollow\" class=\"external free\" href=\"https://www.flickr.com/photos/29072273@N00/\">https://www.flickr.com/photos/29072273@N00/</a> )"
+ },
+ {
+  "product_id": 83,
+  "query": "cinnamon sticks",
+  "title": "File:Gewuerze 004 2024 08 10.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Gewuerze_004_2024_08_10.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<b><a href=\"//commons.wikimedia.org/wiki/User:F._Riedelio\" title=\"User:F. Riedelio\">Friedrich Haag</a></b>"
+ },
+ {
+  "product_id": 82,
+  "query": "dried fenugreek leaves",
+  "title": "File:Dried leaves of Fenugreek-Kasuri Methi.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Dried_leaves_of_Fenugreek-Kasuri_Methi.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Thamizhpparithi_Maari\" title=\"User:Thamizhpparithi Maari\">Thamizhpparithi Maari</a>"
+ },
+ {
+  "product_id": 81,
+  "query": "asafoetida",
+  "title": "File:Ferula assa-foetida Zapaliczka cuchnąca 2020-07-31 05.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Ferula_assa-foetida_Zapaliczka_cuchn%C4%85ca_2020-07-31_05.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Nova\" title=\"User:Nova\">Agnieszka Kwiecień, Nova</a>"
+ },
+ {
+  "product_id": 80,
+  "query": "mustard seeds",
+  "title": "File:Senf-Variationen.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Senf-Variationen.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"https://de.wikipedia.org/wiki/User:Rainer_Zenz\" class=\"extiw\" title=\"de:User:Rainer Zenz\">Rainer Zenz</a>"
+ },
+ {
+  "product_id": 79,
+  "query": "green cardamom",
+  "title": "File:Elettaria cardamomum Capsules and seeds.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Elettaria_cardamomum_Capsules_and_seeds.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<div class=\"fn value\">\n<a href=\"//commons.wikimedia.org/wiki/User:Archaeodontosaurus\" title=\"User:Archaeodontosaurus\">Didier Descouens</a></div>"
+ },
+ {
+  "product_id": 78,
+  "query": "black pepper",
+  "title": "File:Black Pepper (Piper nigrum) fruits.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Black_Pepper_(Piper_nigrum)_fruits.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Kallidaimaniac&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Kallidaimaniac (page does not exist)\">K Hari Krishnan</a>"
+ },
+ {
+  "product_id": 77,
+  "query": "pav bhaji",
+  "title": "File:Pav bhaji SWW.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Pav_bhaji_SWW.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Solowomanwalks&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Solowomanwalks (page does not exist)\">Solowomanwalks</a>"
+ },
+ {
+  "product_id": 76,
+  "query": "biryani spices",
+  "title": "File:Hyderabad biryani & naan.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Hyderabad_biryani_%26_naan.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Abithavelu&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Abithavelu (page does not exist)\">Abithavelu</a>"
+ },
+ {
+  "product_id": 75,
+  "query": "masala powder",
+  "title": "File:Garam Masala 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Garam_Masala_1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Gaurav_Dhwaj_Khadka\" title=\"User:Gaurav Dhwaj Khadka\">Gaurav Dhwaj Khadka</a>"
+ },
+ {
+  "product_id": 74,
+  "query": "spice mix",
+  "title": "File:Khmeli suneli (Georgian spice mix) of Leis brand.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Khmeli_suneli_(Georgian_spice_mix)_of_Leis_brand.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Nakonana\" title=\"User:Nakonana\">Nakonana</a>"
+ },
+ {
+  "product_id": 73,
+  "query": "garam masala spices",
+  "title": "File:Garam Masala 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Garam_Masala_1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Gaurav_Dhwaj_Khadka\" title=\"User:Gaurav Dhwaj Khadka\">Gaurav Dhwaj Khadka</a>"
+ },
+ {
+  "product_id": 72,
+  "query": "cumin seeds",
+  "title": "File:Seeds of Cumin.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Seeds_of_Cumin.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Sanjay_ach\" title=\"User:Sanjay ach\">Sanjay Acharya</a>"
+ },
+ {
+  "product_id": 71,
+  "query": "coriander powder",
+  "title": "File:Chlorofeel Spices Turmeric, Coriander and Cumin Powder Packet.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Chlorofeel_Spices_Turmeric,_Coriander_and_Cumin_Powder_Packet.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Businesses247&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Businesses247 (page does not exist)\">Businesses247</a>"
+ },
+ {
+  "product_id": 70,
+  "query": "red chilli powder",
+  "title": "File:Citrus medica mixed with salt, sugar, green chillies and red chilli powder during winter 04.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Citrus_medica_mixed_with_salt,_sugar,_green_chillies_and_red_chilli_powder_during_winter_04.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:AjayDas\" title=\"User:AjayDas\">AjayDas</a>"
+ },
+ {
+  "product_id": 69,
+  "query": "turmeric powder",
+  "title": "File:Curcuma longa roots.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Curcuma_longa_roots.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:LivingShadow\" title=\"User:LivingShadow\">Simon A. Eugster</a>"
+ },
+ {
+  "product_id": 68,
+  "query": "ghee",
+  "title": "File:A Tibetan Pilgrim Lighting Ghee Lamps.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:A_Tibetan_Pilgrim_Lighting_Ghee_Lamps.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Orlyliu&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Orlyliu (page does not exist)\">Orly Liu</a>"
+ },
+ {
+  "product_id": 67,
+  "query": "sesame oil",
+  "title": "File:SesameSeedOil.png",
+  "page": "https://commons.wikimedia.org/wiki/File:SesameSeedOil.png",
+  "licence": "Public domain",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Itineranttrader\" title=\"User:Itineranttrader\">Itineranttrader</a>"
+ },
+ {
+  "product_id": 66,
+  "query": "olive oil",
+  "title": "File:2023 Oliwa z oliwek Garda DOP (1).jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:2023_Oliwa_z_oliwek_Garda_DOP_(1).jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Jacek_Halicki\" title=\"User:Jacek Halicki\">Jacek Halicki</a>"
+ },
+ {
+  "product_id": 65,
+  "query": "cooking oil",
+  "title": "File:Cooking oil tanks at 唐揚げ shop.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Cooking_oil_tanks_at_%E5%94%90%E6%8F%9A%E3%81%92_shop.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Syced\" title=\"User:Syced\">Syced</a>"
+ },
+ {
+  "product_id": 64,
+  "query": "coconut oil",
+  "title": "File:Coconut oil 2.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Coconut_oil_2.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Kulmalukko\" title=\"User:Kulmalukko\">Tiia Monto</a>"
+ },
+ {
+  "product_id": 63,
+  "query": "peanut oil",
+  "title": "File:Peanut oil bottle.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Peanut_oil_bottle.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "Adam Engelhart"
+ },
+ {
+  "product_id": 62,
+  "query": "sunflower oil bottle",
+  "title": "File:Sunflower oil bottles in Dnipro.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Sunflower_oil_bottles_in_Dnipro.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Alex_Blokha\" title=\"User:Alex Blokha\">Alex Blokha</a>"
+ },
+ {
+  "product_id": 61,
+  "query": "mustard oil",
+  "title": "File:Mustard Oil & Seeds - Kolkata 2003-10-31 00537.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Mustard_Oil_%26_Seeds_-_Kolkata_2003-10-31_00537.JPG",
+  "licence": "CC BY 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Gangulybiswarup\" title=\"User:Gangulybiswarup\">Biswarup Ganguly</a>"
+ },
+ {
+  "product_id": 60,
+  "query": "rock salt",
+  "title": "File:Halit-kolejny.JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Halit-kolejny.JPG",
+  "licence": "CC BY-SA 2.5",
+  "artist": "<a href=\"https://pl.wikipedia.org/wiki/Wikipedysta:Lestat\" class=\"extiw\" title=\"pl:Wikipedysta:Lestat\">Lestat</a> (Jan Mehlich)"
+ },
+ {
+  "product_id": 49,
+  "query": "toor dal",
+  "title": "File:Cajanus cajan, flowers.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Cajanus_cajan,_flowers.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Filo_gèn'\" title=\"User:Filo gèn'\">Filo gèn'</a>"
+ },
+ {
+  "product_id": 48,
+  "query": "gram flour besan",
+  "title": "File:Gram flour Chilla (Besan ka Cheela).JPG",
+  "page": "https://commons.wikimedia.org/wiki/File:Gram_flour_Chilla_(Besan_ka_Cheela).JPG",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Mdsmds0&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Mdsmds0 (page does not exist)\">Mdsmds0</a>"
+ },
+ {
+  "product_id": 47,
+  "query": "flour",
+  "title": "File:Home made sour dough bread.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Home_made_sour_dough_bread.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Tomascastelazo\" title=\"User:Tomascastelazo\">Tomascastelazo</a>"
+ },
+ {
+  "product_id": 46,
+  "query": "wheat flour",
+  "title": "File:Wheat-flour.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Wheat-flour.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:هارون_يحيى&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:هارون يحيى (page does not exist)\">هارون يحيى</a>"
+ },
+ {
+  "product_id": 45,
+  "query": "brown rice",
+  "title": "File:Brown Rice.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Brown_Rice.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "Gaurav Dhwaj Khadka"
+ },
+ {
+  "product_id": 44,
+  "query": "white rice grains",
+  "title": "File:Plain white rice-min-min.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Plain_white_rice-min-min.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Sum_overseas&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Sum overseas (page does not exist)\">Sum overseas</a>"
+ },
+ {
+  "product_id": 43,
+  "query": "basmati rice",
+  "title": "File:Grano de arroz basmati integral, 2020-06-12, DD 01-11 FS.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Grano_de_arroz_basmati_integral,_2020-06-12,_DD_01-11_FS.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<bdi><a href=\"https://www.wikidata.org/wiki/Q28147777\" class=\"extiw\" title=\"d:Q28147777\"><span title=\"Spanish photographer\">Diego Delso</span></a></bdi>"
+ },
+ {
+  "product_id": 42,
+  "query": "fruit cake",
+  "title": "File:Homemade Chocolates, muffins and fruit cake 01.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Homemade_Chocolates,_muffins_and_fruit_cake_01.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<bdi><a href=\"https://www.wikidata.org/wiki/Q56173187\" class=\"extiw\" title=\"d:Q56173187\"><span title=\"Independent filmmaker, travel writer, photographer, and blogger\">Indrajit Das</span></a></bdi>"
+ },
+ {
+  "product_id": 41,
+  "query": "cookies",
+  "title": "File:Illuminated wooden shelf with many glass jars containing cookies for sale in Tokyo.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Illuminated_wooden_shelf_with_many_glass_jars_containing_cookies_for_sale_in_Tokyo.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Basile_Morin\" title=\"User:Basile Morin\">Basile Morin</a>"
+ },
+ {
+  "product_id": 40,
+  "query": "burger buns",
+  "title": "File:Dirty Bacon Brunch Burger - Moksha Caffè 2023-09-13.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Dirty_Bacon_Brunch_Burger_-_Moksha_Caff%C3%A8_2023-09-13.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Onthewings\" title=\"User:Onthewings\">Andy Li</a>"
+ },
+ {
+  "product_id": 39,
+  "query": "rusk toast",
+  "title": "File:Dean Rusk, Lyndon B. Johnson and Robert McNamara in Cabinet Room meeting February 1968.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Dean_Rusk,_Lyndon_B._Johnson_and_Robert_McNamara_in_Cabinet_Room_meeting_February_1968.jpg",
+  "licence": "Public domain",
+  "artist": "<bdi><a href=\"https://en.wikipedia.org/wiki/en:Yoichi_Okamoto\" class=\"extiw\" title=\"w:en:Yoichi Okamoto\"><span title=\"American photographer (1915–1985)\">Yoichi Okamoto</span></a></bdi>"
+ },
+ {
+  "product_id": 38,
+  "query": "pav bread rolls",
+  "title": "File:Authentic Misal Pav - A Traditional Maharashtrian Delicacy from Pune.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Authentic_Misal_Pav_-_A_Traditional_Maharashtrian_Delicacy_from_Pune.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Annni07\" title=\"User:Annni07\">Annni07</a>"
+ },
+ {
+  "product_id": 37,
+  "query": "multigrain bread",
+  "title": "File:Multigrain Bread Mumbai Delhi Pune Gujarat.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Multigrain_Bread_Mumbai_Delhi_Pune_Gujarat.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Danz_Bread&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Danz Bread (page does not exist)\">Danz Bread</a>"
+ },
+ {
+  "product_id": 36,
+  "query": "sliced white bread",
+  "title": "File:Holsum-delivery-van.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Holsum-delivery-van.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Ezrawolfe&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Ezrawolfe (page does not exist)\">Ezrawolfe</a>"
+ },
+ {
+  "product_id": 35,
+  "query": "whole wheat bread",
+  "title": "File:Vegan no-knead whole wheat bread loaf, September 2010.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Vegan_no-knead_whole_wheat_bread_loaf,_September_2010.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/31104779@N02\">Veganbaking.net</a>"
+ },
+ {
+  "product_id": 34,
+  "query": "lassi",
+  "title": "File:Lassi 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Lassi_1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Gaurav_Dhwaj_Khadka\" title=\"User:Gaurav Dhwaj Khadka\">Gaurav Dhwaj Khadka</a>"
+ },
+ {
+  "product_id": 33,
+  "query": "buttermilk",
+  "title": "File:Buttermilk-(right)-and-Milk-(left).jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Buttermilk-(right)-and-Milk-(left).jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Ukko-wc\" class=\"mw-redirect\" title=\"User:Ukko-wc\">Ukko-wc</a>"
+ },
+ {
+  "product_id": 32,
+  "query": "white eggs carton",
+  "title": "File:White Eggs in Carton.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:White_Eggs_in_Carton.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "M. Chambers"
+ },
+ {
+  "product_id": 31,
+  "query": "brown eggs",
+  "title": "File:Eggs in basket 2020 G1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Eggs_in_basket_2020_G1.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:George_Chernilevsky\" title=\"User:George Chernilevsky\">George Chernilevsky</a>"
+ },
+ {
+  "product_id": 30,
+  "query": "fresh cream",
+  "title": "File:Crepe with fresh cream in it.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Crepe_with_fresh_cream_in_it.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:KKPCW\" title=\"User:KKPCW\">KKPCW</a>"
+ },
+ {
+  "product_id": 29,
+  "query": "cheese slices",
+  "title": "File:White cheddar cheese sliced CNE.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:White_cheddar_cheese_sliced_CNE.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:CNEcija12345\" title=\"User:CNEcija12345\">CNEcija12345</a>"
+ },
+ {
+  "product_id": 28,
+  "query": "ghee jar",
+  "title": "File:A hand bag design, India Silpa Sastra.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:A_hand_bag_design,_India_Silpa_Sastra.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/126377022@N07\">Internet Archive Book Images</a>"
+ },
+ {
+  "product_id": 27,
+  "query": "butter block",
+  "title": "File:Block of butter in butter dish.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Block_of_butter_in_butter_dish.jpg",
+  "licence": "CC BY 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Qwertyxp2000\" title=\"User:Qwertyxp2000\">Qwertyxp2000</a>"
+ },
+ {
+  "product_id": 26,
+  "query": "greek yogurt",
+  "title": "File:Labneh (5196911587).jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Labneh_(5196911587).jpg",
+  "licence": "CC BY 2.0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/38559542@N02\">Leslie Seaton</a> from Seattle, WA, USA"
+ },
+ {
+  "product_id": 25,
+  "query": "yogurt bowl",
+  "title": "File:A bowl of frozen yogurt.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:A_bowl_of_frozen_yogurt.jpg",
+  "licence": "CC0",
+  "artist": "JacquesDemien"
+ },
+ {
+  "product_id": 24,
+  "query": "paneer",
+  "title": "File:Home made sour dough bread.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Home_made_sour_dough_bread.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Tomascastelazo\" title=\"User:Tomascastelazo\">Tomascastelazo</a>"
+ },
+ {
+  "product_id": 23,
+  "query": "paneer cubes",
+  "title": "File:Cubic honeycomb-1.png",
+  "page": "https://commons.wikimedia.org/wiki/File:Cubic_honeycomb-1.png",
+  "licence": "Public domain",
+  "artist": "<a href=\"https://en.wikipedia.org/wiki/User:Tomruen\" class=\"extiw\" title=\"w:User:Tomruen\">Tom Ruen</a> at <a href=\"https://en.wikipedia.org/wiki/\" class=\"extiw\" title=\"w:\">English Wikipedia</a>"
+ },
+ {
+  "product_id": 22,
+  "query": "glass of milk",
+  "title": "File:2025.04.10 Milk Glass Sugar Bowl and Antique Glass Creamer.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:2025.04.10_Milk_Glass_Sugar_Bowl_and_Antique_Glass_Creamer.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/w/index.php?title=User:Illarion_Kalashnikov&amp;action=edit&amp;redlink=1\" class=\"new\" title=\"User:Illarion Kalashnikov (page does not exist)\">Illarion Kalashnikov</a>"
+ },
+ {
+  "product_id": 21,
+  "query": "milk bottle",
+  "title": "File:Milk bottle and two doughnuts.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Milk_bottle_and_two_doughnuts.jpg",
+  "licence": "CC0",
+  "artist": "<a rel=\"nofollow\" class=\"external text\" href=\"https://www.flickr.com/people/137643065@N06\">www.Pixel.la Free Stock Photos</a>"
+ },
+ {
+  "product_id": 20,
+  "query": "baby corn",
+  "title": "File:Baby corn 1.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Baby_corn_1.jpg",
+  "licence": "CC BY-SA 2.0",
+  "artist": "Quinn Dombrowski"
+ },
+ {
+  "product_id": 19,
+  "query": "lemons",
+  "title": "File:Lemon.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Lemon.jpg",
+  "licence": "CC BY-SA 2.5",
+  "artist": "<p>André Karwath aka <a href=\"//commons.wikimedia.org/wiki/User:Aka\" title=\"User:Aka\">Aka</a>\n</p>"
+ },
+ {
+  "product_id": 18,
+  "query": "carrots",
+  "title": "File:Carrots of many colors.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Carrots_of_many_colors.jpg",
+  "licence": "Public domain",
+  "artist": "Stephen Ausmus"
+ },
+ {
+  "product_id": 17,
+  "query": "cucumbers",
+  "title": "File:Ryerson Market cucumbers on sale.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Ryerson_Market_cucumbers_on_sale.jpg",
+  "licence": "CC BY-SA 3.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Hiàn\" title=\"User:Hiàn\">Jason Zhang</a>"
+ },
+ {
+  "product_id": 16,
+  "query": "okra",
+  "title": "File:Quiabo.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Quiabo.jpg",
+  "licence": "CC0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:ArionStar\" title=\"User:ArionStar\">ArionStar</a>"
+ },
+ {
+  "product_id": 15,
+  "query": "cauliflower",
+  "title": "File:Brassica oleracea var. botrytis (Coliflor).jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Brassica_oleracea_var._botrytis_(Coliflor).jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Rjcastillo\" title=\"User:Rjcastillo\">Rjcastillo</a>"
+ },
+ {
+  "product_id": 14,
+  "query": "garlic bulbs",
+  "title": "File:Garlic bulbs and cloves.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:Garlic_bulbs_and_cloves.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Iifar\" title=\"User:Iifar\">Ivar Leidus</a>"
+ },
+ {
+  "product_id": 13,
+  "query": "ginger root",
+  "title": "File:GingerRoot Novo Los Angeles.jpg",
+  "page": "https://commons.wikimedia.org/wiki/File:GingerRoot_Novo_Los_Angeles.jpg",
+  "licence": "CC BY-SA 4.0",
+  "artist": "<a href=\"//commons.wikimedia.org/wiki/User:Blervis\" title=\"User:Blervis\">Blervis</a>"
+ }
+]

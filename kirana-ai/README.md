@@ -29,6 +29,8 @@ python -m kirana_ai.worker                      # keep running: Kafka consumer, 
 python -m kirana_ai.cli seed-kb                 # (other terminal) upload kb/seed/* to MinIO
 # Admins upload more in Kirana: Manage -> Knowledge base
 python -m kirana_ai.cli reindex --dry-run       # repair drift MinIO / ai.documents / Qdrant
+python -m kirana_ai.cli index-products          # product index snapshot from Kirana's API
+python -m kirana_ai.catalog                     # keep running: catalog.v1 -> product index
 python -m kirana_ai.cli redrive                 # replay the dead-letter topic once fixed
 python -m kirana_ai.cli ask "Can I return opened rice?"
 python -m kirana_ai.cli ask -t "..."            # trace every step
@@ -43,6 +45,8 @@ python -m eval.run_retrieval --compare          # dense vs hybrid recall@k
 python -m eval.run_floor                        # pick RELEVANCE_FLOOR from data
 python -m eval.run_answers --save-baseline      # answer quality, judged by Gemini (~$0.30)
 python -m eval.run_answers --grade 20           # hand-grade; agreement with the judge
+python -m eval.run_products                     # product search: hybrid vs reranked
+python -m eval.run_routing                      # does the agent pick the right tool?
 pytest                                          # no API key needed; DB tests need Docker
 ```
 

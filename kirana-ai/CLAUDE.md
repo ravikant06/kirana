@@ -76,8 +76,9 @@ Kafka `kb.documents.v1` with our `x-amz-meta-*` metadata, the worker (group
 base tab; page numbers on citations. **Phase 3 built:** SSE streaming (`stream()` in every
 adapter, `agent.answer_stream`, `chat.prepare` + `chat.run`), relevance floor on dense cosine
 (`RELEVANCE_FLOOR`, from `eval.run_floor`), answer evals (`eval.run_answers`, Gemini judge,
-`--grade`), unverified citations flagged. Next: Ravi's runs (baseline, grading, thinking level), then Phase 4.
+`--grade`), unverified citations flagged. Ravi's Phase 3 runs still open (baseline, grading, thinking level).
+**Phase 4 built:** `search_products` tool (`products.py`: hybrid → live hydration from Kirana via `kirana.py`; the reranker is built but off, AD22), `kirana_products` index from `catalog.v1` events (`catalog.py`, group `kirana-ai-catalog`) plus `cli index-products`, product cards in chat, evals `eval.run_products` and `eval.run_routing`. Shared Kafka loop in `consumer.py`.
 Phase 1 wrap-up (UI experiments, `docs/concepts-learned.md`) is still open.
 
-Only the current phase is in scope. Gaps listed in the plan (no deletes, no relevance
-floor, no streaming…) are deliberate: later phases fix them.
+Only the current phase is in scope. Gaps listed in the plan for later phases (no auth, no
+actions, no budgets or timeouts…) are deliberate: those phases fix them.

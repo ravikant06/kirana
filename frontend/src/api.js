@@ -231,6 +231,8 @@ export const api = {
   products: {
     list: (page = 0, size = 12) => request('GET', `/products?page=${page}&size=${size}`),
     get: (id) => request('GET', `/products/${q(id)}`),
+    // AI Phase 4: live price and stock for the products the assistant found (at most 50 ids).
+    batch: (ids) => request('GET', `/products/batch?ids=${ids.map(Number).join(',')}`),
     create: (body) => request('POST', '/products', body),
     update: (id, body) => request('PUT', `/products/${q(id)}`, body),
     remove: (id) => request('DELETE', `/products/${q(id)}`),
@@ -386,6 +388,13 @@ export async function streamChat(userId, message, threadId, onEvent, signal) {
   if (failed || !done) throw new ApiError(failed?.status || 0, failed || { title: 'Stream ended early', detail: 'The answer stopped before it finished. Try again.' })
   return done
 }
+
+// Product categories offered in the admin form. The API accepts any text (max 100); this list
+// keeps the catalogue consistent, and the AI's product search filters on these exact values.
+export const CATEGORIES = [
+  'Fruits & Vegetables', 'Dairy & Eggs', 'Bakery', 'Staples', 'Oils & Ghee', 'Spices & Masalas',
+  'Snacks', 'Beverages', 'Breakfast & Cereals', 'Frozen', 'Personal Care', 'Household',
+]
 
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
 export const money = (v) => (v === null || v === undefined || v === '' ? '—' : inr.format(Number(v)))

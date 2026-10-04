@@ -17,7 +17,8 @@ public record ProductSnapshot(
         Instant createdAt,
         Instant updatedAt,
         long version,
-        List<Image> images) {
+        List<Image> images,
+        String category) {
 
     public record Image(Long id, String objectKey, String contentType, Long sizeBytes, int position) {
     }

@@ -36,6 +36,7 @@ import tools.jackson.core.type.TypeReference;
 public class ProductService {
 
     static final int MAX_PAGE_SIZE = 100;
+    static final int MAX_BATCH_IDS = 50;
 
     private static final TypeReference<PageResponse<ProductSummary>> PAGE = new TypeReference<>() { };
     private static final TypeReference<ProductSnapshot> SNAPSHOT = new TypeReference<>() { };
@@ -47,9 +48,12 @@ public class ProductService {
     private final CacheProperties cacheProps;
     private final TransactionTemplate readTx;
     private final TransactionTemplate snapshotReadTx;
+    private final ProductEvents events;
 
     public ProductService(ProductRepository products, InventoryRepository inventory, ImageService images,
-                          CacheAside cache, CacheProperties cacheProps, PlatformTransactionManager txManager) {
+                          CacheAside cache, CacheProperties cacheProps, PlatformTransactionManager txManager,
+                          ProductEvents events) {
+        this.events = events;
         this.products = products;
         this.inventory = inventory;
         this.images = images;
@@ -77,6 +81,29 @@ public class ProductService {
         int s = Math.clamp(size, 1, MAX_PAGE_SIZE);
         return cache.getOrLoad(CacheKeys.productPage(p, s), cacheProps.listTtl(), PAGE,
                 () -> snapshotReadTx.execute(status -> loadPage(p, s)));
+    }
+
+    /**
+     * Live price and stock for a set of products (AI track, Phase 4): what a search index must
+     * never store. Not cached, on purpose: the caller asks because it needs the current values.
+     * Returned in the order asked; unknown and soft-deleted ids are left out. At most 50 ids.
+     * Three statements whatever the count: products, stock, thumbnails.
+     */
+    @Transactional(readOnly = true)
+    public List<ProductSummary> batch(List<Long> ids) {
+        List<Long> wanted = ids.stream().filter(java.util.Objects::nonNull).distinct().toList();
+        if (wanted.isEmpty() || wanted.size() > MAX_BATCH_IDS) {
+            throw new InvalidFieldException("ids", "give 1 to " + MAX_BATCH_IDS + " product ids");
+        }
+        Map<Long, Product> found = products.findAllById(wanted).stream()
+                .filter(p -> !p.isDeleted())
+                .collect(Collectors.toMap(Product::getId, p -> p));
+        Map<Long, Integer> stock = inventory.findAllById(found.keySet()).stream()
+                .collect(Collectors.toMap(Inventory::getProductId, Inventory::getQuantity));
+        Map<Long, String> thumbnails = images.thumbnailUrls(found.keySet());
+        return wanted.stream().filter(found::containsKey)
+                .map(id -> ProductMapper.toSummary(found.get(id), stock.getOrDefault(id, 0), thumbnails.get(id)))
+                .toList();
     }
 
     /** Four statements per page, however many products: page, count, stock, thumbnails. */
@@ -119,10 +146,12 @@ public class ProductService {
      */
     @Transactional
     public ProductDetail create(ProductRequest req) {
-        Product product = products.save(new Product(req.name().trim(), blankToNull(req.description()), req.priceValue()));
+        Product product = products.save(new Product(req.name().trim(), blankToNull(req.description()),
+                blankToNull(req.category()), req.priceValue()));
         inventory.save(new Inventory(product));
         // Run the INSERTs now so the generated timestamps are in the response.
         products.flush();
+        events.upserted(product);
         // A bot may have asked for this id before it existed; drop the cached "not found".
         cache.evictAfterCommit(CacheKeys.product(product.getId()));
         return ProductMapper.toDetail(product, 0, List.of());
@@ -144,8 +173,9 @@ public class ProductService {
             throw productChanged();
         }
         cache.evictAfterCommit(CacheKeys.product(id));
-        product.update(req.name().trim(), blankToNull(req.description()), req.priceValue());
+        product.update(req.name().trim(), blankToNull(req.description()), blankToNull(req.category()), req.priceValue());
         products.flush();
+        events.upserted(product);
         return ProductMapper.toDetail(product, stockOf(id), images.activeImages(id));
     }
 
@@ -154,6 +184,7 @@ public class ProductService {
     public void delete(Long id) {
         requireLive(id).softDelete(Instant.now());
         cache.evictAfterCommit(CacheKeys.product(id));
+        events.deleted(id);
     }
 
     static ConflictException productChanged() {

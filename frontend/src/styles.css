@@ -913,3 +913,6 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .req-timeline .ev-data { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .req-timeline .ev-token .ev-name { color: #8fd3b5; }
 .req-timeline .ev-error .ev-name { color: #ff8a80; }
+
+/* Product category (AI Phase 4 prep): small label above the tile name */
+.tile-cat { display: block; font-size: 0.72rem; font-weight: 700; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); margin-bottom: 2px; }

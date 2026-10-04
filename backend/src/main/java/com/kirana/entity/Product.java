@@ -64,10 +64,19 @@ public class Product {
         update(name, description, price);
     }
 
+    public Product(String name, String description, String category, double price) {
+        update(name, description, category, price);
+    }
+
     public void update(String name, String description, double price) {
         this.name = name;
         this.description = description;
         this.price = price;
+    }
+
+    public void update(String name, String description, String category, double price) {
+        update(name, description, price);
+        this.category = category;
     }
 
     public void softDelete(Instant when) {

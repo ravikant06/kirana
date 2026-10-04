@@ -126,12 +126,15 @@ Dead letters go to `<topic>-dlt`, as in Kirana.
   - `eventName` is `s3:ObjectCreated:Put` (or `:Post` for a browser POST upload) and
     `s3:ObjectRemoved:Delete`. A delete has no `userMetadata` and no `size`.
 
-**P4 — `catalog.v1`: produced by Kirana's outbox** (key = product id), Kirana's envelope:
+**P4 — `catalog.v1`: produced by Kirana's outbox** (key = product id, 3 partitions, created by
+Kirana with `catalog.v1-dlt`), Kirana's envelope, the id field named after the aggregate:
 ```json
-{ "eventId": "uuid", "type": "ProductUpserted", "occurredAt": "2026-10-03T10:15:00Z",
-  "aggregateId": "123",
+{ "eventId": "uuid", "type": "ProductUpserted", "occurredAt": "2026-10-04T10:15:00Z",
+  "productId": 123,
   "data": { "name": "...", "description": "...", "category": "..." } }
 ```
+Sent on every create and update (a price-only edit too: the consumer skips unchanged text by
+hash) and written in the same transaction as the change. Consumer group `kirana-ai-catalog`.
 `ProductDeleted` has the same envelope without `data` (also sent for a soft delete).
 **Never price or stock.**
 

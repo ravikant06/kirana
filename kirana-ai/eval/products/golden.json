@@ -1,0 +1,271 @@
+{
+ "family": "product_search",
+ "description": "Shopper queries and the catalogue products that count as a good answer (a name prefix match). Mostly semantic: diet, use, occasion, cuisine.",
+ "provenance": "hand-written against infra/seed/catalog/products.json; judgement calls, so treat small differences as noise",
+ "cases": [
+  {
+   "id": "p01",
+   "query": "healthy snacks for kids",
+   "good": [
+    "Roasted Makhana",
+    "Baked Ragi Chips",
+    "Peanut Chikki",
+    "Roasted Chana",
+    "Bananas",
+    "Atta Cookies"
+   ]
+  },
+  {
+   "id": "p02",
+   "query": "high protein vegetarian food",
+   "good": [
+    "Paneer (200 g)",
+    "Low-Fat Paneer",
+    "Greek Yogurt",
+    "Roasted Chana",
+    "Toor Dal",
+    "Rajma",
+    "Kabuli Chana",
+    "Moong Dal",
+    "Chana Dal",
+    "Masoor Dal",
+    "Roasted Makhana",
+    "Protein Bar",
+    "Peanut Butter"
+   ]
+  },
+  {
+   "id": "p03",
+   "query": "something for a diabetic breakfast",
+   "good": [
+    "Brown Rice",
+    "Rolled Oats",
+    "Muesli, No Added Sugar",
+    "Sugar-Free Digestive Biscuits",
+    "Ragi Flour",
+    "Multigrain Atta",
+    "Multigrain Bread"
+   ]
+  },
+  {
+   "id": "p04",
+   "query": "cold drink for summer",
+   "good": [
+    "Coconut Water",
+    "Buttermilk",
+    "Sweet Lassi",
+    "Lemon Soda",
+    "Cola",
+    "Rooh Afza",
+    "Mango Juice",
+    "Watermelon"
+   ]
+  },
+  {
+   "id": "p05",
+   "query": "ragi",
+   "good": [
+    "Ragi Flour",
+    "Baked Ragi Chips"
+   ]
+  },
+  {
+   "id": "p06",
+   "query": "gluten free flour",
+   "good": [
+    "Besan",
+    "Ragi Flour"
+   ]
+  },
+  {
+   "id": "p07",
+   "query": "dairy free milk",
+   "good": [
+    "Almond Milk"
+   ]
+  },
+  {
+   "id": "p08",
+   "query": "lactose intolerant milk alternative",
+   "good": [
+    "Almond Milk"
+   ]
+  },
+  {
+   "id": "p09",
+   "query": "ingredients for paneer butter masala",
+   "good": [
+    "Paneer (200 g)",
+    "Butter, Salted",
+    "Fresh Cream",
+    "Kasuri Methi",
+    "Tomatoes",
+    "Garam Masala",
+    "Kitchen King Masala"
+   ]
+  },
+  {
+   "id": "p10",
+   "query": "biryani",
+   "good": [
+    "Basmati Rice",
+    "Biryani Masala"
+   ]
+  },
+  {
+   "id": "p11",
+   "query": "something to make chai",
+   "good": [
+    "Assam Tea",
+    "Ginger",
+    "Green Cardamom",
+    "Toned Milk",
+    "Sugar"
+   ]
+  },
+  {
+   "id": "p12",
+   "query": "quick breakfast",
+   "good": [
+    "Poha",
+    "Corn Flakes",
+    "Masala Oats",
+    "Idli Dosa Batter",
+    "Rolled Oats",
+    "Eggs, Brown",
+    "Eggs, White",
+    "Whole Wheat Bread",
+    "Muesli"
+   ]
+  },
+  {
+   "id": "p13",
+   "query": "fasting food for navratri vrat",
+   "good": [
+    "Rock Salt",
+    "Roasted Makhana"
+   ]
+  },
+  {
+   "id": "p14",
+   "query": "oil for deep frying",
+   "good": [
+    "Groundnut Oil",
+    "Sunflower Oil",
+    "Rice Bran Oil"
+   ]
+  },
+  {
+   "id": "p15",
+   "query": "cooking oil for south indian food",
+   "good": [
+    "Cold-Pressed Coconut Oil",
+    "Sesame Oil"
+   ]
+  },
+  {
+   "id": "p16",
+   "query": "something sweet for a festival",
+   "good": [
+    "Plum Cake",
+    "Ghee, Cow",
+    "Jaggery",
+    "Green Cardamom",
+    "Cashews",
+    "Mixed Dry Fruits",
+    "Dark Chocolate",
+    "Milk Chocolate",
+    "Kulfi"
+   ]
+  },
+  {
+   "id": "p17",
+   "query": "party snacks",
+   "good": [
+    "Aloo Bhujia",
+    "Potato Chips",
+    "Popcorn",
+    "Cashews",
+    "Salted Almonds",
+    "French Fries",
+    "Veg Momos"
+   ]
+  },
+  {
+   "id": "p18",
+   "query": "frozen ready to eat",
+   "good": [
+    "Frozen Malabar Parotta",
+    "Frozen Aloo Tikki",
+    "French Fries",
+    "Veg Momos"
+   ]
+  },
+  {
+   "id": "p19",
+   "query": "acne face wash",
+   "good": [
+    "Neem Face Wash"
+   ]
+  },
+  {
+   "id": "p20",
+   "query": "hair care",
+   "good": [
+    "Herbal Shampoo",
+    "Coconut Hair Oil"
+   ]
+  },
+  {
+   "id": "p21",
+   "query": "cleaning the kitchen sink and utensils",
+   "good": [
+    "Dishwash Liquid",
+    "Scrub Pads"
+   ]
+  },
+  {
+   "id": "p22",
+   "query": "laundry",
+   "good": [
+    "Detergent Powder",
+    "Liquid Detergent"
+   ]
+  },
+  {
+   "id": "p23",
+   "query": "energy snack after the gym",
+   "good": [
+    "Protein Bar",
+    "Bananas",
+    "Salted Almonds",
+    "Peanut Butter",
+    "Roasted Chana",
+    "Peanut Chikki",
+    "Mixed Dry Fruits"
+   ]
+  },
+  {
+   "id": "p24",
+   "query": "vitamin c fruit",
+   "good": [
+    "Lemons",
+    "Pomegranate",
+    "Papaya",
+    "Orange Juice"
+   ]
+  },
+  {
+   "id": "p25",
+   "query": "low calorie snack for weight loss",
+   "good": [
+    "Roasted Makhana",
+    "Baked Ragi Chips",
+    "Roasted Chana",
+    "Cucumber",
+    "Green Tea",
+    "Khakhra"
+   ]
+  }
+ ]
+}

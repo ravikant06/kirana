@@ -68,6 +68,7 @@ export default function ProductDetail({ id, userId, inCart, onBack, goCart, onCa
           </div>
 
           <div className="detail-info">
+            {p.category && <span className="eyebrow">{p.category}</span>}
             <h1>{p.name}</h1>
             <div className="detail-price-row">
               <span className="detail-price">{money(p.price)}</span>

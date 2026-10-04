@@ -372,7 +372,8 @@ export default function App() {
 
       <Inspector open={inspectorOpen} onClose={() => setInspectorOpen(false)} />
 
-      <ChatDock userId={userId} userName={userName} inspectorOpen={inspectorOpen} />
+      <ChatDock userId={userId} userName={userName} inspectorOpen={inspectorOpen}
+                onOpenProduct={(id) => go('product', { id })} onCartChanged={refreshCart} notify={notify} />
 
       {toast && (
         <div className={`toast toast-${toast.kind}`} role="status" key={toast.key}>

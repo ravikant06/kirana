@@ -23,23 +23,36 @@ from collections.abc import Iterator, Sequence
 from dataclasses import dataclass
 
 from kirana_ai import config, embeddings, filters, sparse, trace, vector_store
+from kirana_ai import products as products_mod
 from kirana_ai.llm import Message, TextDelta, ToolResult, ToolSpec, get_adapter
 
 MAX_STEPS = 5  # search rounds per question, before we force an answer
 
 SYSTEM_INSTRUCTION = """You are the shopping assistant of Kirana, an online grocery store.
-You answer questions about the store's policies: returns, refunds, cancellations,
-delivery, payments and freshness.
+You help shoppers find products and answer questions about the store's policies
+(returns, refunds, cancellations, delivery, payments, freshness).
 
-You cannot see the store's documents directly. Use the tools to retrieve them.
+You cannot see the catalogue or the store's documents directly. Use the tools.
 
 Choosing a tool:
-- `search_docs` finds passages that answer a specific question. It returns only
-  its best few matches and can never tell you whether more exist.
-- `list_documents` enumerates the knowledge base exactly. Use it when the
+- `search_products` finds products to buy: recommendations, "do you have…",
+  "something for…", price limits ("under ₹200"). It returns live price and stock.
+- `search_docs` finds passages of the store's policies and FAQ that answer a
+  specific question. It returns only its best few matches.
+- `list_documents` enumerates the policy documents exactly. Use it when the
   question asks what documents or policies exist.
+- A question can need both, e.g. "suggest snacks and tell me the delivery fee".
 
-Guidelines:
+Products:
+- The shopper sees the products you found as cards with photo, price and an
+  add-to-cart button. Do not repeat every price: name the best picks and say
+  briefly why they fit. Only state a price that the tool returned.
+- If the tool says items were dropped for being out of stock or over the price
+  limit, you may say so. Never recommend a product the tool did not return.
+- Set `category` only when the shopper clearly asks for one; set `max_price`
+  only when they give a limit.
+
+Policies:
 - Call a tool at least once before answering a policy question.
 - Do not repeat a search you have already run with the same or near-identical
   arguments. If two searches have not helped, answer with what you have.
@@ -53,16 +66,17 @@ Guidelines:
   Answer only if a passage actually states the answer; otherwise do not guess.
 - If the documents do not contain the answer, say:
   "I couldn't find that in our store policies. Please contact support."
-- Be brief and friendly. End your answer with a "Sources:" line listing the
-  filenames you used."""
+- Be brief and friendly. When you used policy documents, end your answer with a
+  "Sources:" line listing their filenames. Product answers need no Sources line."""
 
 # Declared once, in plain JSON Schema. Each adapter rewraps this in whatever
 # envelope its provider expects — see kirana_ai/llm/*.py.
 SEARCH_DOCS = ToolSpec(
     name="search_docs",
     description=(
-        "Search Kirana's store policies and FAQ. "
-        "Returns the most relevant passages with their source filenames."
+        "Search Kirana's store policies and FAQ (returns, delivery, refunds, payments, "
+        "freshness). Returns the most relevant passages with their source filenames. "
+        "Not for finding products: use search_products for that."
     ),
     parameters={
         "type": "object",
@@ -108,7 +122,35 @@ LIST_DOCUMENTS = ToolSpec(
     },
 )
 
-TOOLS = [SEARCH_DOCS, LIST_DOCUMENTS]
+SEARCH_PRODUCTS = ToolSpec(
+    name="search_products",
+    description=(
+        "Find products in Kirana's catalogue by meaning: what the shopper wants, a use "
+        "(\"for a diabetic breakfast\"), a diet, an occasion. Returns up to 5 in-stock "
+        "products with their live price and stock. Use it for any question about what to buy."
+    ),
+    parameters={
+        "type": "object",
+        "properties": {
+            "query": {
+                "type": "string",
+                "description": "What the shopper is looking for, in a few descriptive words.",
+            },
+            "category": {
+                "type": "string",
+                "enum": config.PRODUCT_CATEGORIES,
+                "description": "Only products in this category. Set it only if the shopper asks for one.",
+            },
+            "max_price": {
+                "type": "number",
+                "description": "Highest price in rupees, if the shopper gives a limit (\"under ₹200\" -> 200).",
+            },
+        },
+        "required": ["query"],
+    },
+)
+
+TOOLS = [SEARCH_PRODUCTS, SEARCH_DOCS, LIST_DOCUMENTS]
 
 
 def _run_list(args: dict, tenant_id: str | None) -> list[dict]:
@@ -171,6 +213,30 @@ def _tool_payload(chunks: list[dict], dropped: int = 0) -> dict:
         ],
         "count": len(chunks),
     }
+
+
+def _run_products(args: dict) -> products_mod.ProductResults:
+    if trace.is_on():
+        trace.section("TOOL search_products")
+        trace.kv("model arguments", trace.compact_json(args))
+    max_price = args.get("max_price")
+    return products_mod.search(args.get("query", ""), category=args.get("category") or None,
+                               max_price=float(max_price) if max_price else None)
+
+
+def _products_payload(r: products_mod.ProductResults) -> dict:
+    """What the model sees: live facts for the products the UI will show as cards."""
+    payload = {
+        "products": [{k: p[k] for k in ("product_id", "name", "category", "price", "stock", "description")}
+                     for p in r.products],
+        "count": len(r.products),
+    }
+    dropped = {k: v for k, v in (("out_of_stock", r.out_of_stock), ("over_price", r.over_price)) if v}
+    if dropped:
+        payload["dropped"] = dropped
+    if not r.products:
+        payload["note"] = "No matching in-stock product. Say so; do not suggest products from memory."
+    return payload
 
 
 def _list_payload(documents: list[dict]) -> dict:
@@ -284,8 +350,14 @@ def answer_stream(
             where = {k: v for k, v in call.arguments.items() if k != "query" and v}
             yield AgentEvent("status", {"tool": call.name, "query": call.arguments.get("query", ""),
                                         "where": where})
+            product_ids: list[int] = []
             try:
-                if call.name == LIST_DOCUMENTS.name:
+                if call.name == SEARCH_PRODUCTS.name:
+                    found = _run_products(call.arguments)
+                    payload = _products_payload(found)
+                    count = len(found.products)
+                    product_ids = [p["product_id"] for p in found.products]
+                elif call.name == LIST_DOCUMENTS.name:
                     documents = _run_list(call.arguments, tenant_id)
                     payload = _list_payload(documents)
                     count = len(documents)
@@ -305,6 +377,11 @@ def answer_stream(
                     "count": count}
             if call.name == SEARCH_DOCS.name and dropped:
                 step["below_floor"] = dropped
+            if product_ids:
+                # Ids only: the UI fetches price, stock and photo from Kirana itself, so a
+                # price on screen can never come from the model (or from a stale index).
+                step["product_ids"] = product_ids
+                yield AgentEvent("products", {"product_ids": product_ids})
             steps.append(step)
             yield AgentEvent("step", step)
             messages.append(

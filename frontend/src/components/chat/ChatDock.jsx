@@ -2,6 +2,7 @@ import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react
 import { api, streamChat } from '../../api.js'
 import Problem from '../Problem.jsx'
 import Markdown, { withoutSourcesLine } from './Markdown.jsx'
+import ProductCards from './ProductCards.jsx'
 import { Back, Chevron, Close, Doc, Expand, History, Plus, Search, Send, Shrink, Sparkle, Trash } from './icons.jsx'
 import './chat.css'
 
@@ -50,9 +51,12 @@ function ago(iso) {
 }
 
 // API message -> what the UI renders.
-const fromApi = (m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations || [], steps: m.steps || [] })
+// Product cards of a saved answer come from its steps: search_products recorded the ids it showed.
+const productIdsOf = (steps) => [...new Set((steps || []).flatMap((s) => s.product_ids || []))]
+const fromApi = (m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations || [],
+  steps: m.steps || [], productIds: productIdsOf(m.steps) })
 
-export default function ChatDock({ userId, userName, inspectorOpen }) {
+export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduct, onCartChanged, notify }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
   const [view, setView] = useState('chat') // 'chat' | 'threads'
@@ -122,7 +126,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
     setDraft('')
     if (input.current) input.current.style.height = 'auto'   // shrink back after a long draft
     setMessages((ms) => [...ms, { id: `local-${Date.now()}`, role: 'user', content: text, local: true }])
-    setPending({ startedAt: performance.now(), status: null, text: '' })
+    setPending({ startedAt: performance.now(), status: null, text: '', productIds: [] })
     const mine = epoch.current
     const citations = []   // arrive as their own events, just before `done`
     let partial = ''       // the answer so far, kept if the shopper presses Stop
@@ -137,6 +141,9 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
       } else if (kind === 'token') {
         partial += data.text
         setPending((p) => p && { ...p, text: p.text + data.text })
+      } else if (kind === 'products') {
+        // Ids only: the cards load price, stock and photo from Kirana themselves.
+        setPending((p) => p && { ...p, productIds: [...new Set([...p.productIds, ...data.product_ids])] })
       } else if (kind === 'citation') {
         citations.push(data)
       } else if (kind === 'reset') {
@@ -150,7 +157,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
       if (mine !== epoch.current) return
       setMessages((ms) => [...ms, {
         id: r.message_id, role: 'assistant', content: r.reply,
-        citations, steps: r.steps, usage: r.usage, fresh: true,
+        citations, steps: r.steps, usage: r.usage, fresh: true, productIds: productIdsOf(r.steps),
       }])
       setThreads(null) // the list's order and titles changed
     } catch (error) {
@@ -222,6 +229,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
     }
   }
 
+  const cardProps = { onOpen: (id) => { setExpanded(false); onOpenProduct?.(id) }, onCartChanged, notify }
   const firstName = (userName || '').split(' ')[0]
   const empty = messages.length === 0 && !pending && !failure
 
@@ -294,10 +302,10 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
               <ol className="chat-log" aria-live="polite">
                 {messages.map((m) => (m.role === 'user'
                   ? <li key={m.id} className="msg msg-user"><div className="bubble">{m.content}</div></li>
-                  : <AssistantMessage key={m.id} m={m} />))}
+                  : <AssistantMessage key={m.id} m={m} cards={cardProps} />))}
                 {pending && (pending.text
-                  ? <LiveAnswer text={pending.text} />
-                  : <Thinking startedAt={pending.startedAt} status={pending.status} />)}
+                  ? <LiveAnswer text={pending.text} productIds={pending.productIds} cards={cardProps} />
+                  : <Thinking startedAt={pending.startedAt} status={pending.status} productIds={pending.productIds} cards={cardProps} />)}
                 {failure && (
                   <li className="msg msg-assistant">
                     <div className="msg-failure">
@@ -352,7 +360,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
   )
 }
 
-function AssistantMessage({ m }) {
+function AssistantMessage({ m, cards }) {
   const [showSteps, setShowSteps] = useState(false)
   const u = m.usage
   return (
@@ -360,6 +368,7 @@ function AssistantMessage({ m }) {
       <span className="msg-avatar" aria-hidden><Sparkle width={14} height={14} /></span>
       <div className="msg-card">
         {m.content ? <Markdown text={withoutSourcesLine(m.content)} /> : <p className="msg-stopped-empty">No answer yet.</p>}
+        {m.productIds?.length > 0 && <ProductCards ids={m.productIds} {...cards} />}
         {m.stopped && <div className="msg-stopped">Stopped · not saved</div>}
 
         {m.citations?.length > 0 && (
@@ -417,19 +426,28 @@ function AssistantMessage({ m }) {
 }
 
 // The answer as it streams in: same card as a finished answer, plus a blinking caret.
-function LiveAnswer({ text }) {
+function LiveAnswer({ text, productIds, cards }) {
   return (
     <li className="msg msg-assistant">
       <span className="msg-avatar is-busy" aria-hidden><Sparkle width={14} height={14} /></span>
       <div className="msg-card is-streaming">
         <Markdown text={withoutSourcesLine(text)} />
         <span className="stream-caret" aria-hidden />
+        {productIds?.length > 0 && <ProductCards ids={productIds} {...cards} />}
       </div>
     </li>
   )
 }
 
-function Thinking({ startedAt, status }) {
+function searchTarget(status) {
+  if (status.tool === 'search_products') {
+    const parts = [status.where?.category, status.where?.max_price && `under ₹${status.where.max_price}`].filter(Boolean)
+    return `products${parts.length ? ` (${parts.join(', ')})` : ''}`
+  }
+  return status.where?.doc_type ? `${status.where.doc_type} documents` : 'store policies'
+}
+
+function Thinking({ startedAt, status, productIds, cards }) {
   const [now, setNow] = useState(performance.now())
   useEffect(() => {
     const t = setInterval(() => setNow(performance.now()), 100)
@@ -438,14 +456,18 @@ function Thinking({ startedAt, status }) {
   return (
     <li className="msg msg-assistant">
       <span className="msg-avatar is-busy" aria-hidden><Sparkle width={14} height={14} /></span>
-      <div className="msg-card msg-thinking" role="status">
-        <span className="dots" aria-hidden><i /><i /><i /></span>
-        <span className="thinking-text">
-          {status
-            ? <>Searching {status.where?.doc_type ? `${status.where.doc_type} documents` : 'store policies'}{status.query ? <>: <em>“{status.query}”</em></> : '…'}</>
-            : 'Thinking…'}
-        </span>
-        <span className="thinking-clock">{((now - startedAt) / 1000).toFixed(1)} s</span>
+      <div className="msg-stack">
+        <div className="msg-card msg-thinking" role="status">
+          <span className="dots" aria-hidden><i /><i /><i /></span>
+          <span className="thinking-text">
+            {status
+              ? <>Searching {searchTarget(status)}{status.query ? <>: <em>“{status.query}”</em></> : '…'}</>
+              : 'Thinking…'}
+          </span>
+          <span className="thinking-clock">{((now - startedAt) / 1000).toFixed(1)} s</span>
+        </div>
+        {/* products found before the answer text starts: show them right away */}
+        {productIds?.length > 0 && <div className="msg-card"><ProductCards ids={productIds} {...cards} /></div>}
       </div>
     </li>
   )

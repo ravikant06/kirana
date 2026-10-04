@@ -429,6 +429,29 @@ abstention, precision/recall trade-off, LLM-as-judge and its calibration.
 
 ### Phase 4: Product search: catalog RAG + live data (2 sessions)
 
+Progress: ✅ M1 Kirana: `category` in the API, product events through the outbox to `catalog.v1`,
+`GET /products/batch` · ✅ M2 `kirana_products` index: snapshot (`cli index-products`) + events
+(`python -m kirana_ai.catalog`) · ✅ M3 `search_products` (hybrid → rerank (off, AD22) → live hydration →
+stock and price filters) · ✅ M4 product cards in chat with Add to cart · ✅ M5 evals
+(`eval.run_products`, `eval.run_routing`).
+
+**Findings (Phase 4):**
+- **The reranker bought nothing measurable here.** 25 queries: hybrid hit@1 92% / recall@5 96% /
+  MRR 0.93; + MiniLM reranker 92% / 100% / 0.95 (one query). With 150 well-described products,
+  hybrid retrieval already ranks well; rerankers pay off on large, noisy catalogues. Its taste
+  also differs: for "healthy snacks for kids" it put Milk Chocolate first on the word "kids".
+- **Model text vs cards:** the model recommended the healthy three; the cards showed all five in
+  ranker order, chocolate first. The UI shows what the tool returned, not what the model chose.
+- **Events give changes, a snapshot gives the start:** the 150 seeded products predate the events,
+  so `index-products` bootstraps; afterwards edits arrive in ~1 s. A price-only edit re-indexes in
+  61 ms with no embedding call (text hash).
+- **Latency:** retrieval ~600 ms (the query-embedding API call), rerank 20-30 ms, live hydration ~10 ms.
+- Tool routing: 16/16 (products, policies, both, none).
+
+**Prep done (before M1):** realistic catalog of 150 products across 12 categories (Wikimedia
+Commons photos, credited in `infra/seed/catalog/credits.json`), `category` in Kirana's product
+API, test data reset. Backup of the old data: `infra/data/backups/kirana-before-cleanup.dump`.
+
 **Build**
 - A `kirana_products` collection: embed `name + description` (+ category if AD6 = yes). No price, no stock.
 - `make index-products` (full rebuild from Kirana's paged `GET /products`).
@@ -436,7 +459,7 @@ abstention, precision/recall trade-off, LLM-as-judge and its calibration.
   (`ProductUpserted`, `ProductDeleted`); re-embed only if the text hash changed. Same
   consumer code, same failure handling as Phase 2.
 - Tool `search_products(query, max_price?)`: hybrid search → top 30 → **rerank** (cross-encoder,
-  G4) → hydrate live from Kirana → drop out-of-stock → apply price filter → top 5.
+  G4; built, off by default per AD22) → hydrate live from Kirana → drop out-of-stock → apply price filter → top 5.
 - SSE `products` event with ids only. The UI renders the cards from Kirana.
 - Product search eval: 30 queries with the expected products. Measure dense → hybrid → + reranker,
   keeping a predicted vs actual table.
@@ -662,9 +685,9 @@ RAG and tools plateau on evals, and with enough labelled data".
 |---|---|---|---|
 | 0 ✅ | Qdrant container (port 6335) | — | — |
 | 1 ✅ | `ai` schema + `kirana_ai` role | `/ai` Vite proxy; chat panel; agent steps in the Requests panel | — |
-| 2 | MinIO `notify_kafka` target (env vars, `queue_dir`) | Knowledge base tab in Manage; page on citations | — |
-| 3 | — | SSE rendering, tool status, retry | — |
-| 4 | — | Product cards from ids in chat | `GET /products/batch`; product events through the **outbox** to `catalog.v1`; *(opt)* category |
+| 2 ✅ | MinIO `notify_kafka` target (env vars, `queue_dir`) | Knowledge base tab in Manage; page on citations | — |
+| 3 ✅ | — | SSE rendering, tool status, retry | — |
+| 4 ✅ | — | Product cards from ids in chat | `GET /products/batch`; product events through the **outbox** to `catalog.v1`; *(opt)* category |
 | 5 | — | Sign-in; token on `/api` and `/ai` | **JWT login + JWKS**; user from token; 404 on foreign orders; dev flag for `X-User-Id` |
 | 6 | — | Approval card | nothing (cancel + idempotency keys exist since Stages 5 and 7) |
 | 7–8 | — | *(opt)* memories view | — |
@@ -690,7 +713,8 @@ Open (proposed default first):
 | ~~AD3~~ | Where the ingest queue lives | **Closed:** Kafka (`kb.documents.v1`) replaces the Redis queue | — |
 | ~~AD4~~ | What triggers ingestion | **Settled:** MinIO bucket notification → Kafka, carrying our own `x-amz-meta-*` metadata (fork support checked) | — |
 | ~~AD5~~ | Who owns KB documents | **Settled:** the AI service (upload policy, `ai.documents`, admin API) | — |
-| AD6 | Add `category` to products | Yes, in Phase 4 (small V4 migration) | Price filter only |
+| ~~AD6~~ | Add `category` to products | **Settled:** the column existed since V1 but was never in the API; now accepted on create/update and returned (free text, the admin form offers 12 fixed categories). No migration needed | — |
+| ~~AD21~~ | What the product index holds | **Settled:** the 100k generated test products, 1M orders and 50k users were deleted (`infra/seed/reset-demo-data.sh`); a realistic 150-product catalog with photos was loaded through Kirana's API (`infra/seed/catalog/seed_catalog.py`); 20 shoppers with Indian names | — |
 | AD7 | Login style in Phase 5 | **Dev login** (pick a user, get a real RS256 JWT); passwords later | Email + password (bcrypt) from the start |
 | ~~AD8~~ | Idempotency in Phase 6 | **Closed:** Kirana Stage 7 built it; the AI sends `Idempotency-Key` | — |
 | ~~AD9~~ | Mark AI-track Kirana work in `CLAUDE.md` | **Settled:** yes, an "AI track" section in the root `CLAUDE.md` | — |
@@ -704,6 +728,7 @@ Open (proposed default first):
 | ~~AD18~~ | How "nothing relevant" is decided | **Settled:** a floor on each chunk's dense cosine similarity (RRF scores are rank-based, so a threshold on them means nothing), tuned on eval data | — |
 | ~~AD19~~ | Which model judges answers | **Settled for now:** the same Gemini model, checked against Ravi's hand grades; a different family once a second key exists (self-preference bias) | — |
 | AD20 | Gemini thinking level for chat | **Open:** keep the default until `run_answers` compares `minimal` / `low` against it on quality, latency and cost | — |
+| ~~AD22~~ | Reranker | **Settled:** off by default (`RERANK_ENABLED=false`). The local MiniLM cross-encoder stays in the code and in `eval.run_products`; on 150 products it gained nothing measurable (hit@1 92% either way) and its order disagreed with the model's picks. Revisit if the catalogue grows large or noisy | — |
 | AD10 | Default LLM | Gemini (as now) for generation and embeddings; Claude as the fallback in Phase 11 | Claude or OpenAI primary |
 
 ---

@@ -16,10 +16,17 @@ public record ProductRequest(
         @NotBlank @Size(max = 200) String name,
         @Size(max = 5000) String description,
         @NotNull @ValidPrice String price,
-        Long version) {
+        Long version,
+        // Optional, free text (the admin form offers a fixed list). Used by the AI track's
+        // product search (Phase 4) as a filter: "only snacks".
+        @Size(max = 100) String category) {
 
     public ProductRequest(String name, String description, String price) {
-        this(name, description, price, null);
+        this(name, description, price, null, null);
+    }
+
+    public ProductRequest(String name, String description, String price, Long version) {
+        this(name, description, price, version, null);
     }
 
     /** Only call after validation. */

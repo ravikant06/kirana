@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from sqlalchemy import select
 
 from kirana_ai import config, kb, loader, storage, vector_store, worker
+from kirana_ai.consumer import consumer_config
 from kirana_ai.db import session_scope
 from kirana_ai.db.models import DocStatus, DocType, Document
 
@@ -61,7 +62,7 @@ def redrive(quiet_seconds: float = 5.0) -> int:
     """Copy every waiting dead letter back to its original topic. Returns how many."""
     from confluent_kafka import Consumer
 
-    consumer = Consumer(worker.consumer_config(group="kirana-ai-redrive"))
+    consumer = Consumer(consumer_config(group="kirana-ai-redrive"))
     producer = worker.dlt_producer()
     consumer.subscribe([config.KB_DLT])
     moved = 0

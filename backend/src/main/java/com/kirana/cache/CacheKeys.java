@@ -1,7 +1,7 @@
 package com.kirana.cache;
 
 /**
- * Every Redis key in one place. The "v1" is the shape version: change what a key holds and
+ * Every Redis key in one place. The "v1"/"v2" is the shape version: change what a key holds and
  * bump it, so a deploy never reads entries written by the old code.
  */
 public final class CacheKeys {
@@ -10,11 +10,11 @@ public final class CacheKeys {
     }
 
     public static String product(Long id) {
-        return "product:v1:" + id;
+        return "product:v2:" + id;   // v2 (AI Phase 4): snapshot gained category
     }
 
     public static String productPage(int page, int size) {
-        return "products:page:v1:" + page + ":" + size;
+        return "products:page:v2:" + page + ":" + size;
     }
 
     /** Set of product IDs with an armed flash sale, so active sales can be listed without KEYS. */

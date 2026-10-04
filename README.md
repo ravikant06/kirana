@@ -88,6 +88,16 @@ browser → Vite proxy → backend.
 
 ## Daily use
 
+Status, start, stop and restart for every server (Docker containers, the backend, the frontend,
+the AI service and its workers), with health checks:
+
+    python3 infra/infra.py status               # what is running, healthy, on which port
+    python3 infra/infra.py restart kirana-ai    # or: kafka, backend, kirana, mocks, ...
+    python3 infra/infra.py restart-all          # rebuild every image, restart everything
+    python3 infra/infra.py logs backend         # servers started by infra.py log to infra/data/logs/
+
+Every command, with examples, is listed at the top of `infra/infra.py`.
+
     cd infra && docker compose up -d      # dependencies
     cd backend && mvn spring-boot:run     # backend
     cd frontend && npm run dev            # frontend

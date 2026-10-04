@@ -50,6 +50,25 @@ KB_TOPIC = os.getenv("KB_TOPIC", "kb.documents.v1")
 KB_DLT = KB_TOPIC + "-dlt"                 # Kirana's convention: <topic>-dlt
 KAFKA_PARTITIONS = int(os.getenv("KAFKA_PARTITIONS", "3"))
 
+# --- Kirana's REST API (the AI service reads Kirana data only through it) ---
+KIRANA_API_URL = os.getenv("KIRANA_API_URL", "http://localhost:8080")
+KIRANA_TIMEOUT_SECONDS = float(os.getenv("KIRANA_TIMEOUT_SECONDS", "5"))
+
+# --- Product search (Phase 4) ---
+PRODUCTS_COLLECTION = os.getenv("PRODUCTS_COLLECTION", "kirana_products")
+CATALOG_TOPIC = os.getenv("CATALOG_TOPIC", "catalog.v1")   # produced by Kirana's outbox
+CATALOG_DLT = CATALOG_TOPIC + "-dlt"
+# Cross-encoder reranker, run locally (fastembed, ONNX). Off by default (AD22): on 150 products it
+# gained nothing measurable over hybrid order and disagreed with the model's picks.
+# `eval.run_products` still compares both.
+RERANK_ENABLED = os.getenv("RERANK_ENABLED", "false").lower() in {"1", "true", "yes"}
+RERANK_MODEL = os.getenv("RERANK_MODEL", "Xenova/ms-marco-MiniLM-L-6-v2")
+# The categories Kirana's admin form offers (frontend/src/api.js CATEGORIES): the tool's enum.
+PRODUCT_CATEGORIES = [
+    "Fruits & Vegetables", "Dairy & Eggs", "Bakery", "Staples", "Oils & Ghee", "Spices & Masalas",
+    "Snacks", "Beverages", "Breakfast & Cereals", "Frozen", "Personal Care", "Household",
+]
+
 # --- MinIO (knowledge-base documents) ---
 MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
 MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")

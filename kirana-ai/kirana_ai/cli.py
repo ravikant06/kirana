@@ -12,11 +12,14 @@ Command line for the AI service: try the agent, inspect Kafka, operate the knowl
     python -m kirana_ai.cli redrive             # replay the dead-letter topic
     python -m kirana_ai.cli reindex [--dry-run] # repair drift between MinIO, ai.documents and Qdrant
     python -m kirana_ai.worker                  # the ingest worker (Kafka consumer)
+    python -m kirana_ai.cli index-products      # (re)build the product index from Kirana's API
+    python -m kirana_ai.catalog                 # the catalog worker: catalog.v1 -> product index
 
 `ask` is stateless and touches no database. `chat` is the real turn: history,
 thread and messages in Postgres, every LLM call recorded in ai.llm_calls.
 """
 import argparse
+import time
 import json
 import uuid as uuid_mod
 
@@ -119,6 +122,7 @@ def _main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
+    sub.add_parser("index-products", help="snapshot: index every live product from Kirana's API")
     sub.add_parser("seed-kb", help="upload kb/seed/* into MinIO; the worker indexes them")
     sub.add_parser("redrive", help=f"replay {config.KB_DLT} onto {config.KB_TOPIC}")
     p_reindex = sub.add_parser("reindex", help="make Qdrant and ai.documents match the files in MinIO")
@@ -149,6 +153,12 @@ def _main() -> None:
 
     if args.command == "threads":
         _threads(args.user)
+        return
+    if args.command == "index-products":
+        from kirana_ai import catalog
+        started = time.perf_counter()
+        counts = catalog.rebuild()
+        print(f"{counts} in {time.perf_counter() - started:.1f} s -> {config.PRODUCTS_COLLECTION}")
         return
     if args.command == "seed-kb":
         from kirana_ai import reconcile

@@ -50,6 +50,17 @@ public class KafkaConfig {
     }
 
     @Bean
+    NewTopic catalogTopic(@Value("${kirana.kafka.topics.partitions:3}") int partitions) {
+        return TopicBuilder.name(Topics.CATALOG).partitions(partitions).replicas(1).build();
+    }
+
+    /** Written by catalog.v1's consumer (kirana-ai), but created here, next to its topic. */
+    @Bean
+    NewTopic catalogDeadLetterTopic(@Value("${kirana.kafka.topics.partitions:3}") int partitions) {
+        return TopicBuilder.name(Topics.CATALOG_DLT).partitions(partitions).replicas(1).build();
+    }
+
+    @Bean
     NewTopic ordersDeadLetterTopic(@Value("${kirana.kafka.topics.partitions:3}") int partitions) {
         return TopicBuilder.name(Topics.ORDERS_DLT).partitions(partitions).replicas(1).build();
     }
