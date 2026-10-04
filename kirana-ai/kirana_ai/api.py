@@ -15,14 +15,18 @@ once. Streaming in Phase 3 revisits this.
 Errors are RFC 7807 ProblemDetail, the same shape Kirana's backend returns, so
 the frontend's Problem component shows either service's errors unchanged.
 """
+import json
 import logging
 import uuid
+from collections.abc import AsyncIterator, Iterator
+
+import anyio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
 from fastapi import FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -74,7 +78,13 @@ OptionalUserId = Annotated[int | None, Header(alias="X-User-Id", ge=1)]
 # --- routes ---------------------------------------------------------------------
 
 @app.post("/v1/chat", response_model=ChatReply)
-def post_chat(body: ChatRequest, user_id: UserId, response: Response) -> ChatReply:
+def post_chat(body: ChatRequest, user_id: UserId, request: Request, response: Response):
+    if "text/event-stream" in request.headers.get("accept", ""):
+        # Ownership is checked here, before the stream starts: once it has, the 200 is sent
+        # and a 404 can no longer be returned.
+        turn = chat.prepare(user_id, body.message, thread_id=body.thread_id)
+        return ClosingStreamingResponse(_closing(_sse(turn, request.url.path)), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
     result = chat.send(user_id, body.message, thread_id=body.thread_id)
     usage = Usage(**result.usage)
     # Mirrors X-Query-Count: the Requests panel shows what each call cost.
@@ -91,6 +101,77 @@ def post_chat(body: ChatRequest, user_id: UserId, response: Response) -> ChatRep
         steps=[Step(**s) for s in result.steps],
         usage=usage,
     )
+
+
+class ClosingStreamingResponse(StreamingResponse):
+    """
+    A StreamingResponse that always closes its body iterator, however the stream ends.
+
+    Found by experiment (Phase 3): with uvicorn (ASGI 2.4), Starlette does not listen for
+    disconnects; it notices when the next send() fails, and lets that error escape its
+    `async for` *without closing the iterator*. Our generators then stay suspended mid-turn:
+    the LLM call in flight is never recorded, and the provider's HTTP stream stays open,
+    until garbage collection, which the exception's reference cycles can delay indefinitely.
+    """
+    async def stream_response(self, send) -> None:
+        try:
+            await super().stream_response(send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await self.body_iterator.aclose()
+
+
+async def _closing(frames: Iterator[str]) -> AsyncIterator[str]:
+    """
+    Stream a sync generator from worker threads (AD16), and close it when we stop.
+
+    Closing raises GeneratorExit down the chain, each layer closing the next explicitly:
+    _sse -> chat.run -> agent -> llm.stream, which records the abandoned call -> the
+    provider's stream, which releases its HTTP connection.
+    """
+    done = object()
+    try:
+        while (frame := await anyio.to_thread.run_sync(next, frames, done)) is not done:
+            yield frame
+    finally:
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(frames.close)
+
+
+def _sse(turn: chat.PreparedTurn, path: str) -> Iterator[str]:
+    """
+    One chat turn as Server-Sent Events: start, status/step/token/reset as they happen,
+    then citation(s) and done. A failure mid-stream becomes an `error` event carrying a
+    ProblemDetail, because the HTTP status was already sent with the first byte.
+
+    A plain (sync) generator: FastAPI iterates it in its worker-thread pool (AD16).
+    """
+    def frame(event: str, data) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, default=str, ensure_ascii=False)}\n\n"
+
+    yield frame("start", {"thread_id": str(turn.thread_id)})
+    events = chat.run(turn)
+    try:
+        for event in events:
+            if event.kind != "done":
+                yield frame(event.kind, event.data)
+                continue
+            r = event.data
+            for c in r.citations:
+                yield frame("citation", Citation(**c).model_dump())
+            yield frame("done", {"thread_id": str(r.thread_id), "message_id": str(r.message_id),
+                                 "reply": r.reply, "steps": r.steps,
+                                 "usage": Usage(**r.usage).model_dump(mode="json")})
+    except (LLMError, UpstreamUnavailable, OperationalError, PoolTimeout) as exc:
+        log.warning("Chat stream failed: %s", exc)
+        yield frame("error", problem_body(path, 503, "Assistant unavailable",
+                                          "The assistant could not answer right now. Please try again in a moment.",
+                                          code="UPSTREAM_UNAVAILABLE"))
+    except Exception:
+        log.exception("Chat stream failed unexpectedly")
+        yield frame("error", problem_body(path, 500, "Internal error", "Something went wrong on our side"))
+    finally:
+        events.close()      # explicitly: never leave closing to the garbage collector
 
 
 @app.get("/v1/threads", response_model=list[ThreadSummary])
@@ -159,9 +240,13 @@ def _message(row: MessageRow) -> MessageOut:
 
 # --- errors: everything becomes a ProblemDetail -----------------------------------
 
+def problem_body(path: str, status: int, title: str, detail: str, **extra) -> dict:
+    return {"type": "about:blank", "title": title, "status": status, "detail": detail,
+            "instance": path, **extra}
+
+
 def problem(request: Request, status: int, title: str, detail: str, **extra) -> JSONResponse:
-    body = {"type": "about:blank", "title": title, "status": status, "detail": detail,
-            "instance": request.url.path, **extra}
+    body = problem_body(request.url.path, status, title, detail, **extra)
     return JSONResponse(body, status_code=status, media_type="application/problem+json")
 
 

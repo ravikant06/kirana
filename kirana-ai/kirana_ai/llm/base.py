@@ -15,11 +15,11 @@ import json
 import logging
 import time
 from abc import ABC, abstractmethod
-from collections.abc import Callable, Sequence
+from collections.abc import Callable, Iterator, Sequence
 from typing import ClassVar
 
 from kirana_ai import trace
-from kirana_ai.llm.types import CallRecord, LLMError, LLMResponse, Message, Role, ToolSpec
+from kirana_ai.llm.types import CallRecord, LLMError, LLMResponse, Message, Role, TextDelta, ToolSpec
 
 log = logging.getLogger(__name__)
 
@@ -79,6 +79,65 @@ class LLMAdapter(ABC):
         self._notify(CallRecord(provider=self.provider, model=self.model, ok=True,
                                 latency_ms=_ms_since(start), usage=reply.usage))
         return reply
+
+    def stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> Iterator[TextDelta | LLMResponse]:
+        """
+        Like complete(), but yields the answer's text as it is generated.
+
+        Yields any number of TextDelta, then exactly one LLMResponse with the full
+        text, any tool calls and the usage. Same Template Method: timing and the
+        call record live here, translation lives in each adapter's _stream().
+
+        If the consumer stops early (the browser closed the stream), the call is
+        recorded as abandoned: the provider may already have billed what it generated.
+        """
+        start = time.perf_counter()
+        final: LLMResponse | None = None
+        if trace.is_on():
+            trace.section(f"LLM STREAM -> {self.provider} / {self.model}")
+            trace.kv("tools offered", ", ".join(t.name for t in tools) or "(none)")
+        try:
+            for item in self._stream(messages, tools=tools, system=system):
+                if isinstance(item, LLMResponse):
+                    final = item
+                yield item
+        except LLMError as exc:
+            self._notify(CallRecord(provider=self.provider, model=self.model, ok=False,
+                                    latency_ms=_ms_since(start), error=str(exc)))
+            raise
+        except GeneratorExit:
+            self._notify(CallRecord(provider=self.provider, model=self.model, ok=False,
+                                    latency_ms=_ms_since(start),
+                                    usage=final.usage if final else None,
+                                    error="stream abandoned by the client"))
+            raise
+        if trace.is_on() and final is not None:
+            trace.result(f"{len(final.tool_calls)} tool call(s)" if final.wants_tools else "text answer",
+                         _ms_since(start) / 1000)
+        self._notify(CallRecord(provider=self.provider, model=self.model, ok=True,
+                                latency_ms=_ms_since(start), usage=final.usage if final else None))
+
+    def _stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> Iterator[TextDelta | LLMResponse]:
+        """
+        Default for adapters without native streaming (and test fakes): one complete
+        call, delivered as a single delta. Providers override it to stream for real.
+        """
+        reply = self._complete(messages, tools=tools, system=system)
+        if reply.text:
+            yield TextDelta(reply.text)
+        yield reply
 
     def _notify(self, record: CallRecord) -> None:
         # Observability must never break the thing it observes: a listener that

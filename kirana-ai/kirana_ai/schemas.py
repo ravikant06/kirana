@@ -38,6 +38,7 @@ class Step(BaseModel):
     query: str = ""
     where: dict[str, Any] = Field(default_factory=dict)   # filters the model chose
     count: int                                             # hits (or documents) returned
+    below_floor: int = 0                                   # hits dropped by the relevance floor
 
 
 class Usage(BaseModel):
@@ -45,6 +46,10 @@ class Usage(BaseModel):
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    # Streaming only: time from the start of the agent to the first answer token.
+    first_token_ms: int | None = None
+    # Sources named in the reply that were not retrieved this turn: never shown as citations.
+    unverified_sources: list[str] = Field(default_factory=list)
     # A decimal string ("0.004170"), never a float: money is exact. null = unknown price.
     cost_usd: Decimal | None
 

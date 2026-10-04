@@ -103,3 +103,30 @@ def test_history_is_sent_before_the_new_question(monkeypatch):
     sent = fake.calls[0]
     assert [m.text for m in sent] == ["Can I return opened rice?", "Only if it is defective.",
                                       "and if it's sealed?"]
+
+
+def test_chunks_below_the_relevance_floor_never_reach_the_model(monkeypatch):
+    from kirana_ai import config
+    monkeypatch.setattr(config, "RELEVANCE_FLOOR", 0.6)
+    close = {**_chunk(1), "similarity": 0.71}
+    far = {**_chunk(2), "chunk_id": "c2", "similarity": 0.52}
+    monkeypatch.setattr(agent, "_run_search", lambda args, tenant, k: [close, far])
+    fake = FakeAdapter([_search("rice"), LLMResponse(text="Within 7 days.")])
+
+    chunks, _, steps = agent.answer("?", llm=fake)
+
+    assert [c["chunk_id"] for c in chunks] == ["c1"]
+    assert steps[0]["count"] == 1 and steps[0]["below_floor"] == 1
+    assert fake.calls[1][2].tool_result.content["count"] == 1
+
+
+def test_nothing_relevant_tells_the_model_not_to_guess(monkeypatch):
+    from kirana_ai import config
+    monkeypatch.setattr(config, "RELEVANCE_FLOOR", 0.6)
+    monkeypatch.setattr(agent, "_run_search", lambda args, tenant, k: [{**_chunk(), "similarity": 0.4}])
+    fake = FakeAdapter([_search("iphone"), LLMResponse(text="I couldn't find that.")])
+
+    agent.answer("Do you sell iPhones?", llm=fake)
+
+    payload = fake.calls[1][2].tool_result.content
+    assert payload["count"] == 0 and "general knowledge" in payload["note"]

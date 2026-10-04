@@ -17,8 +17,11 @@ whole LLM wait, so a handful of slow chats could exhaust the pool (Kirana's
 Stage 2 lesson). The price: if step 2 fails, the shopper's message is saved
 without an answer. History building skips such messages.
 """
+import logging
+import re
+import time
 import uuid
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from decimal import Decimal
 
@@ -34,6 +37,7 @@ from kirana_ai.llm import LLMAdapter, Message, get_adapter
 from kirana_ai.usage import CallRecorder
 
 TITLE_LENGTH = 80
+log = logging.getLogger("kirana_ai.chat")
 
 
 class ThreadNotFound(Exception):
@@ -51,13 +55,44 @@ class TurnResult:
     usage: dict = field(default_factory=dict)
 
 
+@dataclass(frozen=True)
+class PreparedTurn:
+    """Step 1 done: the thread exists and is the shopper's, the question is saved."""
+    thread_id: uuid.UUID
+    text: str
+    history: list[Message]
+
+
+@dataclass(frozen=True)
+class TurnEvent:
+    """
+    Progress of a running turn: the agent's events (status, step, token, reset),
+    then exactly one `done` whose data is the TurnResult.
+    """
+    kind: str
+    data: object
+
+
 def send(
     user_id: int,
     text: str,
     thread_id: uuid.UUID | None = None,
     llm: LLMAdapter | None = None,
 ) -> TurnResult:
-    # --- 1. short transaction: thread, ownership, history, the shopper's message
+    """One whole turn, returned at the end (the JSON API, the CLI, the tests)."""
+    for event in run(prepare(user_id, text, thread_id), llm):
+        if event.kind == "done":
+            return event.data
+    raise RuntimeError("turn ended without a result")
+
+
+def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None) -> PreparedTurn:
+    """
+    Step 1, a short transaction: thread, ownership, history, the shopper's message.
+
+    Separate from run() so the streaming API can reject a foreign thread with a plain
+    404 *before* it starts a 200 event stream: once streaming starts, the status is sent.
+    """
     with session_scope() as session:
         if thread_id is None:
             thread = Thread(user_id=user_id, title=_title(text))
@@ -67,30 +102,58 @@ def send(
             thread = _owned(session, user_id, thread_id)
         history = load_history(session, thread.id, config.HISTORY_TURNS)
         session.add(MessageRow(thread_id=thread.id, role=RowRole.USER, content=text))
-        thread_id = thread.id
+        return PreparedTurn(thread_id=thread.id, text=text, history=history)
 
-    # --- 2. no transaction: the agent, with every LLM call recorded as it happens.
+
+def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent]:
+    """
+    Steps 2 and 3: the agent (no transaction, every LLM call recorded as it happens),
+    then a short transaction for the answer. Yields the agent's events as they happen.
+
+    If the consumer stops (the browser closed the stream), the generator is closed: the
+    LLM call in flight is recorded as abandoned, and no answer is saved.
+    """
     # The assistant message's id is chosen now, so llm_calls rows can point at it
     # before it exists (and even if it never does).
     turn_id = uuid.uuid4()
     llm = llm or get_adapter()
-    recorder = CallRecorder(thread_id, turn_id)
+    recorder = CallRecorder(turn.thread_id, turn_id)
     llm.add_listener(recorder)
+    started = time.perf_counter()
+    first_token_ms = None
+    result = None
+    events = agent.answer_stream(turn.text, history=turn.history, llm=llm)
     try:
-        chunks, reply, steps = agent.answer(text, history=history, llm=llm)
+        for event in events:
+            if event.kind == "done":
+                result = event.data
+            else:
+                if event.kind == "token" and first_token_ms is None:
+                    first_token_ms = int((time.perf_counter() - started) * 1000)
+                yield TurnEvent(event.kind, event.data)
     finally:
+        # Order matters. Close the agent's generator first: that closes the LLM stream in
+        # flight, whose "abandoned" record must reach the recorder. Removing the recorder
+        # first would drop exactly the call the client walked away from.
+        events.close()
         llm.remove_listener(recorder)
+    chunks, reply, steps = result["chunks"], result["answer"], result["steps"]
     citations = citations_for(chunks, reply)
+    unverified = unverified_sources(chunks, reply)
+    if unverified:
+        log.warning("thread %s cites sources it did not retrieve: %s", turn.thread_id, unverified)
 
     # --- 3. short transaction: the answer
     with session_scope() as session:
-        session.add(MessageRow(id=turn_id, thread_id=thread_id, role=RowRole.ASSISTANT,
+        session.add(MessageRow(id=turn_id, thread_id=turn.thread_id, role=RowRole.ASSISTANT,
                                content=reply, citations=citations, tool_steps=steps))
-        session.execute(update(Thread).where(Thread.id == thread_id)
+        session.execute(update(Thread).where(Thread.id == turn.thread_id)
                         .values(updated_at=func.now()))
 
-    return TurnResult(thread_id=thread_id, message_id=turn_id, reply=reply,
-                      citations=citations, steps=steps, usage=recorder.summary())
+    usage = {**recorder.summary(), "first_token_ms": first_token_ms,
+             "unverified_sources": unverified}
+    yield TurnEvent("done", TurnResult(thread_id=turn.thread_id, message_id=turn_id, reply=reply,
+                                       citations=citations, steps=steps, usage=usage))
 
 
 def load_history(session: Session, thread_id: uuid.UUID, turns: int) -> list[Message]:
@@ -139,6 +202,21 @@ def citations_for(chunks: Sequence[dict], reply: str) -> list[dict]:
         if chunk.get("page") and chunk["page"] not in cite["pages"]:
             cite["pages"] = sorted([*cite["pages"], chunk["page"]])
     return list(seen.values())
+
+
+_CITED_FILE = re.compile(r"[\w.-]+\.(?:md|txt|pdf)\b", re.IGNORECASE)
+
+
+def unverified_sources(chunks: Sequence[dict], reply: str) -> list[str]:
+    """
+    File names the reply cites that were NOT retrieved this turn.
+
+    A model can name a plausible source it never read (from history, or invented). Those
+    are never shown as citations; this makes them visible, so the rate can be measured.
+    """
+    retrieved = {c["source"] for c in chunks}
+    tail = reply[reply.lower().rfind("sources"):] if "sources" in reply.lower() else ""
+    return sorted({name for name in _CITED_FILE.findall(tail) if name not in retrieved})
 
 
 def list_threads(user_id: int, limit: int = 50) -> list[Thread]:

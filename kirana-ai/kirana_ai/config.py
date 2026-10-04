@@ -23,6 +23,11 @@ GENERATION_MODEL = os.getenv("GENERATION_MODEL", "gemini-3.5-flash")
 # Swapping this also means setting a matching GENERATION_MODEL and API key.
 LLM_PROVIDER = os.getenv("LLM_PROVIDER", "gemini")
 
+# Gemini "thinking": minimal | low | medium | high, or unset for the model's default.
+# Thinking happens *before* the first visible token, so it sets time-to-first-token,
+# and it is billed as output. Streaming hides writing time, never thinking time.
+GEMINI_THINKING_LEVEL = os.getenv("GEMINI_THINKING_LEVEL") or None
+
 # --- Qdrant ---
 # Host port 6335, not 6333: the standalone rag-project container owns 6333,
 # and both can run side by side (same reason Kirana's Redis is on 6380).
@@ -89,7 +94,15 @@ BM25_B = float(os.getenv("BM25_B", "0.75"))
 # Conversation turns (user + assistant pairs) resent to the model on each turn.
 # 0 turns history off, for the "is it really stateless?" experiment.
 HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "10"))
-TOP_K = int(os.getenv("TOP_K", "4"))                     # how many chunks to retrieve
+TOP_K = int(os.getenv("TOP_K", "4"))
+# Chunks whose dense cosine similarity to the query is below this are dropped before the
+# model sees them; if none survive, the model is told nothing relevant was found and must
+# abstain. 0 turns it off. Tuned by `python -m eval.run_floor` (Phase 3 M2), not guessed.
+# The sweep showed answerable (0.61-0.76) and unanswerable (0.57-0.68) questions overlap:
+# in one store's corpus every store question is near *some* chunk. So the floor is only a
+# safety net for clear misses (0.60 keeps every answerable question); abstention mostly comes
+# from the model, and from a reranker in Phase 4.
+RELEVANCE_FLOOR = float(os.getenv("RELEVANCE_FLOOR", "0.60"))                     # how many chunks to retrieve
 CHUNK_SIZE = int(os.getenv("CHUNK_SIZE", "800"))         # characters per chunk
 CHUNK_OVERLAP = int(os.getenv("CHUNK_OVERLAP", "150"))   # characters shared between neighbours
 

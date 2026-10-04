@@ -73,7 +73,10 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
 **Phases 0–2 done.** Phase 2: knowledge base in MinIO (bucket `kb-docs`), uploads publish to
 Kafka `kb.documents.v1` with our `x-amz-meta-*` metadata, the worker (group
 `kirana-ai-ingest`) indexes them; dead letters in `kb.documents.v1-dlt`; Manage → Knowledge
-base tab; page numbers on citations. **Next: Phase 3** (streaming, relevance floor, answer evals).
+base tab; page numbers on citations. **Phase 3 built:** SSE streaming (`stream()` in every
+adapter, `agent.answer_stream`, `chat.prepare` + `chat.run`), relevance floor on dense cosine
+(`RELEVANCE_FLOOR`, from `eval.run_floor`), answer evals (`eval.run_answers`, Gemini judge,
+`--grade`), unverified citations flagged. Next: Ravi's runs (baseline, grading, thinking level), then Phase 4.
 Phase 1 wrap-up (UI experiments, `docs/concepts-learned.md`) is still open.
 
 Only the current phase is in scope. Gaps listed in the plan (no deletes, no relevance

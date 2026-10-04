@@ -1,0 +1,19 @@
+{
+  "family": "unanswerable",
+  "description": "Questions a grocery shopper might ask that Kirana's policies do NOT answer. The right behaviour is to say so, not to stretch a loosely related passage into an answer.",
+  "provenance": "hand-written; each checked against kb/seed to make sure no document answers it",
+  "cases": [
+    {"id": "u01", "query": "Do you have a loyalty points programme?"},
+    {"id": "u02", "query": "Is there a student discount?"},
+    {"id": "u03", "query": "What warranty do you give on electronics like headphones?"},
+    {"id": "u04", "query": "How do I apply for a job as a delivery partner?"},
+    {"id": "u05", "query": "Who is the founder of Kirana?"},
+    {"id": "u06", "query": "Do you have a physical store in Pune I can visit?"},
+    {"id": "u07", "query": "Can I schedule a recurring weekly order?"},
+    {"id": "u08", "query": "Do you sell iPhones?"},
+    {"id": "u09", "query": "What is your policy on plastic bags and packaging recycling?"},
+    {"id": "u10", "query": "Can I get a GST invoice for my business purchases?"},
+    {"id": "u11", "query": "Do you offer gift wrapping?"},
+    {"id": "u12", "query": "What are the nutritional values of your house-brand atta?"}
+  ]
+}

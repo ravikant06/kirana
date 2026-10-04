@@ -40,6 +40,9 @@ uvicorn kirana_ai.api:app --reload --port 8000   # docs: http://localhost:8000/d
 
 # 6. Measure and test
 python -m eval.run_retrieval --compare          # dense vs hybrid recall@k
+python -m eval.run_floor                        # pick RELEVANCE_FLOOR from data
+python -m eval.run_answers --save-baseline      # answer quality, judged by Gemini (~$0.30)
+python -m eval.run_answers --grade 20           # hand-grade; agreement with the judge
 pytest                                          # no API key needed; DB tests need Docker
 ```
 

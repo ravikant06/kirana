@@ -143,8 +143,14 @@ def upsert_chunks(
     return len(points)
 
 
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = (sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5)
+    return dot / norm if norm else 0.0
+
+
 def _query(client, query_vector, top_k, query_filter, sparse_vector):
-    """The Qdrant call behind search(), dense or hybrid."""
+    """The Qdrant call behind search(), dense or hybrid. Returns each hit's dense vector too."""
     if sparse_vector is None:
         # Dense only: one similarity search over the meaning vectors.
         result = client.query_points(
@@ -154,6 +160,7 @@ def _query(client, query_vector, top_k, query_filter, sparse_vector):
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
+            with_vectors=[DENSE],
         )
     else:
         # Hybrid: run both searches, then let Qdrant fuse the two ranked
@@ -172,6 +179,7 @@ def _query(client, query_vector, top_k, query_filter, sparse_vector):
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=top_k,
             with_payload=True,
+            with_vectors=[DENSE],
         )
     return result
 
@@ -207,7 +215,13 @@ def search(
         except Exception as exc:
             raise _unavailable(exc) from exc
 
-    chunks = [{**hit.payload, "score": hit.score} for hit in result.points]
+    # `score` is whatever ranked the hit: cosine for dense, but for hybrid it is RRF, a
+    # function of *rank position* only (the top hit scores the same whether it matches or
+    # not). So every hit also gets its dense cosine `similarity`, the one number that says
+    # how close it actually is; the relevance floor (Phase 3) is applied to that.
+    chunks = [{**hit.payload, "score": hit.score,
+               "similarity": round(_cosine(query_vector, (hit.vector or {}).get(DENSE) or []), 4)}
+              for hit in result.points]
     if trace.is_on():
         trace.result(f"{len(chunks)} hit(s)", elapsed[0])
         trace.bullets(

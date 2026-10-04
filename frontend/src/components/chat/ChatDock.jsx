@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
-import { api } from '../../api.js'
+import { api, streamChat } from '../../api.js'
 import Problem from '../Problem.jsx'
 import Markdown, { withoutSourcesLine } from './Markdown.jsx'
 import { Back, Chevron, Close, Doc, Expand, History, Plus, Search, Send, Shrink, Sparkle, Trash } from './icons.jsx'
@@ -65,6 +65,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
   const [draft, setDraft] = useState('')
   const scroller = useRef(null)
   const input = useRef(null)
+  const abort = useRef(null)   // the running stream's AbortController (Stop button)
   // Bumped on every shopper switch. A response that comes back after the switch
   // belongs to the previous shopper, so it is dropped instead of shown.
   const epoch = useRef(0)
@@ -119,22 +120,49 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
     if (!text || pending || !userId) return
     setFailure(null)
     setDraft('')
+    if (input.current) input.current.style.height = 'auto'   // shrink back after a long draft
     setMessages((ms) => [...ms, { id: `local-${Date.now()}`, role: 'user', content: text, local: true }])
-    setPending({ startedAt: performance.now() })
+    setPending({ startedAt: performance.now(), status: null, text: '' })
     const mine = epoch.current
-    try {
-      const r = await api.ai.chat(userId, text, threadId)
+    const citations = []   // arrive as their own events, just before `done`
+    let partial = ''       // the answer so far, kept if the shopper presses Stop
+    // Events from the stream update the live answer; every update checks the shopper hasn't changed.
+    const onEvent = (kind, data) => {
       if (mine !== epoch.current) return
-      saveThread(userId, r.thread_id)   // explicit, never from an effect: see openThread
-      setThreadId(r.thread_id)
+      if (kind === 'start') {
+        saveThread(userId, data.thread_id)   // explicit, never from an effect: see openThread
+        setThreadId(data.thread_id)
+      } else if (kind === 'status') {
+        setPending((p) => p && { ...p, status: data })
+      } else if (kind === 'token') {
+        partial += data.text
+        setPending((p) => p && { ...p, text: p.text + data.text })
+      } else if (kind === 'citation') {
+        citations.push(data)
+      } else if (kind === 'reset') {
+        partial = ''
+        setPending((p) => p && { ...p, text: '' })   // that text was a preamble to tool calls
+      }
+    }
+    abort.current = new AbortController()
+    try {
+      const r = await streamChat(userId, text, threadId, onEvent, abort.current.signal)
+      if (mine !== epoch.current) return
       setMessages((ms) => [...ms, {
         id: r.message_id, role: 'assistant', content: r.reply,
-        citations: r.citations, steps: r.steps, usage: r.usage, fresh: true,
+        citations, steps: r.steps, usage: r.usage, fresh: true,
       }])
       setThreads(null) // the list's order and titles changed
     } catch (error) {
-      if (mine === epoch.current) setFailure({ error, text })
+      if (mine !== epoch.current) return
+      if (error.problem?.stopped) {
+        // Shown, not saved: the server never stores a half answer.
+        setMessages((ms) => [...ms, { id: `stopped-${Date.now()}`, role: 'assistant', content: partial, stopped: true }])
+      } else {
+        setFailure({ error, text })
+      }
     } finally {
+      abort.current = null
       if (mine === epoch.current) setPending(null)
     }
   }, [pending, userId, threadId])
@@ -267,7 +295,9 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
                 {messages.map((m) => (m.role === 'user'
                   ? <li key={m.id} className="msg msg-user"><div className="bubble">{m.content}</div></li>
                   : <AssistantMessage key={m.id} m={m} />))}
-                {pending && <Thinking startedAt={pending.startedAt} />}
+                {pending && (pending.text
+                  ? <LiveAnswer text={pending.text} />
+                  : <Thinking startedAt={pending.startedAt} status={pending.status} />)}
                 {failure && (
                   <li className="msg msg-assistant">
                     <div className="msg-failure">
@@ -297,9 +327,16 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
                   onKeyDown={onComposerKey}
                   aria-label="Message"
                 />
-                <button className="chat-send" type="submit" disabled={!draft.trim() || !!pending} aria-label="Send">
-                  <Send width={18} height={18} />
-                </button>
+                {pending ? (
+                  <button className="chat-send is-stop" type="button" onClick={() => abort.current?.abort()}
+                          aria-label="Stop the answer" title="Stop">
+                    <span className="stop-square" aria-hidden />
+                  </button>
+                ) : (
+                  <button className="chat-send" type="submit" disabled={!draft.trim()} aria-label="Send">
+                    <Send width={18} height={18} />
+                  </button>
+                )}
               </div>
               <div className="chat-foot">
                 <span>Enter to send · Shift+Enter for a new line</span>
@@ -322,7 +359,8 @@ function AssistantMessage({ m }) {
     <li className={`msg msg-assistant ${m.fresh ? 'is-fresh' : ''}`}>
       <span className="msg-avatar" aria-hidden><Sparkle width={14} height={14} /></span>
       <div className="msg-card">
-        <Markdown text={withoutSourcesLine(m.content)} />
+        {m.content ? <Markdown text={withoutSourcesLine(m.content)} /> : <p className="msg-stopped-empty">No answer yet.</p>}
+        {m.stopped && <div className="msg-stopped">Stopped · not saved</div>}
 
         {m.citations?.length > 0 && (
           <div className="msg-sources">
@@ -348,7 +386,8 @@ function AssistantMessage({ m }) {
             {u && (
               <span className="msg-usage" title="LLM calls · tokens in+out (thinking included) · LLM time · cost">
                 {u.llm_calls} {u.llm_calls === 1 ? 'call' : 'calls'} · {num.format(u.input_tokens + u.output_tokens)} tok
-                · {(u.latency_ms / 1000).toFixed(1)} s{u.cost_usd ? ` · $${Number(u.cost_usd).toFixed(4)}` : ''}
+                {u.first_token_ms != null && ` · first token ${(u.first_token_ms / 1000).toFixed(1)} s`}
+                {` · ${(u.latency_ms / 1000).toFixed(1)} s`}{u.cost_usd ? ` · $${Number(u.cost_usd).toFixed(4)}` : ''}
               </span>
             )}
           </div>
@@ -377,7 +416,20 @@ function AssistantMessage({ m }) {
   )
 }
 
-function Thinking({ startedAt }) {
+// The answer as it streams in: same card as a finished answer, plus a blinking caret.
+function LiveAnswer({ text }) {
+  return (
+    <li className="msg msg-assistant">
+      <span className="msg-avatar is-busy" aria-hidden><Sparkle width={14} height={14} /></span>
+      <div className="msg-card is-streaming">
+        <Markdown text={withoutSourcesLine(text)} />
+        <span className="stream-caret" aria-hidden />
+      </div>
+    </li>
+  )
+}
+
+function Thinking({ startedAt, status }) {
   const [now, setNow] = useState(performance.now())
   useEffect(() => {
     const t = setInterval(() => setNow(performance.now()), 100)
@@ -388,7 +440,11 @@ function Thinking({ startedAt }) {
       <span className="msg-avatar is-busy" aria-hidden><Sparkle width={14} height={14} /></span>
       <div className="msg-card msg-thinking" role="status">
         <span className="dots" aria-hidden><i /><i /><i /></span>
-        <span>Searching store policies and writing an answer</span>
+        <span className="thinking-text">
+          {status
+            ? <>Searching {status.where?.doc_type ? `${status.where.doc_type} documents` : 'store policies'}{status.query ? <>: <em>“{status.query}”</em></> : '…'}</>
+            : 'Thinking…'}
+        </span>
         <span className="thinking-clock">{((now - startedAt) / 1000).toFixed(1)} s</span>
       </div>
     </li>

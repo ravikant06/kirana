@@ -14,7 +14,7 @@ Absorbs three mismatches between our neutral types and Gemini's API:
 """
 import itertools
 from functools import cache
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from google import genai
@@ -22,7 +22,7 @@ from google.genai import types
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, TextDelta, ToolCall, ToolSpec, Usage
 
 _SCHEMA_KEYS = ("description", "enum", "required")
 
@@ -113,6 +113,62 @@ class GeminiAdapter(LLMAdapter):
         ]
 
     # --- the Target interface --------------------------------------------
+    def _stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> Iterator[TextDelta | LLMResponse]:
+        texts: list[str] = []
+        calls: list[ToolCall] = []
+        usage = None
+        chunks = None
+        try:
+            chunks = self._client.models.generate_content_stream(
+                model=self.model,
+                contents=self._to_contents(messages),
+                config=types.GenerateContentConfig(**self._config(tools, system)),
+            )
+            for chunk in chunks:
+                content = chunk.candidates[0].content if chunk.candidates else None
+                for p in (content.parts if content and content.parts else []):
+                    if p.function_call:
+                        # Tool calls arrive whole, not in pieces.
+                        calls.append(ToolCall(id=f"gemini-{next(self._ids)}", name=p.function_call.name,
+                                              arguments=dict(p.function_call.args or {}),
+                                              provider_state=p.thought_signature))
+                    elif p.text and not p.thought:
+                        texts.append(p.text)
+                        yield TextDelta(p.text)
+                if chunk.usage_metadata:
+                    usage = _usage(chunk)       # the last chunk carries the totals
+        except Exception as exc:
+            raise LLMError(f"Gemini call failed: {exc}") from exc
+        finally:
+            # Stopped early (client gone): close the SDK's stream so its HTTP connection is
+            # released now, not whenever garbage collection gets to it.
+            if chunks is not None and hasattr(chunks, "close"):
+                chunks.close()
+        yield LLMResponse(text=None if calls else ("".join(texts) or None),
+                          tool_calls=tuple(calls), usage=usage)
+
+    def _config(self, tools: Sequence[ToolSpec], system: str | None) -> dict[str, Any]:
+        from kirana_ai import config
+
+        # We drive the tool loop ourselves, so the SDK never may (also silences its warning).
+        config_kwargs: dict[str, Any] = {
+            "automatic_function_calling": types.AutomaticFunctionCallingConfig(disable=True),
+        }
+        if system:
+            config_kwargs["system_instruction"] = system
+        if tools:
+            config_kwargs["tools"] = self._to_tools(tools)
+        if config.GEMINI_THINKING_LEVEL:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(
+                thinking_level=config.GEMINI_THINKING_LEVEL.upper())
+        return config_kwargs
+
     def _complete(
         self,
         messages: Sequence[Message],
@@ -120,16 +176,7 @@ class GeminiAdapter(LLMAdapter):
         tools: Sequence[ToolSpec] = (),
         system: str | None = None,
     ) -> LLMResponse:
-        config_kwargs: dict[str, Any] = {}
-        if system:
-            config_kwargs["system_instruction"] = system
-        if tools:
-            config_kwargs["tools"] = self._to_tools(tools)
-            # We drive the tool loop ourselves, so the SDK must not.
-            config_kwargs["automatic_function_calling"] = (
-                types.AutomaticFunctionCallingConfig(disable=True)
-            )
-
+        config_kwargs = self._config(tools, system)
         try:
             response = self._client.models.generate_content(
                 model=self.model,

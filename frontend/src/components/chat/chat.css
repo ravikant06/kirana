@@ -217,3 +217,17 @@
   .chat-threads, .dots i, .msg-avatar.is-busy { animation: none; }
   .chat-body { scroll-behavior: auto; }
 }
+
+/* streaming (AI Phase 3) */
+.msg-card.is-streaming .md > :last-child { display: inline; }
+.stream-caret { display: inline-block; width: 8px; height: 1.05em; margin-left: 2px; vertical-align: -2px; border-radius: 2px; background: var(--marigold, #f2a81d); animation: chat-caret 0.9s steps(2, start) infinite; }
+.thinking-text em { font-style: normal; color: var(--ink); }
+@keyframes chat-caret { to { visibility: hidden; } }
+@media (prefers-reduced-motion: reduce) { .stream-caret { animation: none; } }
+
+/* Stop (AI Phase 3) */
+.chat-send.is-stop { background: var(--ink, #1b2a3a); color: #fff; }
+.chat-send.is-stop:hover { background: #2a3f55; }
+.stop-square { width: 12px; height: 12px; border-radius: 3px; background: currentColor; }
+.msg-stopped { margin-top: 10px; padding-top: 8px; border-top: 1px dashed var(--line); font-size: 0.76rem; font-weight: 700; color: var(--muted); }
+.msg-stopped-empty { color: var(--muted); font-style: italic; }

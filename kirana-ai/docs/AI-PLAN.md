@@ -370,6 +370,33 @@ PDF parsing limits.
 
 ### Phase 3: Streaming, grounding and answer evals (2 sessions)
 
+Milestones: ✅ **M1** streaming (adapter `stream()` for 3 providers, SSE endpoint, live
+answer in the chat panel) · ✅ **M2** relevance floor on dense similarity, τ from a sweep ·
+✅ **M3** answer evals with a Gemini judge, `--grade` for hand calibration · ✅ **M4**
+unverified citations flagged, time to first token in the UI.
+
+**Findings (Phase 3):**
+- **Streaming hides writing, not thinking.** Time to first token was 4.2 s of 4.4 s total:
+  Gemini thinks before its first visible word, and thinking is billed as output. Measured on
+  one prompt: default 3.4 s / 548 output tokens, `minimal` 1.1 s / 58. The setting
+  (`GEMINI_THINKING_LEVEL`) is ready; whether quality holds at `minimal` is an eval question.
+- **What streaming did buy:** a `status` event at ~1.9 s (which search is running) instead of
+  a blank wait; the answer text then arrives in ~0.2 s.
+- **Similarity barely separates answerable from unanswerable questions.** Best-chunk cosine:
+  answerable 0.61–0.76, unanswerable 0.57–0.68. In one store's corpus every store question is
+  near *some* chunk. A floor (0.60) only catches clear misses; abstention comes mostly from
+  the model, and the Phase 4 reranker is the stronger signal. (RRF scores can't be used at
+  all: they depend only on rank.)
+- **A disconnected client didn't stop or record anything (bug found by experiment, fixed).**
+  With uvicorn (ASGI 2.4), Starlette 1.7 doesn't listen for disconnects and never closes the
+  body iterator: the turn stayed suspended mid-answer, the in-flight LLM call was never
+  recorded, and Gemini's stream stayed open until garbage collection. Fix: a
+  `ClosingStreamingResponse` that always closes its iterator, and every layer closing its
+  child explicitly, *before* the cost recorder is removed. Verified: 4/4 hang-ups recorded
+  as "stream abandoned by the client"; a half answer is never saved.
+- **Declining costs more than answering:** unanswerable questions took ~12 s vs ~5 s, because
+  the model searches again with different words before giving up (`MAX_STEPS`, prompt).
+
 **Build**
 - **Streaming in the adapter:** add `stream()` to all three providers (text deltas + tool
   calls). The chat endpoint becomes SSE: `status` events while tools run ("Searching
@@ -672,6 +699,11 @@ Open (proposed default first):
 | ~~AD13~~ | Python Kafka client | **Settled:** `confluent-kafka` | — |
 | ~~AD14~~ | Event from an upload with no `ai.documents` row (e.g. `mc cp` by an admin) | **Settled:** accept it if its metadata is valid (create the row); otherwise `FAILED` | — |
 | ~~AD15~~ | Retries in the ingest worker | **Settled:** in place (3 attempts, backoff), then the dead-letter topic; no retry topics, to keep per-document order | — |
+| ~~AD16~~ | How to stream | **Settled:** synchronous generator streamed by FastAPI (runs in the worker-thread pool); full async is a Phase 11 experiment | — |
+| ~~AD17~~ | Streaming transport | **Settled:** SSE over POST, read with `fetch` + a stream reader | — |
+| ~~AD18~~ | How "nothing relevant" is decided | **Settled:** a floor on each chunk's dense cosine similarity (RRF scores are rank-based, so a threshold on them means nothing), tuned on eval data | — |
+| ~~AD19~~ | Which model judges answers | **Settled for now:** the same Gemini model, checked against Ravi's hand grades; a different family once a second key exists (self-preference bias) | — |
+| AD20 | Gemini thinking level for chat | **Open:** keep the default until `run_answers` compares `minimal` / `low` against it on quality, latency and cost | — |
 | AD10 | Default LLM | Gemini (as now) for generation and embeddings; Claude as the fallback in Phase 11 | Claude or OpenAI primary |
 
 ---

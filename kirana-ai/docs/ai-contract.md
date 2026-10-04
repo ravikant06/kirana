@@ -29,7 +29,7 @@ The request body and tool arguments **never** contain a user id.
 | Phase | Method + path | Request → Response |
 |---|---|---|
 | P1 | `POST /v1/chat` | `{thread_id?, message}` → `ChatReply` (JSON) |
-| P3 | `POST /v1/chat` with `Accept: text/event-stream` | same request → SSE (section 3). JSON stays for evals and curl |
+| P3 | `POST /v1/chat` with `Accept: text/event-stream` | same request → SSE (section 3). JSON stays for evals and curl. A foreign thread is still a plain 404: ownership is checked before the stream starts |
 | P1 | `GET /v1/threads` | → `[ThreadSummary]` newest first, max 50 |
 | P1 | `GET /v1/threads/{id}` | → `Thread` (404 if not the caller's) |
 | P1 | `DELETE /v1/threads/{id}` | → 204 |
@@ -57,17 +57,24 @@ panel shows AI cost the same way it shows `X-Query-Count`. `GET /health` → `{s
 
 ## 3. SSE events (AI → Browser), from P3
 
-Sent as `event: <type>` followed by `data: <json>`. The browser uses `fetch` + a stream reader (the request is a POST).
+Each event is `event: <type>` then `data: <json>`, then a blank line. The browser uses `fetch` +
+a stream reader (the request is a POST); `streamChat()` in Kirana's `api.js` parses it.
 
-| Phase | Event | Data | UI does |
-|---|---|---|---|
-| P3 | `status` | `{text, tool?}` | "Searching policies…" line |
-| P3 | `token` | `{text}` | Append the text |
-| P3 | `citation` | `Citation` | Source chip under the answer |
-| P3 | `done` | `{message_id, usage}` | Stop the indicator |
-| P3 | `error` | `ProblemDetail` | Error with Retry |
-| P4 | `products` | `{product_ids: [..]}` | Fetch `/api/products/batch` and render cards **from Kirana's data** |
-| P6 | `approval_required` | `{approval_id, summary, lines?: [..], expires_at}` | Confirm/Reject card; the turn pauses |
+| Event | Data | UI does |
+|---|---|---|
+| `start` | `{thread_id}` | remember the thread (a new one is created by this turn) |
+| `status` | `{tool, query, where}` | "Searching store policies: “query”" |
+| `step` | `Step` (with `below_floor`) | (Requests panel) |
+| `token` | `{text}` | append to the live answer |
+| `reset` | `{}` | discard streamed text: it was a preamble to tool calls, not the answer |
+| `citation` | `Citation` | source chip; sent just before `done` |
+| `done` | `{thread_id, message_id, reply, steps, usage}` | finalise; `usage` adds `first_token_ms`, `unverified_sources` |
+| `error` | `ProblemDetail` (`status`, `code`) | show it with Retry: the HTTP status was already 200 when it failed |
+| `products` (P4) | `{product_ids: [..]}` | fetch cards from Kirana |
+| `approval_required` (P6) | `{approval_id, summary, lines?, expires_at}` | Confirm / Reject card |
+
+Closing the stream abandons the turn: the LLM call in flight is recorded in `llm_calls` as
+"stream abandoned by the client" (it may still be billed), and no answer is saved.
 
 ## 4. Knowledge base admin (Browser → AI), from P2
 

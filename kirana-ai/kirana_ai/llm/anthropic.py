@@ -7,13 +7,13 @@ Mismatches absorbed here:
   - tool results go back as `tool_result` blocks on a user turn
   - `max_tokens` is required, not optional
 """
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from functools import cache
 from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, TextDelta, ToolCall, ToolSpec, Usage
 
 MAX_TOKENS = 2048
 
@@ -73,6 +73,36 @@ class AnthropicAdapter(LLMAdapter):
             {"name": t.name, "description": t.description, "input_schema": t.parameters}
             for t in tools
         ]
+
+    def _stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> Iterator[TextDelta | LLMResponse]:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "max_tokens": MAX_TOKENS,
+            "messages": self._to_messages(messages),
+        }
+        if system:
+            kwargs["system"] = system
+        if tools:
+            kwargs["tools"] = self._to_tools(tools)
+        try:
+            with self._client.messages.stream(**kwargs) as stream:
+                for text in stream.text_stream:
+                    yield TextDelta(text)
+                final = stream.get_final_message()
+        except Exception as exc:
+            raise LLMError(f"Anthropic call failed: {exc}") from exc
+        calls = tuple(ToolCall(id=b.id, name=b.name, arguments=dict(b.input or {}))
+                      for b in final.content if b.type == "tool_use")
+        text = "".join(b.text for b in final.content if b.type == "text") or None
+        yield LLMResponse(text=None if calls else text, tool_calls=calls,
+                          usage=Usage(input_tokens=final.usage.input_tokens,
+                                      output_tokens=final.usage.output_tokens))
 
     def _complete(
         self,

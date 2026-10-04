@@ -75,3 +75,8 @@ def ai_db(pg, monkeypatch):
     db.engine().dispose()
     db.engine.cache_clear()
     db._session_factory.cache_clear()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"

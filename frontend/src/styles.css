@@ -904,3 +904,12 @@ code { font-family: var(--mono); font-size: 0.85em; }
 .lab-table th, .lab-table td { text-align: left; padding: 4px 6px; border-bottom: 1px solid var(--line); }
 .lab-table th { font-weight: 600; color: var(--muted); }
 .lab-warn { margin: 0; font-size: 0.85rem; color: var(--marigold-deep); font-weight: 700; }
+
+/* Requests panel: SSE timeline of a streamed chat (AI Phase 3) */
+.req-timeline { list-style: none; margin: 0 0 12px; padding: 8px 10px; display: grid; gap: 3px; background: rgba(255,255,255,0.04); border-radius: 8px; font-family: var(--mono); font-size: 0.74rem; }
+.req-timeline li { display: grid; grid-template-columns: 62px 64px 1fr; gap: 8px; color: var(--panel-ink); }
+.req-timeline .ev-t { color: var(--panel-muted); text-align: right; }
+.req-timeline .ev-name { color: var(--marigold); font-weight: 600; }
+.req-timeline .ev-data { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.req-timeline .ev-token .ev-name { color: #8fd3b5; }
+.req-timeline .ev-error .ev-name { color: #ff8a80; }

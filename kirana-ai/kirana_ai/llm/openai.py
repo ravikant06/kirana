@@ -8,12 +8,12 @@ Mismatches absorbed here:
 """
 import json
 from functools import cache
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
 from typing import Any
 
 from kirana_ai.llm.base import LLMAdapter
 from kirana_ai.llm.registry import register
-from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, ToolCall, ToolSpec, Usage
+from kirana_ai.llm.types import LLMError, LLMResponse, Message, Role, TextDelta, ToolCall, ToolSpec, Usage
 
 
 @cache
@@ -80,6 +80,49 @@ class OpenAIAdapter(LLMAdapter):
             }
             for t in tools
         ]
+
+    def _stream(
+        self,
+        messages: Sequence[Message],
+        *,
+        tools: Sequence[ToolSpec] = (),
+        system: str | None = None,
+    ) -> Iterator[TextDelta | LLMResponse]:
+        kwargs: dict[str, Any] = {
+            "model": self.model,
+            "messages": self._to_messages(messages, system),
+            "stream": True,
+            "stream_options": {"include_usage": True},   # usage arrives in a final, choice-less chunk
+        }
+        if tools:
+            kwargs["tools"] = self._to_tools(tools)
+        texts: list[str] = []
+        calls: dict[int, dict] = {}       # tool calls stream in fragments, keyed by index
+        usage = None
+        try:
+            for chunk in self._client.chat.completions.create(**kwargs):
+                if chunk.usage is not None:
+                    usage = Usage(input_tokens=chunk.usage.prompt_tokens,
+                                  output_tokens=chunk.usage.completion_tokens)
+                if not chunk.choices:
+                    continue
+                delta = chunk.choices[0].delta
+                if delta.content:
+                    texts.append(delta.content)
+                    yield TextDelta(delta.content)
+                for tc in delta.tool_calls or []:
+                    c = calls.setdefault(tc.index, {"id": None, "name": "", "args": ""})
+                    c["id"] = tc.id or c["id"]
+                    if tc.function and tc.function.name:
+                        c["name"] += tc.function.name
+                    if tc.function and tc.function.arguments:
+                        c["args"] += tc.function.arguments
+        except Exception as exc:
+            raise LLMError(f"OpenAI call failed: {exc}") from exc
+        tool_calls = tuple(ToolCall(id=c["id"], name=c["name"], arguments=json.loads(c["args"] or "{}"))
+                           for _, c in sorted(calls.items()))
+        yield LLMResponse(text=None if tool_calls else ("".join(texts) or None),
+                          tool_calls=tool_calls, usage=usage)
 
     def _complete(
         self,

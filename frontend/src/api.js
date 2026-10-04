@@ -309,6 +309,84 @@ export const api = {
   },
 }
 
+// AI chat as Server-Sent Events (AI Phase 3). EventSource can't send a POST body, so this reads
+// the response stream itself and splits it into "event: x / data: {...}" frames. onEvent gets each
+// one as it arrives. Resolves with the `done` data; an `error` event (a ProblemDetail sent after
+// the 200, because the stream had already started) rejects with an ApiError like any request.
+export async function streamChat(userId, message, threadId, onEvent, signal) {
+  const body = threadId ? { message, thread_id: threadId } : { message }
+  const entry = { id: crypto.randomUUID(), method: 'POST', path: '/ai/v1/chat', service: 'ai', userId,
+    requestBody: body, at: new Date(), streamed: true }
+  const started = performance.now()
+  // Every SSE event with its arrival time: the Requests panel shows this as a timeline.
+  const events = []
+  const finish = (status, responseBody, aiUsage = null) =>
+    record({ ...entry, status, ms: Math.round(performance.now() - started), responseBody, aiUsage, events })
+  const stopped = () => {
+    const problem = { title: 'Stopped', detail: 'You stopped the answer. Nothing was saved; the server recorded the call in flight as abandoned.' }
+    finish(499, problem)   // 499: nginx's "client closed request"
+    return new ApiError(499, { ...problem, stopped: true })
+  }
+
+  let res
+  try {
+    res = await fetch('/ai/v1/chat', {
+      method: 'POST',
+      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+      body: JSON.stringify(body),
+      signal,
+    })
+  } catch (e) {
+    if (e.name === 'AbortError') throw stopped()
+    const problem = { title: 'AI service not reachable', detail: 'Is kirana-ai running on port 8000?' }
+    finish(0, problem)
+    throw new ApiError(0, problem)
+  }
+  if (!res.ok) {
+    // Rejected before streaming started (a foreign thread, a bad request): a normal ProblemDetail.
+    const text = await res.text()
+    let problem
+    try { problem = JSON.parse(text) } catch { problem = { status: res.status, detail: text || res.statusText } }
+    finish(res.status, problem)
+    throw new ApiError(res.status, problem)
+  }
+
+  const reader = res.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+  let done = null
+  let failed = null
+  for (;;) {
+    let chunk
+    try {
+      chunk = await reader.read()
+    } catch (e) {
+      // Aborting the fetch closes the connection: the server sees the hang-up and closes the turn.
+      if (e.name === 'AbortError') throw stopped()
+      throw e
+    }
+    const { value, done: ended } = chunk
+    if (ended) break
+    buffer += decoder.decode(value, { stream: true })
+    let cut
+    while ((cut = buffer.indexOf('\n\n')) !== -1) {
+      const frame = buffer.slice(0, cut)
+      buffer = buffer.slice(cut + 2)
+      const fields = Object.fromEntries(frame.split('\n').map((l) => [l.slice(0, l.indexOf(':')), l.slice(l.indexOf(':') + 2)]))
+      const data = fields.data ? JSON.parse(fields.data) : {}
+      if (fields.event === 'done') done = data
+      if (fields.event === 'error') failed = data
+      events.push({ t: Math.round(performance.now() - started), event: fields.event, data })
+      onEvent(fields.event, data)
+    }
+  }
+  const u = done?.usage
+  finish(200, done || failed, u ? { calls: u.llm_calls, inputTokens: u.input_tokens, outputTokens: u.output_tokens,
+    cost: u.cost_usd, firstTokenMs: u.first_token_ms } : null)
+  if (failed || !done) throw new ApiError(failed?.status || 0, failed || { title: 'Stream ended early', detail: 'The answer stopped before it finished. Try again.' })
+  return done
+}
+
 const inr = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR' })
 export const money = (v) => (v === null || v === undefined || v === '' ? '—' : inr.format(Number(v)))
 export const when = (v) =>

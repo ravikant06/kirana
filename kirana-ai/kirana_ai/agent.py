@@ -19,10 +19,11 @@ Two deliberate design choices:
     filter silently hides the right answer, so the filters must be visible
     to whoever is reading the output.
 """
-from collections.abc import Sequence
+from collections.abc import Iterator, Sequence
+from dataclasses import dataclass
 
 from kirana_ai import config, embeddings, filters, sparse, trace, vector_store
-from kirana_ai.llm import Message, ToolResult, ToolSpec, get_adapter
+from kirana_ai.llm import Message, TextDelta, ToolResult, ToolSpec, get_adapter
 
 MAX_STEPS = 5  # search rounds per question, before we force an answer
 
@@ -48,6 +49,8 @@ Guidelines:
   before concluding the answer is absent.
 - Answer ONLY from retrieved passages. Never invent policies, fees, time
   limits or amounts.
+- Retrieved passages can be about a nearby topic without answering the question.
+  Answer only if a passage actually states the answer; otherwise do not guess.
 - If the documents do not contain the answer, say:
   "I couldn't find that in our store policies. Please contact support."
 - Be brief and friendly. End your answer with a "Sources:" line listing the
@@ -140,8 +143,20 @@ def _run_search(args: dict, tenant_id: str | None, top_k: int) -> list[dict]:
     )
 
 
-def _tool_payload(chunks: list[dict]) -> dict:
+def _above_floor(chunks: list[dict]) -> tuple[list[dict], int]:
+    """Drop chunks whose dense similarity is below the relevance floor. Returns (kept, dropped)."""
+    floor = config.RELEVANCE_FLOOR
+    kept = [c for c in chunks if c.get("similarity", 1.0) >= floor]
+    return kept, len(chunks) - len(kept)
+
+
+def _tool_payload(chunks: list[dict], dropped: int = 0) -> dict:
     """What the model sees back. Deliberately trimmed to what it needs to cite."""
+    if not chunks and dropped:
+        return {"results": [], "count": 0,
+                "note": (f"{dropped} passage(s) were found but none was relevant enough to this "
+                         "question. Do not answer from general knowledge: search again with "
+                         "different words, or say you couldn't find it.")}
     return {
         "results": [
             {
@@ -167,6 +182,22 @@ def _list_payload(documents: list[dict]) -> dict:
     }
 
 
+@dataclass(frozen=True)
+class AgentEvent:
+    """
+    What the agent loop reports while it runs (Phase 3 streaming):
+
+        status  {"tool", "query", "where"}   a tool call is about to run
+        step    {"tool", "query", "where", "count"}   it ran
+        token   {"text"}                     a piece of answer text
+        reset   {}                           text streamed so far was a preamble to tool
+                                             calls, not the answer: discard it
+        done    {"chunks", "answer", "steps"}   the final result
+    """
+    kind: str
+    data: dict
+
+
 def answer(
     question: str,
     history: Sequence[Message] = (),
@@ -177,10 +208,31 @@ def answer(
     """
     Agentic RAG. Returns (chunks_seen, final_answer, steps).
 
+    The non-streaming view of answer_stream(): same loop, events consumed here.
+    """
+    for event in answer_stream(question, history, top_k, tenant_id, llm):
+        if event.kind == "done":
+            return event.data["chunks"], event.data["answer"], event.data["steps"]
+    raise RuntimeError("agent loop ended without a result")
+
+
+def answer_stream(
+    question: str,
+    history: Sequence[Message] = (),
+    top_k: int = config.TOP_K,
+    tenant_id: str | None = None,
+    llm=None,
+) -> Iterator[AgentEvent]:
+    """
+    The agent loop, yielding events as it goes, so the UI can show progress and stream text.
+
     `history` is the earlier turns of the conversation, as plain user and
     assistant text (AD11). The model is stateless: it knows about "the rice"
     in a follow-up only because the earlier turns are sent again, in full,
     on every call — which is why each turn costs more input tokens than the last.
+
+    Every model call streams. Text is forwarded as it arrives; if that call then
+    asks for tools, the text was only a preamble, and a `reset` tells the UI to drop it.
 
     `llm` is injected for testability and provider choice; it defaults to
     whatever config.LLM_PROVIDER selects.
@@ -202,28 +254,46 @@ def answer(
     steps: list[dict] = []
 
     for _ in range(MAX_STEPS):
-        reply = llm.complete(messages, tools=TOOLS, system=SYSTEM_INSTRUCTION)
+        reply = None
+        streamed_text = False
+        stream = llm.stream(messages, tools=TOOLS, system=SYSTEM_INSTRUCTION)
+        try:
+            for item in stream:
+                if isinstance(item, TextDelta):
+                    streamed_text = True
+                    yield AgentEvent("token", {"text": item.text})
+                else:
+                    reply = item
+        finally:
+            stream.close()      # if we are closed mid-call, close the call now (records "abandoned")
 
         if not reply.wants_tools:
             answer_text = reply.text or "(empty response from model)"
             trace.section("DONE")
             trace.kv("tool calls run", len(steps))
             trace.kv("unique chunks seen", len(seen))
-            return list(seen.values()), answer_text, steps
+            yield AgentEvent("done", {"chunks": list(seen.values()), "answer": answer_text, "steps": steps})
+            return
 
+        if streamed_text:
+            yield AgentEvent("reset", {})
         messages.append(Message.assistant(text=reply.text, tool_calls=reply.tool_calls))
 
         for call in reply.tool_calls:
+            dropped = 0
+            where = {k: v for k, v in call.arguments.items() if k != "query" and v}
+            yield AgentEvent("status", {"tool": call.name, "query": call.arguments.get("query", ""),
+                                        "where": where})
             try:
                 if call.name == LIST_DOCUMENTS.name:
                     documents = _run_list(call.arguments, tenant_id)
                     payload = _list_payload(documents)
                     count = len(documents)
                 else:
-                    chunks = _run_search(call.arguments, tenant_id, top_k)
+                    chunks, dropped = _above_floor(_run_search(call.arguments, tenant_id, top_k))
                     for chunk in chunks:
                         seen.setdefault(chunk["chunk_id"], chunk)
-                    payload = _tool_payload(chunks)
+                    payload = _tool_payload(chunks, dropped)
                     count = len(chunks)
             except ValueError as exc:
                 # A filter the model made up. Tell it, so it can retry without it,
@@ -231,14 +301,12 @@ def answer(
                 payload = {"error": str(exc), "count": 0}
                 count = 0
 
-            steps.append(
-                {
-                    "tool": call.name,
-                    "query": call.arguments.get("query", ""),
-                    "where": {k: v for k, v in call.arguments.items() if k != "query" and v},
-                    "count": count,
-                }
-            )
+            step = {"tool": call.name, "query": call.arguments.get("query", ""), "where": where,
+                    "count": count}
+            if call.name == SEARCH_DOCS.name and dropped:
+                step["below_floor"] = dropped
+            steps.append(step)
+            yield AgentEvent("step", step)
             messages.append(
                 Message.tool(ToolResult(id=call.id, name=call.name, content=payload))
             )
@@ -246,7 +314,8 @@ def answer(
     # Budget exhausted. Ask once more with no tools available, so the model has
     # to answer from what it already retrieved instead of searching forever.
     trace.section("BUDGET EXHAUSTED - forcing an answer (no tools offered)")
-    final = llm.complete(
+    final = None
+    stream = llm.stream(
         messages,
         system=(
             SYSTEM_INSTRUCTION
@@ -254,8 +323,16 @@ def answer(
             "already have, or say you could not find it."
         ),
     )
-    return (
-        list(seen.values()),
-        final.text or "I couldn't find that in our store policies. Please contact support.",
-        steps,
-    )
+    try:
+        for item in stream:
+            if isinstance(item, TextDelta):
+                yield AgentEvent("token", {"text": item.text})
+            else:
+                final = item
+    finally:
+        stream.close()
+    yield AgentEvent("done", {
+        "chunks": list(seen.values()),
+        "answer": final.text or "I couldn't find that in our store policies. Please contact support.",
+        "steps": steps,
+    })

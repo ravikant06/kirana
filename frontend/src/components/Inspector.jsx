@@ -8,7 +8,20 @@ const tokens = new Intl.NumberFormat('en-IN')
 
 function aiSummary(u) {
   const cost = u.cost ? ` · $${Number(u.cost).toFixed(4)}` : ''
-  return `${u.calls} LLM · ${tokens.format(u.inputTokens + u.outputTokens)} tok${cost}`
+  const ttft = u.firstTokenMs != null ? ` · 1st token ${(u.firstTokenMs / 1000).toFixed(1)} s` : ''
+  return `${u.calls} LLM · ${tokens.format(u.inputTokens + u.outputTokens)} tok${ttft}${cost}`
+}
+
+// One line per SSE event: the interesting part of its data, not the whole JSON.
+function summarize({ event, data }) {
+  if (event === 'token') return JSON.stringify(data.text)
+  if (event === 'status') return `${data.tool} “${data.query}”`
+  if (event === 'step') return `${data.tool} → ${data.count} hit(s)${data.below_floor ? `, ${data.below_floor} below floor` : ''}`
+  if (event === 'citation') return data.title || data.source
+  if (event === 'done') return `${data.usage?.llm_calls} LLM calls · first token ${((data.usage?.first_token_ms || 0) / 1000).toFixed(1)} s`
+  if (event === 'error') return `${data.status} ${data.title}`
+  if (event === 'start') return `thread ${String(data.thread_id).slice(0, 8)}…`
+  return ''
 }
 
 function statusClass(s) {
@@ -94,6 +107,20 @@ export default function Inspector({ open, onClose }) {
                       tokens (thinking included),{' '}
                       {e.aiUsage.cost ? `$${e.aiUsage.cost}` : 'cost unknown (no price in pricing.yaml)'}.
                     </div>
+                  )}
+                  {e.events?.length > 0 && (
+                    <>
+                      <h3>Stream timeline ({e.events.length} events)</h3>
+                      <ol className="req-timeline">
+                        {e.events.map((ev, i) => (
+                          <li key={i} className={`ev-${ev.event}`}>
+                            <span className="ev-t">+{(ev.t / 1000).toFixed(2)} s</span>
+                            <span className="ev-name">{ev.event}</span>
+                            <span className="ev-data">{summarize(ev)}</span>
+                          </li>
+                        ))}
+                      </ol>
+                    </>
                   )}
                   {Array.isArray(e.responseBody?.steps) && e.responseBody.steps.length > 0 && (
                     <>
