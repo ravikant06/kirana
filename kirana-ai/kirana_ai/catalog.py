@@ -36,6 +36,10 @@ INDEXES = {
     "tenant_id": vector_store.models.PayloadSchemaType.KEYWORD,
     "doc_id": vector_store.models.PayloadSchemaType.KEYWORD,
     "category": vector_store.models.PayloadSchemaType.KEYWORD,
+    # For lookups by id (and the dashboard's `product_id:134` filter, which types a value from
+    # its index). Exact match only: nobody asks for a range of product ids, so no sorted copy.
+    "product_id": vector_store.models.IntegerIndexParams(
+        type=vector_store.models.IntegerIndexType.INTEGER, lookup=True, range=False),
 }
 
 
@@ -55,8 +59,7 @@ def _indexed_hash(client, product_id: int) -> str | None:
 
 def index_product(product_id: int, name: str, description: str | None, category: str | None) -> str:
     client = vector_store.get_client()
-    vector_store.ensure_collection(client, config.PRODUCTS_COLLECTION)
-    vector_store.ensure_payload_indexes(client, config.PRODUCTS_COLLECTION, INDEXES)
+    vector_store.ensure_collection(client, config.PRODUCTS_COLLECTION, INDEXES)
     text = product_text(name, category, description)
     text_hash = hashlib.sha256(text.encode()).hexdigest()[:16]
     if _indexed_hash(client, product_id) == text_hash:

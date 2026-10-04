@@ -91,3 +91,20 @@ def test_a_down_qdrant_is_retried_then_dead_lettered(index, monkeypatch):
 
     assert dead == [("ConnectionError: qdrant down", catalog.RETRY_ATTEMPTS)]
     assert "dead-lettered" in outcome
+
+
+def test_products_collection_gets_only_its_own_indexes(monkeypatch):
+    """The KB's indexes (source, doc_type, ingested_ts) once leaked onto kirana_products."""
+    created = {}
+
+    class Client:
+        def collection_exists(self, name): return True
+        def get_collection(self, name):
+            return type("C", (), {"config": type("X", (), {"params": type("P", (), {
+                "sparse_vectors": {vector_store.SPARSE: None}})()})()})()
+        def create_payload_index(self, collection_name, field_name, field_schema):
+            created[field_name] = field_schema
+
+    vector_store.ensure_collection(Client(), "kirana_products", catalog.INDEXES)
+    assert set(created) == {"tenant_id", "doc_id", "category", "product_id"}
+    assert created["product_id"].lookup is True and created["product_id"].range is False

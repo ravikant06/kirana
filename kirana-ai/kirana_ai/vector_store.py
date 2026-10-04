@@ -63,9 +63,9 @@ DENSE = "dense"    # meaning   — Gemini embedding, cosine
 SPARSE = "sparse"  # words     — BM25 weights, see src/sparse.py
 
 
-def ensure_collection(client: QdrantClient, collection: str | None = None) -> None:
+def ensure_collection(client: QdrantClient, collection: str | None = None, indexes: dict | None = None) -> None:
     """
-    Create the collection if missing.
+    Create the collection if missing, with its payload indexes (`indexes`, default: the KB's).
 
     Two named vectors per point. The sparse one sets `Modifier.IDF`, which
     tells Qdrant to compute inverse document frequency itself at query time —
@@ -85,7 +85,7 @@ def ensure_collection(client: QdrantClient, collection: str | None = None) -> No
         )
     elif config.HYBRID_SEARCH:
         _require_sparse_schema(client, collection)
-    ensure_payload_indexes(client, collection)
+    ensure_payload_indexes(client, collection, indexes)
 
 
 def _require_sparse_schema(client: QdrantClient, collection: str | None = None) -> None:
