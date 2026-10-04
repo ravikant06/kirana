@@ -429,3 +429,12 @@ flowchart LR
 | Consumers live in the checkout process; mixed versions in one group (6d) | 9 |
 | One broker, in-memory mocks | 10–11 |
 | No metrics or alerts (lag, dead letters, failed refunds, 409 "in progress" rate) | 14 |
+
+---
+
+## Seeing it all: `infra/perf/idempotency_tour.py`
+
+One script runs every rule against the backend on :8080 and prints the `idempotency_keys` row
+after each step: no key (400), stored and replayed, different body (422), **409 in progress**
+(made reproducible by slowing payment-mock so the first attempt is still running), Pay now
+replay, a webhook delivered twice (one outbox row), and cancel replayed vs a new key (409).
