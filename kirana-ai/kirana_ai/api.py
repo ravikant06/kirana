@@ -27,7 +27,8 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from kirana_ai import chat, config
+from kirana_ai import chat, config, kb
+from kirana_ai.db.models import DocType, Document
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.errors import UpstreamUnavailable
 from kirana_ai.llm import LLMError, get_adapter
@@ -35,6 +36,9 @@ from kirana_ai.schemas import (
     ChatReply,
     ChatRequest,
     Citation,
+    KbDocument,
+    KbUploadRequest,
+    KbUploadTicket,
     MessageOut,
     Step,
     ThreadDetail,
@@ -62,6 +66,9 @@ app = FastAPI(title="Kirana AI", version="0.1.0", lifespan=lifespan)
 # X-User-Id identifies the shopper until login exists (AD12). Forgeable, exactly
 # like Kirana's own use of it; acceptable while tools read only public data.
 UserId = Annotated[int, Header(alias="X-User-Id", ge=1)]
+# Manage is an admin area with no login yet (Phase 5): the header, when present, is only
+# recorded as who uploaded, never used to allow or deny.
+OptionalUserId = Annotated[int | None, Header(alias="X-User-Id", ge=1)]
 
 
 # --- routes ---------------------------------------------------------------------
@@ -105,6 +112,39 @@ def delete_thread(thread_id: uuid.UUID, user_id: UserId) -> Response:
     return Response(status_code=204)
 
 
+# --- knowledge base (Phase 2) --------------------------------------------------------
+
+@app.post("/v1/kb/documents/upload-url", response_model=KbUploadTicket)
+def kb_upload_url(body: KbUploadRequest, request: Request, user_id: OptionalUserId = None):
+    if body.size_bytes > config.KB_MAX_UPLOAD_BYTES:
+        # Same answer the signed policy would give, but before the file leaves the browser.
+        return problem(request, 400, "Validation failed", "One or more fields are invalid",
+                       errors=[{"field": "size_bytes",
+                                "message": f"must be at most {config.KB_MAX_UPLOAD_BYTES} bytes"}])
+    _, ticket = kb.create_upload(body.title, DocType(body.doc_type), body.file_name,
+                                 body.content_type, body.size_bytes,
+                                 uploaded_by=f"shopper:{user_id}" if user_id else "admin")
+    return KbUploadTicket(**ticket)
+
+
+@app.get("/v1/kb/documents", response_model=list[KbDocument])
+def kb_documents() -> list[KbDocument]:
+    return [_document(d) for d in kb.list_documents()]
+
+
+@app.delete("/v1/kb/documents/{document_id}", status_code=204)
+def kb_delete(document_id: uuid.UUID) -> Response:
+    kb.delete_document(document_id)
+    return Response(status_code=204)
+
+
+def _document(d: Document) -> KbDocument:
+    return KbDocument(id=d.id, title=d.title, doc_type=d.doc_type.value, file_name=d.file_name,
+                      content_type=d.content_type, size_bytes=d.size_bytes, status=d.status.value,
+                      page_count=d.page_count, chunk_count=d.chunk_count, error=d.error,
+                      uploaded_by=d.uploaded_by, created_at=d.created_at, updated_at=d.updated_at)
+
+
 @app.get("/health")
 def health() -> dict:
     """Liveness only: the process is up. Checking Qdrant or the LLM here comes with Phase 11."""
@@ -139,6 +179,11 @@ async def validation_failed(request: Request, exc: RequestValidationError) -> JS
 async def thread_not_found(request: Request, _exc: chat.ThreadNotFound) -> JSONResponse:
     # Same answer for "does not exist" and "belongs to someone else".
     return problem(request, 404, "Thread not found", "No such thread for this shopper")
+
+
+@app.exception_handler(kb.DocumentNotFound)
+async def document_not_found(request: Request, _exc: kb.DocumentNotFound) -> JSONResponse:
+    return problem(request, 404, "Document not found", "No such knowledge-base document")
 
 
 @app.exception_handler(LLMError)

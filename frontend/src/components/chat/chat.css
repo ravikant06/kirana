@@ -124,6 +124,7 @@
 
 /* sources */
 .msg-sources { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin-top: 12px; padding-top: 10px; border-top: 1px dashed var(--line); }
+.source-pages { font-weight: 600; opacity: 0.75; margin-left: 2px; }
 .msg-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); margin-right: 2px; }
 .source-chip {
   display: inline-flex; align-items: center; gap: 5px; padding: 3px 10px 3px 7px;

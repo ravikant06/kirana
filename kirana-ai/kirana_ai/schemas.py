@@ -29,6 +29,7 @@ class Citation(BaseModel):
     source: str
     doc_id: str
     title: str | None = None
+    pages: list[int] = Field(default_factory=list)   # PDFs: pages of the retrieved chunks
 
 
 class Step(BaseModel):
@@ -78,3 +79,45 @@ class ThreadDetail(BaseModel):
     created_at: datetime
     updated_at: datetime
     messages: list[MessageOut]
+
+
+# --- Knowledge base (Phase 2) -----------------------------------------------------
+
+DocTypeName = Literal["policy", "faq", "guide"]
+DocStatusName = Literal["pending", "uploaded", "indexing", "ready", "failed", "deleting", "deleted"]
+
+
+class KbUploadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    title: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=120)]
+    doc_type: DocTypeName
+    file_name: Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
+    # Only what the ingest worker can parse. The signed policy pins this exact value.
+    content_type: Literal["application/pdf", "text/markdown", "text/plain"]
+    size_bytes: int = Field(ge=1)   # upper bound checked against config in the route
+
+
+class KbUploadTicket(BaseModel):
+    """Same shape as Kirana's image UploadTicket: the browser posts form_fields + the file to upload_url."""
+    document_id: uuid.UUID
+    object_key: str
+    upload_url: str
+    form_fields: dict[str, str]
+    expires_at: datetime
+
+
+class KbDocument(BaseModel):
+    id: uuid.UUID
+    title: str
+    doc_type: DocTypeName
+    file_name: str
+    content_type: str
+    size_bytes: int | None
+    status: DocStatusName
+    page_count: int | None
+    chunk_count: int | None
+    error: str | None
+    uploaded_by: str
+    created_at: datetime
+    updated_at: datetime

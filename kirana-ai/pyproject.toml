@@ -13,6 +13,9 @@ dependencies = [
     "pyyaml>=6.0",
     "fastapi>=0.115",
     "uvicorn[standard]>=0.30",
+    "confluent-kafka>=2.5",
+    "minio>=7.2",
+    "pypdf>=5.0",
 ]
 
 [project.optional-dependencies]

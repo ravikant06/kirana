@@ -131,9 +131,13 @@ def citations_for(chunks: Sequence[dict], reply: str) -> list[dict]:
     seen: dict[str, dict] = {}
     for chunk in chunks:
         source = chunk["source"]
-        if source in reply and source not in seen:
-            seen[source] = {"source": source, "doc_id": chunk["doc_id"],
-                            "title": chunk.get("title")}
+        if source not in reply:
+            continue
+        cite = seen.setdefault(source, {"source": source, "doc_id": chunk["doc_id"],
+                                        "title": chunk.get("title"), "pages": []})
+        # PDFs: the pages of the retrieved chunks from this document, in order.
+        if chunk.get("page") and chunk["page"] not in cite["pages"]:
+            cite["pages"] = sorted([*cite["pages"], chunk["page"]])
     return list(seen.values())
 
 

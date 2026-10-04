@@ -146,7 +146,9 @@ def _tool_payload(chunks: list[dict]) -> dict:
         "results": [
             {
                 "source": c["source"],
+                "title": c.get("title"),
                 "heading": c.get("heading"),
+                "page": c.get("page"),                 # PDFs only
                 "score": round(c["score"], 3),
                 "text": c["text"],
             }

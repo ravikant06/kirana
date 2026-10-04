@@ -1,0 +1,349 @@
+"""
+The ingest worker (Phase 2 M3–M4): Kafka kb.documents.v1 → parsed, chunked, embedded → Qdrant.
+
+    python -m kirana_ai.worker          # one member of consumer group kirana-ai-ingest
+
+Run two and Kafka shares the topic's 3 partitions between them.
+
+Delivery is at-least-once. The offset is committed only after a message is fully
+handled (indexed, deleted, marked failed, or dead-lettered), so a worker killed
+half-way gets the same message again on restart. That is safe because handling is
+idempotent:
+  - chunk point ids are deterministic, and a document's old chunks are deleted
+    before its new ones are written: replaying an upload gives the same index;
+  - unchanged text (same content hash) is not re-embedded;
+  - a delete of something already gone is a no-op.
+
+Failures are split in two, because retrying only helps one of them:
+  - permanent (no text in the PDF, bad metadata): marked `failed` with the reason, no retry;
+  - transient (embedding API, Qdrant, Postgres, MinIO down): retried in place with backoff,
+    then sent to kb.documents.v1-dlt and marked `failed`. `cli redrive` replays it later.
+Retrying in place blocks the partition for a few seconds, and that is the point: the
+next event on this partition may be the same document's delete, and it must not overtake.
+"""
+import json
+import logging
+import random
+import signal
+import time
+import uuid
+from dataclasses import dataclass, field
+from datetime import datetime, timezone
+from urllib.parse import unquote
+
+from minio.error import S3Error
+
+from kirana_ai import chunker, config, embeddings, loader, sparse, storage, vector_store
+from kirana_ai.db import session_scope
+from kirana_ai.db.models import DocStatus, DocType, Document
+
+log = logging.getLogger("kirana_ai.worker")
+
+GROUP = "kirana-ai-ingest"
+RETRY_ATTEMPTS = 3
+RETRY_BASE_SECONDS = 1.0
+
+
+class PermanentError(Exception):
+    """Retrying cannot help: the event or the file itself is the problem."""
+
+
+@dataclass(frozen=True)
+class KbEvent:
+    kind: str                       # "created" | "removed"
+    document_id: uuid.UUID
+    object_key: str                 # decoded: {document_id}/{file_name}
+    metadata: dict = field(default_factory=dict)   # x-amz-meta-* without the prefix, lower-case
+    size: int | None = None
+    etag: str | None = None
+
+    @property
+    def file_name(self) -> str:
+        return self.object_key.split("/", 1)[1]
+
+
+# --- reading MinIO's event ------------------------------------------------------------
+
+def parse_events(value: bytes) -> list[KbEvent]:
+    """MinIO's S3-style event JSON -> our events. Malformed input is permanent: retrying won't fix it."""
+    try:
+        records = json.loads(value)["Records"]
+    except (ValueError, KeyError, TypeError) as exc:
+        raise PermanentError(f"not a MinIO bucket event: {exc}") from exc
+    events = []
+    for record in records:
+        name = record.get("eventName", "")
+        obj = record.get("s3", {}).get("object", {})
+        key = unquote(obj.get("key", ""))           # MinIO URL-encodes the key (checked in M1)
+        head, _, tail = key.partition("/")
+        try:
+            document_id = uuid.UUID(head)
+        except ValueError as exc:
+            raise PermanentError(f"object key {key!r} does not start with a document id") from exc
+        if not tail:
+            raise PermanentError(f"object key {key!r} has no file name")
+        # Keys arrive canonicalised (X-Amz-Meta-Doc-Type): normalise, and decode the title.
+        meta = {k.lower().removeprefix("x-amz-meta-"): v for k, v in (obj.get("userMetadata") or {}).items()}
+        if "title" in meta:
+            meta["title"] = unquote(meta["title"])
+        if name.startswith("s3:ObjectCreated"):
+            events.append(KbEvent("created", document_id, key, meta, obj.get("size"), obj.get("eTag")))
+        elif name.startswith("s3:ObjectRemoved"):
+            events.append(KbEvent("removed", document_id, key))
+        else:
+            log.info("ignoring %s for %s", name, key)
+    return events
+
+
+# --- the work ---------------------------------------------------------------------------
+
+def handle(event: KbEvent) -> str:
+    return ingest(event) if event.kind == "created" else remove(event)
+
+
+def ingest(event: KbEvent) -> str:
+    doc = _document_for(event)
+    if doc.status in (DocStatus.DELETED, DocStatus.DELETING):
+        # Deleted before this upload event was processed: the delete event cleans up.
+        return f"skipped: document is {doc.status.value}"
+    _update(doc.id, status=DocStatus.INDEXING, size_bytes=event.size or doc.size_bytes,
+            etag=event.etag, error=None)
+
+    try:
+        response = storage.client().get_object(config.KB_BUCKET, event.object_key)
+        data = response.read()
+        response.close()
+        response.release_conn()
+    except S3Error as exc:
+        if exc.code == "NoSuchKey":
+            # Deleted since the upload: the delete event, behind this one, will finish the job.
+            return "skipped: the file is already gone"
+        raise
+
+    try:
+        text, page_starts = loader.parse_bytes(data, doc.content_type)
+    except loader.UnreadableDocument as exc:
+        raise PermanentError(str(exc)) from exc
+
+    digest = loader.content_hash(text)
+    if digest == doc.content_hash and doc.chunk_count:
+        # Same text as what is indexed (a replayed event, or a re-upload of an identical file).
+        _update(doc.id, status=DocStatus.READY)
+        return "unchanged: same text already indexed"
+
+    now = datetime.now(timezone.utc)
+    source = {
+        "id": str(doc.id),
+        "source": event.file_name,
+        "text": text,
+        "page_starts": page_starts,
+        "metadata": {"doc_type": doc.doc_type.value, "title": doc.title, "content_hash": digest,
+                     "ingested_at": now.isoformat(timespec="seconds"), "ingested_ts": int(now.timestamp())},
+    }
+    chunks = chunker.chunk_documents([source], config.CHUNK_SIZE, config.CHUNK_OVERLAP)
+    vectors = embeddings.embed_documents(chunks)
+    sparse_vectors = sparse.encode_documents([c["text"] for c in chunks]) if config.HYBRID_SEARCH else None
+
+    client = vector_store.get_client()
+    vector_store.ensure_collection(client)
+    # Delete-then-upsert: a shorter new version must not leave the old version's tail chunks.
+    vector_store.delete_document_points(client, str(doc.id))
+    vector_store.upsert_chunks(client, chunks, vectors, sparse_vectors)
+
+    _update(doc.id, status=DocStatus.READY, chunk_count=len(chunks),
+            page_count=len(page_starts) or None, content_hash=digest, error=None)
+    return f"indexed: {len(chunks)} chunk(s)" + (f", {len(page_starts)} page(s)" if page_starts else "")
+
+
+def remove(event: KbEvent) -> str:
+    vector_store.delete_document_points(vector_store.get_client(), str(event.document_id))
+    with session_scope() as session:
+        doc = session.get(Document, event.document_id)
+        if doc is not None and doc.status != DocStatus.DELETED:
+            doc.status = DocStatus.DELETED
+    return "removed from the index"
+
+
+def _document_for(event: KbEvent) -> Document:
+    """
+    The document row for an upload event.
+
+    No row means the file was put into the bucket without our API (an admin's `mc cp`).
+    AD14: accept it when its metadata is complete and consistent; otherwise record it as failed.
+    """
+    with session_scope() as session:
+        doc = session.get(Document, event.document_id)
+        if doc is not None:
+            return doc
+        meta = event.metadata
+        problem = None
+        if meta.get("document-id") != str(event.document_id):
+            problem = "metadata document-id is missing or does not match the object key"
+        elif meta.get("doc-type") not in {t.value for t in DocType}:
+            problem = f"metadata doc-type {meta.get('doc-type')!r} is not policy, faq or guide"
+        elif not meta.get("title"):
+            problem = "metadata title is missing"
+        doc = Document(
+            id=event.document_id,
+            title=(meta.get("title") or event.file_name)[:200],
+            doc_type=DocType(meta["doc-type"]) if problem is None else DocType.GUIDE,
+            file_name=event.file_name,
+            object_key=event.object_key,
+            content_type=meta.get("content-type") or "application/octet-stream",
+            size_bytes=event.size,
+            status=DocStatus.UPLOADED,
+            uploaded_by=meta.get("uploaded-by") or "out-of-band",
+            upload_expires_at=datetime.now(timezone.utc),
+        )
+        session.add(doc)
+    if problem:
+        raise PermanentError(f"uploaded without the API, and {problem}")
+    return doc
+
+
+def _update(doc_id: uuid.UUID, **values) -> None:
+    with session_scope() as session:
+        doc = session.get(Document, doc_id)
+        if doc is not None:
+            for name, value in values.items():
+                setattr(doc, name, value)
+
+
+def mark_failed(document_id: uuid.UUID | None, reason: str) -> None:
+    if document_id is not None:
+        _update(document_id, status=DocStatus.FAILED, error=reason[:1000])
+
+
+# --- one Kafka message, with the retry policy ---------------------------------------------
+
+def process(value: bytes, dead_letter, sleep=time.sleep) -> str:
+    """
+    Handle one message completely: afterwards its offset can be committed, whatever happened.
+
+    `dead_letter(reason, attempts)` sends the original message to the DLT.
+    """
+    try:
+        events = parse_events(value)
+    except PermanentError as exc:
+        dead_letter(str(exc), 0)      # nothing to mark: we don't even know the document
+        return f"dead-lettered: {exc}"
+
+    outcomes = []
+    for event in events:
+        for attempt in range(1, RETRY_ATTEMPTS + 1):
+            try:
+                outcomes.append(handle(event))
+                break
+            except PermanentError as exc:
+                mark_failed(event.document_id, str(exc))
+                outcomes.append(f"failed: {exc}")
+                break
+            except Exception as exc:       # transient until proven otherwise
+                if attempt == RETRY_ATTEMPTS:
+                    reason = f"{type(exc).__name__}: {exc}"
+                    dead_letter(reason, attempt)
+                    mark_failed(event.document_id,
+                                f"Could not index after {attempt} attempts ({reason}). "
+                                "The event is in the dead-letter topic; run `cli redrive` once fixed.")
+                    outcomes.append(f"dead-lettered after {attempt} attempts: {reason}")
+                    break
+                delay = RETRY_BASE_SECONDS * 2 ** (attempt - 1) * random.uniform(0.8, 1.2)
+                log.warning("attempt %d failed (%s: %s); retrying in %.1f s",
+                            attempt, type(exc).__name__, exc, delay)
+                sleep(delay)
+    return "; ".join(outcomes) or "nothing to do"
+
+
+# --- the consumer loop -----------------------------------------------------------------------
+
+def consumer_config(group: str = GROUP) -> dict:
+    return {
+        "bootstrap.servers": config.KAFKA_BOOTSTRAP,
+        "group.id": group,
+        "enable.auto.commit": False,             # we commit after the work, never before
+        "auto.offset.reset": "earliest",         # a new group starts with events already waiting
+        "partition.assignment.strategy": "cooperative-sticky",
+    }
+
+
+def dlt_producer():
+    from confluent_kafka import Producer
+    return Producer({"bootstrap.servers": config.KAFKA_BOOTSTRAP,
+                     "acks": "all", "enable.idempotence": True})
+
+
+def produce_confirmed(producer, topic: str, **kwargs) -> None:
+    """
+    Produce one message and wait until the broker has it, or raise.
+
+    flush() returning is not proof: a failed delivery is reported only through the
+    delivery callback, and a timed-out flush just returns how many are still queued.
+    Callers commit an offset right after this, so "probably sent" would lose the event.
+    """
+    errors = []
+    producer.produce(topic, on_delivery=lambda err, _msg: err and errors.append(err), **kwargs)
+    remaining = producer.flush(10)
+    if errors or remaining:
+        raise RuntimeError(f"could not write to {topic}: {errors[0] if errors else 'timed out'}")
+
+
+def run() -> None:
+    from confluent_kafka import Consumer, KafkaError
+
+    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    # One line per message is the useful signal; per-HTTP-request lines from the SDKs drown it.
+    for noisy in ("httpx", "httpcore", "google_genai", "urllib3"):
+        logging.getLogger(noisy).setLevel(logging.WARNING)
+    consumer = Consumer(consumer_config())
+    producer = dlt_producer()
+    stopping = False
+
+    def stop(*_):
+        nonlocal stopping
+        stopping = True
+    signal.signal(signal.SIGINT, stop)
+    signal.signal(signal.SIGTERM, stop)
+
+    def on_assign(_c, partitions):
+        log.info("assigned partitions %s", sorted(p.partition for p in partitions))
+
+    def on_revoke(_c, partitions):
+        log.info("revoked partitions %s", sorted(p.partition for p in partitions))
+
+    consumer.subscribe([config.KB_TOPIC], on_assign=on_assign, on_revoke=on_revoke)
+    log.info("worker in group %s reading %s from %s", GROUP, config.KB_TOPIC, config.KAFKA_BOOTSTRAP)
+    try:
+        while not stopping:
+            msg = consumer.poll(1.0)
+            if msg is None:
+                continue
+            if msg.error():
+                if msg.error().code() != KafkaError._PARTITION_EOF:
+                    log.error("kafka: %s", msg.error())
+                continue
+
+            def dead_letter(reason: str, attempts: int, msg=msg) -> None:
+                produce_confirmed(producer, config.KB_DLT, key=msg.key(), value=msg.value(), headers=[
+                    ("error", reason.encode()[:1000]),
+                    ("attempts", str(attempts).encode()),
+                    ("original-topic", msg.topic().encode()),
+                    ("original-partition", str(msg.partition()).encode()),
+                    ("original-offset", str(msg.offset()).encode()),
+                ])
+                # If that raised, process() raises too: no commit, the worker stops, and the
+                # message is read again on restart. Losing it is the one unacceptable outcome.
+
+            started = time.perf_counter()
+            outcome = process(msg.value(), dead_letter)
+            consumer.commit(message=msg, asynchronous=False)
+            log.info("p%d@%d %s -> %s (%d ms)", msg.partition(), msg.offset(),
+                     msg.key().decode() if msg.key() else "-", outcome,
+                     (time.perf_counter() - started) * 1000)
+    finally:
+        log.info("stopping: leaving the group")
+        consumer.close()          # commits nothing extra; hands our partitions to the others
+        producer.flush(10)
+
+
+if __name__ == "__main__":
+    run()

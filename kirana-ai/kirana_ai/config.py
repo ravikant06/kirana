@@ -39,6 +39,25 @@ DATABASE_URL = os.getenv(
 # us, so this is how we keep seeing what it actually runs.
 SQL_ECHO = os.getenv("SQL_ECHO", "false").lower() in {"1", "true", "yes"}
 
+# --- Kafka (Kirana's broker; the laptop listener is 9094, containers use kafka:9092) ---
+KAFKA_BOOTSTRAP = os.getenv("KAFKA_BOOTSTRAP", "localhost:9094")
+KB_TOPIC = os.getenv("KB_TOPIC", "kb.documents.v1")
+KB_DLT = KB_TOPIC + "-dlt"                 # Kirana's convention: <topic>-dlt
+KAFKA_PARTITIONS = int(os.getenv("KAFKA_PARTITIONS", "3"))
+
+# --- MinIO (knowledge-base documents) ---
+MINIO_ENDPOINT = os.getenv("MINIO_ENDPOINT", "localhost:9000")
+MINIO_ACCESS_KEY = os.getenv("MINIO_ACCESS_KEY", "minioadmin")
+MINIO_SECRET_KEY = os.getenv("MINIO_SECRET_KEY", "minioadmin")
+KB_BUCKET = os.getenv("KB_BUCKET", "kb-docs")
+# The notification target configured on the MinIO server (infra/docker-compose.yml, id "KB").
+KB_EVENTS_ARN = os.getenv("KB_EVENTS_ARN", "arn:minio:sqs::KB:kafka")
+# Where the *browser* sends uploads. Signed URLs must use a host the browser can resolve.
+MINIO_PUBLIC_URL = os.getenv("MINIO_PUBLIC_URL", "http://localhost:9000")
+MINIO_REGION = "us-east-1"   # set explicitly, so signing never makes a network call to ask
+KB_MAX_UPLOAD_BYTES = int(os.getenv("KB_MAX_UPLOAD_BYTES", str(10 * 1024 * 1024)))
+KB_UPLOAD_LINK_MINUTES = int(os.getenv("KB_UPLOAD_LINK_MINUTES", "10"))
+
 # --- Tenancy ---
 # Kirana is single-tenant, but every chunk is still stamped and every search
 # still scoped. The rule "scope is injected by the server, never chosen by the

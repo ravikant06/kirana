@@ -1,4 +1,4 @@
-# ai-contract.md: Kirana ⇄ Kirana AI (v0.4)
+# ai-contract.md: Kirana ⇄ Kirana AI (v0.5)
 
 The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every change.
 **(Pn)** = added in phase n of `AI-PLAN.md`. Build only what the current phase needs.
@@ -40,7 +40,7 @@ The request body and tool arguments **never** contain a user id.
     ChatReply     = { thread_id, message_id, reply, citations: [Citation], steps: [Step], usage: Usage }
     Usage         = { llm_calls, input_tokens, output_tokens, latency_ms,
                       cost_usd }                      // decimal string "0.004170", or null = unknown price
-    Citation      = { source, doc_id, title? }       // P3 adds page and chunk_id
+    Citation      = { source, doc_id, title?, pages: [int] }   // pages: PDFs only (P2)
     Step          = { tool, query, where, count }    // one tool call: filters the model chose, hits returned
     ThreadSummary = { id, title, updated_at }
     Thread        = { id, title, created_at, updated_at,
@@ -73,37 +73,64 @@ Sent as `event: <type>` followed by `data: <json>`. The browser uses `fetch` + a
 
 | Method + path | Request → Response |
 |---|---|
-| `POST /v1/kb/documents/upload-url` | `{title, doc_type, file_name, content_type, size_bytes}` → `UploadTicket` (same shape as Kirana's images, D7) |
-| `GET /v1/kb/documents` | → `[KbDocument]` |
-| `DELETE /v1/kb/documents/{id}` | → 204 (removes the object; the delete event removes the vectors) |
+| `POST /v1/kb/documents/upload-url` | `KbUploadRequest` → `KbUploadTicket` (200), or 400 with field errors |
+| `GET /v1/kb/documents` | → `[KbDocument]`, most recently changed first, deleted ones left out |
+| `DELETE /v1/kb/documents/{id}` | → 204; 404 if unknown or already deleted |
 
-    KbDocument = { id, title, doc_type, file_name, size_bytes, status, chunk_count, error?, updated_at }
-    status     = PENDING | INDEXING | READY | FAILED | DELETED
+    KbUploadRequest = { title (1–120), doc_type: "policy"|"faq"|"guide", file_name (1–200),
+                        content_type: "application/pdf"|"text/markdown"|"text/plain",
+                        size_bytes (1 .. 10 MB) }
+    KbUploadTicket  = { document_id, object_key, upload_url, form_fields, expires_at }
+    KbDocument      = { id, title, doc_type, file_name, content_type, size_bytes, status,
+                        page_count, chunk_count, error, uploaded_by, created_at, updated_at }
+    status          = pending | uploaded | indexing | ready | failed | deleting   (deleted is never listed)
 
-Policy: key fixed to `kb-docs/{document_id}/{file_name}`; `Content-Type` in
-`application/pdf | text/markdown | text/plain`; size capped (config). There is no confirm call:
-the MinIO event confirms the upload.
+The browser posts every entry of `form_fields`, then the file **last**, to `upload_url`
+(Kirana's `uploadToStorage` does exactly this). `form_fields` holds `key`
+(`{document_id}/{safe file name}`), `Content-Type`, the four `x-amz-meta-*` fields and the
+signature; the signed policy pins all of them, so changing any one makes MinIO answer 403.
+The title travels URL-encoded in `x-amz-meta-title`. There is no confirm call: MinIO's event
+is the confirmation. `X-User-Id` is optional here (recorded as `uploaded_by` only); Manage has
+no login until P5. A delete always removes the file; a `pending` document is deleted at once,
+anything else becomes `deleting` until the worker has removed its chunks.
 
-## 5. Events into the AI worker
+## 5. Events into the AI worker (Kafka)
 
-Queue: Redis list(s) on the queue Redis (AD3). The consumer uses `BLMOVE` to a processing list; dead-letter list `ai:dlq`.
+Broker: Kirana's (`localhost:9094` from the laptop, `kafka:9092` from containers). Consumer
+group `kirana-ai-ingest`, auto-commit off, offsets committed after processing (at-least-once).
+Dead letters go to `<topic>-dlt`, as in Kirana.
 
-**P2: Documents.** MinIO bucket notification (MinIO's own event JSON), bucket `kb-docs`,
-events `s3:ObjectCreated:*` and `s3:ObjectRemoved:*`. The worker reads the document id from the key.
+**P2 — `kb.documents.v1`: produced by MinIO** (bucket notification on `kb-docs`, events
+`s3:ObjectCreated:*` and `s3:ObjectRemoved:*`, MinIO's own S3-style event JSON).
+- Object key: `{document_id}/{file_name}`. A delete event has no metadata, so the document
+  id must come from the key.
+- Our metadata travels in `Records[].s3.object.userMetadata`, set at upload as form fields
+  pinned by the signed policy: `x-amz-meta-document-id`, `x-amz-meta-title`,
+  `x-amz-meta-doc-type` (`policy | faq | guide`), `x-amz-meta-uploaded-by`. Validated before use.
+- Topics `kb.documents.v1` and `kb.documents.v1-dlt` are created by the AI service (Kafka
+  auto-create is off): `python -m kirana_ai.cli kafka-setup`.
+- **Checked against a real event (Phase 2 M1):**
+  - Kafka message key = `kb-docs/{document_id}/{file_name}` (bucket + object path, not encoded),
+    so an upload and its delete share a partition and arrive in order.
+  - `s3.object.key` inside the event is **URL-encoded** (`{document_id}%2F{file}`): decode it,
+    or use the message key.
+  - `userMetadata` keys arrive **canonicalised**: `X-Amz-Meta-Document-Id`, `X-Amz-Meta-Title`,
+    `X-Amz-Meta-Doc-Type`, `X-Amz-Meta-Uploaded-By` (plus `content-type`). Read them case-insensitively.
+  - `eventName` is `s3:ObjectCreated:Put` (or `:Post` for a browser POST upload) and
+    `s3:ObjectRemoved:Delete`. A delete has no `userMetadata` and no `size`.
 
-**P4: Products.** Pushed by Kirana **after commit**:
-
+**P4 — `catalog.v1`: produced by Kirana's outbox** (key = product id), Kirana's envelope:
 ```json
-{ "event_id": "uuid", "event_type": "catalog.product.upserted", "product_id": "123",
-  "occurred_at": "2026-09-29T10:15:00Z",
-  "payload": { "name": "...", "description": "...", "category": "..." } }
+{ "eventId": "uuid", "type": "ProductUpserted", "occurredAt": "2026-10-03T10:15:00Z",
+  "aggregateId": "123",
+  "data": { "name": "...", "description": "...", "category": "..." } }
 ```
+`ProductDeleted` has the same envelope without `data` (also sent for a soft delete).
+**Never price or stock.**
 
-`catalog.product.deleted` has the same shape without `payload` (also sent for a soft delete).
-**Never include price or stock.**
-
-Rules: consumers are idempotent (deterministic point ids, content-hash skip);
-`make reindex` and `make index-products` rebuild everything from the source of truth. From P12, Kafka replaces these lists and Kirana publishes through an outbox.
+**Rules:** processing is idempotent (deterministic point ids, delete-then-upsert per
+document, content-hash skip); `cli reindex` and `cli index-products` rebuild from the source
+of truth if anything is ever lost.
 
 ## 6. Tools (AI → Kirana REST)
 
@@ -112,8 +139,8 @@ Rules: consumers are idempotent (deterministic point ids, content-hash skip);
 | P4 | `GET /products/batch?ids=` → `[ProductSummary]` (new) | Product search hydration |
 | P4 | `GET /products?page=&size=` (exists) | `make index-products` |
 | P5 | `GET /orders`, `GET /orders/{id}` (exist; user from the token; 404 if foreign) | Order questions |
-| P6 | `POST /orders/{id}/cancel` + `Idempotency-Key` (new; `CREATED` only) | Cancel after approval |
-| P6 | `POST /cart/items/batch` + `Idempotency-Key` (new) | Cart builder after approval |
+| P6 | `POST /orders/{id}/cancel` (exists since Stage 5), `Idempotency-Key` = approval id | Cancel after approval |
+| P6 | `POST /cart/items` (exists), one call per line, `Idempotency-Key` = approval id + `:` + product id | Cart builder after approval |
 
 Rules: timeouts on every call (P11); retries only on GETs and idempotency-keyed writes;
 Kirana's ProblemDetail is passed to the LLM as a tool error, never raised to the user raw.

@@ -85,7 +85,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
     }
     const mine = epoch.current
     try {
-      const t = await api.ai.thread(id)
+      const t = await api.ai.thread(userId, id)
       if (mine !== epoch.current) return
       saveThread(userId, t.id)
       setThreadId(t.id)
@@ -123,7 +123,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
     setPending({ startedAt: performance.now() })
     const mine = epoch.current
     try {
-      const r = await api.ai.chat(text, threadId)
+      const r = await api.ai.chat(userId, text, threadId)
       if (mine !== epoch.current) return
       saveThread(userId, r.thread_id)   // explicit, never from an effect: see openThread
       setThreadId(r.thread_id)
@@ -153,7 +153,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
   const showThreads = async () => {
     setView('threads')
     try {
-      setThreads(await api.ai.threads())
+      setThreads(await api.ai.threads(userId))
     } catch (e) {
       setThreads([])
       setLoadError(e)
@@ -162,7 +162,7 @@ export default function ChatDock({ userId, userName, inspectorOpen }) {
 
   const removeThread = async (id) => {
     try {
-      await api.ai.deleteThread(id)
+      await api.ai.deleteThread(userId, id)
       setThreads((ts) => (ts || []).filter((t) => t.id !== id))
       if (id === threadId) openThread(null)
     } catch (e) {
@@ -331,6 +331,7 @@ function AssistantMessage({ m }) {
               <span key={c.source} className="source-chip" title={c.source}>
                 <Doc width={14} height={14} />
                 {c.title || c.source}
+                {c.pages?.length > 0 && <span className="source-pages">p. {c.pages.join(', ')}</span>}
               </span>
             ))}
           </div>

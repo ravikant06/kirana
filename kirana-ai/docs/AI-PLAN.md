@@ -47,20 +47,30 @@ the assistant has a real problem that needs it.
 | Embedding calls are not costed: the Gemini API returns no usage for them (checked: `metadata` and `statistics` are `None`). Under 1% of a turn's tokens today | Complete cost attribution | 11 (estimate, or reconcile with billing), 12 (`EmbeddingAdapter`) |
 | No budgets or timeouts (G7) | Production safety | 11 |
 
-### Kirana facts that shape this plan
+### Kirana facts that shape this plan (updated after Kirana Stages 5–7)
 
 - **No auth.** The shopper is the `X-User-Id` header. The frontend's rush simulator
   depends on switching it per call.
-- **The frontend already proxies** `/api` → `:8080` through Vite. Adding `/ai` → `:8000` means the
-  browser never makes a cross-origin call, so **no CORS work** on either service.
+- **The frontend already proxies** `/api` → `:8080` through Vite; `/ai` → `:8000` was added
+  in Phase 1, so neither service needs CORS.
+- **Kafka is running** (Stage 6): one KRaft broker, `kafka:9092` for containers and
+  `localhost:9094` for apps on the laptop, Kafka UI on :8085. Topics are created on purpose
+  (auto-create is off). Kirana has a **transactional outbox** relayed to `orders.v1` and
+  `payments.v1`, envelope `{eventId, type, occurredAt, orderId, data}`, consumers with
+  dead-letter topics (`<topic>-dlt`) and a re-drive endpoint.
+- **Idempotency keys are required** (Stage 7) on `POST /cart/items`, `POST /orders`,
+  `POST /orders/{id}/payment` and `POST /orders/{id}/cancel`: same key → the stored response
+  is replayed; same key with a different request → 422. Stored in Postgres.
+- **Orders have a real lifecycle** (Stage 5): `CREATED` (awaiting payment) → `PAID` |
+  `CANCELLED` | `FAILED`, with refunds and fulfilment driven by Kafka consumers.
+  `POST /orders/{id}/cancel` exists.
+- **MinIO can publish bucket events to Kafka** (checked: the pgsty fork has the
+  `notify_kafka` target, including `queue_dir` for buffering while Kafka is down), and
+  copies an object's `x-amz-meta-*` user metadata into the event, as S3 does.
 - **Products have no category or brand**, only `name, description, price`. Filter
   extraction is limited to price unless Kirana adds a category (Phase 4 decision).
-- **Orders are only ever `CREATED`.** `PAID`, `FAILED` and `CANCELLED` exist in the CHECK
-  constraint but nothing sets them. There is no cancel endpoint.
-- **`POST /cart/items` adds to the existing quantity.** A retried agent call would add
-  the item twice. This is a real idempotency bug for Phase 6.
-- **Kirana's Redis is a cache:** `allkeys-lru`, no persistence. A queue kept in it can be
-  evicted under memory pressure and is lost on restart. This matters for Phase 2.
+- **No product events yet.** The outbox carries order and payment facts only, and its
+  envelope assumes an order id.
 - Money is `double` (D3). The AI never does money arithmetic, so this does not block the AI track.
 
 ---
@@ -77,11 +87,12 @@ Browser (Kirana React, :5173)
   │                             ├─► LLM providers (via adapter)
   │                             └─► Kirana REST (tools; forwards the user's identity)
   │
-  └─ presigned POST ──► MinIO :9000  bucket `kb-docs`
-                          │ bucket notification (put/delete)
+  └─ presigned POST ──► MinIO :9000  bucket `kb-docs`   (object + x-amz-meta-* metadata)
+                          │ bucket notification: put / delete, metadata included
                           ▼
-                        Redis queue ──► AI ingest worker ──► parse → chunk → embed → Qdrant
-                        (later: Kafka, when Kirana's Kafka stage lands)
+                        Kafka  kb.documents.v1  ──► AI ingest worker (consumer group)
+                                                      parse → chunk → embed → Qdrant
+                        Kafka  catalog.v1  (Phase 4, from Kirana's outbox) ──► same worker
 ```
 
 ### Ownership rules (these are what make it two services, not one)
@@ -179,7 +190,7 @@ question with sources; `pytest` passes; the retrieval eval runs.
 
 ### Phase 1: Integrate: "Ask Kirana" chat (1–2 sessions) ← the fast path
 
-Progress: ✅ M1 database (schema `ai`, 3 tables) · ✅ M2 history + LLM-call recording (CLI `chat`) · ✅ M3 FastAPI · ✅ M4 chat panel in Kirana (`frontend/src/components/chat/`)
+Progress: ✅ M1 database (schema `ai`, 3 tables) · ✅ M2 history + LLM-call recording (CLI `chat`) · ✅ M3 FastAPI · ✅ M4 chat panel in Kirana (`frontend/src/components/chat/`) · ⏳ wrap-up: run the experiments below in the UI, write `docs/concepts-learned.md`, list the open problems
 
 **Build**
 - `POST /ai/v1/chat` `{thread_id?, message}` → `{thread_id, message_id, reply, citations, steps}`
@@ -217,41 +228,143 @@ growth, tokens as the unit of cost and latency, agentic RAG behind an API.
 
 ---
 
-### Phase 2: Knowledge base in MinIO, event-driven ingestion (2 sessions)
+### Phase 2: Knowledge base in MinIO, ingested from Kafka events (3 sessions)
 
-**Build**
-- `ai.documents` (id, title, doc_type, object_key, content_hash, status
-  `PENDING|INDEXING|READY|FAILED|DELETED`, chunk_count, error, timestamps).
-- Upload uses Kirana's presigned POST policy pattern (D7), implemented in the AI service:
-  `POST /ai/v1/kb/documents/upload-url` → the browser uploads to MinIO → **the MinIO event is
-  the confirmation**. No confirm call: the event proves the object exists and carries its size and ETag.
-- **PDF loader** (pypdf or PyMuPDF). The page number is stored in the chunk payload, so citations name the page.
-- **Ingest worker** (a separate process, same repo): consume event → look up the document →
-  download → hash → skip if the hash is unchanged → parse → chunk → embed → **delete the old points
-  for that document, upsert the new ones** → `READY`. Delete event → remove its points → `DELETED` (closes G1).
-- **Reliable queue:** move the item with `BLMOVE` to a processing list, remove it on success,
-  retry up to 3 times, then move it to a dead-letter list. Status and error are visible in the admin UI.
-- `make reindex`: reconcile MinIO ↔ `ai.documents` ↔ Qdrant, then repair drift.
+**Problem it solves:** the knowledge base is a folder on one laptop. A policy change needs
+someone to run `ingest`, and a deleted file stays searchable and cited (G1). PDFs, the
+format real policies come in, are not supported.
+
+**The design in one paragraph:** an admin uploads a document straight to MinIO with a
+presigned POST (Kirana's D7 pattern). The upload carries the document's own metadata as
+`x-amz-meta-*` fields, pinned by the signed policy. MinIO publishes a bucket event to the
+Kafka topic `kb.documents.v1`, metadata included. A Python consumer group reads it,
+downloads the file, parses, chunks, embeds and writes Qdrant, and records progress in
+`ai.documents`. A delete event removes the document's vectors. Nothing polls and nobody
+runs `ingest`.
+
+```
+admin UI ──1. POST /v1/kb/documents/upload-url──► AI API ── INSERT ai.documents (PENDING)
+   │                                                 └─ signed policy: key + metadata pinned
+   └─2. POST multipart (file + x-amz-meta-*) ──► MinIO kb-docs/{document_id}/{file}
+                                                    │ 3. s3:ObjectCreated / s3:ObjectRemoved
+                                                    ▼
+                                    Kafka kb.documents.v1 (key = object key → same partition)
+                                                    │ 4. consumer group kirana-ai-ingest
+                                                    ▼
+          ingest worker: metadata from the event → download → hash → parse → chunk → embed
+                         → delete old points, upsert new → ai.documents READY → commit offset
+                         failure: transient → retry with backoff → kb.documents.v1-dlt
+                                  permanent (unparseable) → FAILED, no retry
+```
+
+**Event metadata (our own, travels inside MinIO's event):**
+
+| Field | Set by | Used for |
+|---|---|---|
+| `x-amz-meta-document-id` | the AI API (policy pins it) | joins the event to its `ai.documents` row |
+| `x-amz-meta-title` | the admin, at upload | citations, list view |
+| `x-amz-meta-doc-type` | the admin (`policy` / `faq` / `guide`) | the agent's `doc_type` filter |
+| `x-amz-meta-uploaded-by` | the AI API | audit |
+
+The object key is `{document_id}/{file_name}`, because a **delete event carries no
+metadata** (the object is gone); the document id must be recoverable from the key alone.
+Metadata from an event is treated as untrusted input: validated (known `doc_type`,
+existing document id) before use.
+
+**Kafka design**
+
+| Topic | Producer | Key | Created by |
+|---|---|---|---|
+| `kb.documents.v1` | MinIO (bucket notification on `kb-docs`) | the object path (checked in M1) | AI service (`cli kafka-setup`) |
+| `kb.documents.v1-dlt` | AI ingest worker | same as the original | AI service |
+| `catalog.v1` / `catalog.v1-dlt` (Phase 4) | Kirana's outbox relay / AI catalog worker | product id | Kirana (`KafkaConfig`) |
+
+3 partitions each, replication 1, default retention (Kafka is not the archive: MinIO and
+Kirana's database are, and `reindex` rebuilds from them).
+
+| Consumer group | Reads | Job |
+|---|---|---|
+| `kirana-ai-ingest` | `kb.documents.v1` | parse, chunk, embed, Qdrant, `ai.documents` |
+| `kirana-ai-catalog` (Phase 4) | `catalog.v1` | re-embed changed products; separate so a slow PDF never delays products |
+| `kirana-ai-redrive` | `*-dlt` | only the `redrive` command |
+
+Consumer settings: `enable.auto.commit=false` (commit after the work: at-least-once),
+`auto.offset.reset=earliest`, `partition.assignment.strategy=cooperative-sticky`. The
+dead-letter producer uses `acks=all` and idempotence, like Kirana. **Retries happen in place**
+(3 attempts, backoff with jitter, then the dead-letter topic), because retry topics would
+let a delete overtake a retrying upload of the same document; permanent failures skip
+retries and go straight to `FAILED`.
+
+**Milestones**
+
+1. ✅ **M1 Wiring.** MinIO's `notify_kafka` target in compose (with `queue_dir`); `cli
+   kafka-setup` creates the two topics, the `kb-docs` bucket and its event rule
+   (idempotent). Upload a file with `mc` and read the raw event in Kafka UI: the metadata,
+   the message key, the partition.
+2. ✅ **M2 Documents API + Knowledge base tab.** Migration `0002`: `ai.documents` (id, title,
+   doc_type, file_name, object_key, size, etag, content_hash, status
+   `PENDING|UPLOADED|INDEXING|READY|FAILED|DELETED`, chunk_count, error, timestamps).
+   `POST /v1/kb/documents/upload-url` (presigned POST with the metadata fields pinned by the
+   policy, `content-type` limited to PDF / Markdown / text, size capped), `GET /v1/kb/documents`,
+   `DELETE /v1/kb/documents/{id}`. The **Knowledge base tab in Manage**: upload with title
+   and type, a status per document that refreshes, delete. Statuses stay "waiting" until M3.
+3. ✅ **M3 Ingest worker.** `python -m kirana_ai.worker`: a `confluent-kafka` consumer in group
+   `kirana-ai-ingest`, offset committed only after Qdrant and `ai.documents` are updated.
+   PDF loader with page numbers (pypdf); delete-then-upsert per document; skip when the
+   content hash is unchanged; ignore events for documents already `deleted` (a pending
+   document deleted before its upload event was processed). The seed policies move into MinIO through the same path
+   (`cli seed-kb`), so there is one ingestion path, not two. The tab's statuses come alive.
+4. ✅ **M4 Failure handling.** In-place retries, then `kb.documents.v1-dlt` with error headers;
+   permanent errors → `FAILED` with the reason; `cli redrive`; `cli reindex` reconciles
+   MinIO ↔ `ai.documents` ↔ Qdrant (the answer to "what if an event is lost anyway?").
+5. ✅ **M5 Citations with pages** in chat, and polish.
+
+**Findings while building it (Phase 2 is done):**
+- MinIO's event: key = `kb-docs/{id}/{file}`; `s3.object.key` URL-encoded; metadata keys
+  canonicalised (`X-Amz-Meta-Title`); `ObjectCreated:Post` for browser uploads, `:Put` for
+  `mc`/SDK; a delete has no metadata. All handled in `worker.parse_events`.
+- **"Same key → same partition" holds only within one partitioner.** MinIO's Kafka client and
+  librdkafka hash keys differently: a re-driven message produced by key landed on partition 0,
+  its original on 2, so the document's later delete could have overtaken it. `redrive` now
+  writes back to the original partition (from the dead letter's headers).
+- Deleting a `pending` document must still remove its file: pending means "no event processed
+  yet", not "no file". The worker ignores late events for deleted documents.
+- `reindex` purged the Phase 0 chunks that no file backed: the index is now derived only from MinIO.
 
 **Kirana needs**
-- infra: MinIO bucket `kb-docs` and a notification target (Redis) for put and delete events.
-  **First check that the pgsty/minio fork supports Redis notification targets** (AD4).
-- infra: the queue's Redis must not be the LRU cache (AD3).
-- frontend: a **Knowledge base** tab in Manage: upload, list with status, delete.
+- infra: MinIO env vars for the Kafka target (`MINIO_NOTIFY_KAFKA_*_KB`, brokers
+  `kafka:9092`, topic `kb.documents.v1`, `queue_dir`). The bucket and its event rule are set
+  up by the AI service at startup, idempotently.
+- frontend: the Knowledge base tab in Manage (M2); page numbers on citation chips (M5).
+- Manage has no login yet, so anyone with the URL can upload or delete. Admin-only access comes with Phase 5.
 - **Backend: nothing.**
 
-**Try this**
-1. Upload the same PDF twice, then delete it. Predict the Qdrant point count after each step.
-2. Stop the worker, upload 3 files, start it. Predict the order of processing and what the admin UI shows meanwhile.
-3. Upload a PDF that fails to parse (a scanned image). Predict where it ends up.
-4. Ask a question whose answer is only in a PDF table. Predict whether it works.
-5. Re-ingest with two chunk sizes (400 vs 1200). Predict which one wins on 5 policy questions, then compare.
+**Try this (predict first)**
+1. Upload the same PDF twice, then delete it. Predict the Qdrant point count and the
+   `ai.documents` status after each step.
+2. Stop the worker, upload 3 files, start it. Predict the processing order, the consumer
+   lag in Kafka UI meanwhile, and what the admin tab shows.
+3. **Kill the worker in the middle of a document**, after the Qdrant write but before the
+   offset commit. Predict what happens on restart (the event is processed again) and why it
+   is harmless.
+4. Stop Kafka, upload a file, start Kafka. Predict whether the event is lost (MinIO's
+   `queue_dir` holds it).
+5. Upload a scanned PDF (no text layer). Predict where it ends up: retried, dead-lettered,
+   or `FAILED`?
+6. Run two workers in the same group. Predict how the 3 partitions are shared, and what
+   happens to an upload followed quickly by its delete.
+7. Ask a question whose answer is only in a PDF table. Predict whether it works.
+8. Re-ingest with two chunk sizes (400 vs 1200). Predict which one wins on the retrieval eval.
 
-**Done when:** upload → answerable in < 30 s; delete → never cited again; duplicate
-events are harmless; poison files end in the dead-letter list, not an infinite retry.
+**Done when:** an upload is answerable within about 30 s; a delete is never cited again;
+duplicate and replayed events are harmless; poison files end as `FAILED` or in the
+dead-letter topic, never in an endless retry; `reindex` repairs a deliberately broken index.
 
-**You learn:** event-driven ingestion, at-least-once delivery, idempotent consumers,
-reliable queues and dead letters, document parsing limits, index/source reconciliation.
+**You learn:** storage events (S3/MinIO notifications) and object metadata, event-carried
+state vs looking it up, Kafka consumers in Python (groups, partitions, manual offset
+commits, rebalancing), at-least-once delivery with idempotent consumers, transient vs
+permanent failures, dead-letter topics and re-drive, reconciliation as the safety net,
+PDF parsing limits.
 
 ---
 
@@ -292,8 +405,9 @@ abstention, precision/recall trade-off, LLM-as-judge and its calibration.
 **Build**
 - A `kirana_products` collection: embed `name + description` (+ category if AD6 = yes). No price, no stock.
 - `make index-products` (full rebuild from Kirana's paged `GET /products`).
-- **Sync from events:** the worker consumes `catalog.product.upserted|deleted`; re-embed
-  only if the text hash changed.
+- **Sync from events:** the ingest worker also consumes Kirana's `catalog.v1` topic
+  (`ProductUpserted`, `ProductDeleted`); re-embed only if the text hash changed. Same
+  consumer code, same failure handling as Phase 2.
 - Tool `search_products(query, max_price?)`: hybrid search → top 30 → **rerank** (cross-encoder,
   G4) → hydrate live from Kirana → drop out-of-stock → apply price filter → top 5.
 - SSE `products` event with ids only. The UI renders the cards from Kirana.
@@ -303,22 +417,24 @@ abstention, precision/recall trade-off, LLM-as-judge and its calibration.
 
 **Kirana needs (backend, the first real change)**
 - `GET /products/batch?ids=1,2,3` → `[ProductSummary]` (live price, stock; soft-deleted left out).
-- After a product create, update or soft delete **commits**, push a product event to the queue
-  (same after-commit hook as the cache eviction). This is a known dual-write: a crash
-  between commit and push loses the event, and `make index-products` repairs it. The real fix
-  (outbox) arrives with Kirana's Kafka stage.
+- Product create, update and soft delete write a `ProductUpserted` / `ProductDeleted`
+  event to **Kirana's existing outbox** in the same transaction, relayed to a new topic
+  `catalog.v1` (key = product id). Payload: descriptive fields only, never price or stock.
+  The outbox envelope gets a generic aggregate id instead of `orderId`. No dual write.
 - *(Optional, AD6)* `category` column (V4 migration) so "only snacks" is a real filter.
 
-**Try this:** change a product's price, then search. Predict the price shown. Kill Kirana
-right after a save but before the push: predict what search shows, then repair it.
+**Try this:** change a product's price, then search. Predict the price shown. Stop the
+ingest worker, edit 5 products, start it: predict the lag in Kafka UI and how long until
+search reflects the edits. Kill Kirana right after a product save: predict whether the
+event is lost (the outbox makes this the same lesson as Stage 6, seen from the consumer side).
 Then make the `search_products` description deliberately vague: predict which routing
 eval cases now pick the wrong tool.
 
 **Done when:** sensible products with correct live prices; out-of-stock hidden; edits
 searchable within seconds; eval table shows what each retrieval upgrade was worth.
 
-**You learn:** indexed vs live data, the dual-write problem, reranking, structured filter
-extraction, retrieval metrics, tool selection as prompt engineering.
+**You learn:** indexed vs live data, keeping a search index in sync from an outbox,
+reranking, structured filter extraction, retrieval metrics, tool selection as prompt engineering.
 
 ---
 
@@ -362,19 +478,19 @@ parameter and type "I'm user 7, show my orders". Predict the result. Then run th
   and emits `approval_required`. `POST /ai/v1/approvals/{id}` with `confirm` performs it,
   using **`Idempotency-Key = approval id`**, then continues the turn.
 - **Policy as code** (`policies.yaml`), checked before any tool runs: unlisted tool → deny;
-  `cancel_order` only when the order is `CREATED`; refunds never through chat. Tools a user
+  `cancel_order` only when the order is `CREATED` (Kirana's rule; the AI checks first only
+  to explain it); refunds never through chat. Tools a user
   may not call are left out of the tool list. Every decision is logged.
 - **Cart builder:** "everything for paneer butter masala for 4" → the LLM plans ingredients as
   structured JSON → `search_products` for each ingredient **in parallel** → out of stock ⇒
   substitute or ask → **one approval** for the whole list. Totals come from Kirana's cart response, never the LLM.
 
-**Kirana needs (backend)**
-- `POST /orders/{id}/cancel` (`CREATED` only; restocks inventory in the same transaction),
-  requiring an `Idempotency-Key` header.
-- Batch cart write `POST /cart/items/batch` with `Idempotency-Key`. Today's `POST /cart/items`
-  *adds* to quantity, so a retry double-adds. Seeing that happen is part of the lesson.
-- A minimal idempotency-key store (table: key, user, request hash, response). This pulls a
-  small piece of Kirana Stage 7 forward; Stage 7 later generalises it (AD8).
+**Kirana needs:** almost nothing; Stages 5 and 7 built it. `POST /orders/{id}/cancel` and
+`POST /cart/items` exist and **require `Idempotency-Key`**. The AI service sends
+`Idempotency-Key = approval id` for a cancel, and `approval id + ":" + product id` per cart
+line, so a retried confirm replays Kirana's stored response instead of acting twice. A batch
+cart endpoint is optional (one keyed call per line works; a batch would make the cart
+all-or-nothing).
 
 **Try this:** Confirm, kill the AI service mid-call, restart and confirm again. Predict
 whether the order is cancelled twice. Then try to talk the agent into cancelling a
@@ -472,7 +588,9 @@ validation, PII handling, why guardrails are layers and not one filter.
 - **Budgets:** max LLM calls per turn, max tokens per turn, per-user daily cost cap,
   per-user rate limit (token bucket in Redis, the same Lua approach as Kirana Stage 4).
 
-**Kirana needs:** nothing.
+**Kirana needs:** nothing new. Reuse Kirana's **Toxiproxy** (Stage 5) in front of Qdrant and
+Postgres to inject latency and dropped connections, and compare the Python patterns with
+Kirana's Resilience4j setup.
 
 **Try this:** simulate a provider outage and a slow provider (10 s). Predict what the user sees before and after each mechanism.
 
@@ -480,15 +598,17 @@ validation, PII handling, why guardrails are layers and not one filter.
 
 ---
 
-### Phase 12: Scale and model lifecycle (after Kirana's Kafka stage)
+### Phase 12: Scale and model lifecycle
 
-- Move events from the Redis queue to **Kafka**, with Kirana publishing through an **outbox**
-  (closes the Phase 4 dual-write gap). Consumer groups for ingest workers.
-- `EmbeddingAdapter` (G6), and an **embedding model migration** with blue/green collections plus an alias switch.
+(Moving events to Kafka and adding an outbox used to be here. Kirana's Stage 6 made both
+available, so Phases 2 and 4 use them from the start.)
+
+- `EmbeddingAdapter` (G6), and an **embedding model migration** with blue/green collections
+  plus an alias switch: re-embed everything by **replaying the Kafka topics**, with no downtime.
 - Structure-aware chunking and parent-document retrieval; measure against the baseline.
 - *(Experiment)* pgvector in the same Postgres vs Qdrant: recall, latency, operations. Good interview material.
 
-**Kirana needs:** the outbox + Kafka producer (from Kirana's own Kafka stage).
+**Kirana needs:** nothing.
 
 ---
 
@@ -514,16 +634,15 @@ RAG and tools plateau on evals, and with enough labelled data".
 | Phase | infra | frontend | backend |
 |---|---|---|---|
 | 0 ✅ | Qdrant container (port 6335) | — | — |
-| 1 | `ai` schema + `kirana_ai` role | `/ai` Vite proxy; chat panel; agent steps in the Requests panel | — |
-| 2 | `kb-docs` bucket + MinIO notification; queue Redis (AD3) | Knowledge base tab in Manage | — |
+| 1 ✅ | `ai` schema + `kirana_ai` role | `/ai` Vite proxy; chat panel; agent steps in the Requests panel | — |
+| 2 | MinIO `notify_kafka` target (env vars, `queue_dir`) | Knowledge base tab in Manage; page on citations | — |
 | 3 | — | SSE rendering, tool status, retry | — |
-| 4 | — | Product cards from ids in chat | `GET /products/batch`; product events after commit; *(opt)* category |
+| 4 | — | Product cards from ids in chat | `GET /products/batch`; product events through the **outbox** to `catalog.v1`; *(opt)* category |
 | 5 | — | Sign-in; token on `/api` and `/ai` | **JWT login + JWKS**; user from token; 404 on foreign orders; dev flag for `X-User-Id` |
-| 6 | — | Approval card | Cancel endpoint; batch cart write; idempotency-key store |
+| 6 | — | Approval card | nothing (cancel + idempotency keys exist since Stages 5 and 7) |
 | 7–8 | — | *(opt)* memories view | — |
 | 9 | — | 👍/👎 | — |
 | 10 | Phoenix/Langfuse | — | pass `traceparent` |
-| 12 | Kafka (Kirana's stage) | — | outbox + producer |
 
 Kirana's `CLAUDE.md` says "do not jump ahead". The backend rows above are AI-track work
 that Ravi has approved on purpose. A note in `CLAUDE.md` should say so (AD9).
@@ -533,7 +652,7 @@ that Ravi has approved on purpose. A note in `CLAUDE.md` should say so (AD9).
 ## 6. Decisions
 
 Settled by Ravi: two separate services (one repo, see AD1); a shared frontend (Kirana's); Postgres for AI metadata;
-MinIO for files; Redis for events now, Kafka later; auth added when it is first needed.
+MinIO for files; **Kafka for events** (Kirana's broker, since Stage 6); auth added when it is first needed.
 
 Open (proposed default first):
 
@@ -541,13 +660,37 @@ Open (proposed default first):
 |---|---|---|---|
 | ~~AD1~~ | AI repo name and layout | **Settled:** `kirana/kirana-ai/`, fresh copy, flat package; rag-project untouched | — |
 | ~~AD2~~ | Python DB access and migrations | **Settled:** SQLAlchemy 2.0 ORM + Alembic. SQL echo logging on in dev, so the queries stay visible | — |
-| AD3 | Where the ingest queue lives | A **second Redis container** (`redis-queue`, AOF on, `noeviction`) | Same Redis with a changed eviction policy (hurts the cache); accept loss + `reindex` |
-| AD4 | What triggers ingestion | **MinIO bucket notification → Redis list** (if the fork supports it) | AI service pushes the event itself when the upload is confirmed |
-| AD5 | Who owns KB documents | **The AI service** (upload policy, `ai.documents`, admin API) | Kirana backend owns them and publishes events |
+| ~~AD3~~ | Where the ingest queue lives | **Closed:** Kafka (`kb.documents.v1`) replaces the Redis queue | — |
+| ~~AD4~~ | What triggers ingestion | **Settled:** MinIO bucket notification → Kafka, carrying our own `x-amz-meta-*` metadata (fork support checked) | — |
+| ~~AD5~~ | Who owns KB documents | **Settled:** the AI service (upload policy, `ai.documents`, admin API) | — |
 | AD6 | Add `category` to products | Yes, in Phase 4 (small V4 migration) | Price filter only |
 | AD7 | Login style in Phase 5 | **Dev login** (pick a user, get a real RS256 JWT); passwords later | Email + password (bcrypt) from the start |
-| AD8 | Idempotency in Phase 6 | Minimal key store now; Kirana Stage 7 generalises it | Wait for Stage 7 |
+| ~~AD8~~ | Idempotency in Phase 6 | **Closed:** Kirana Stage 7 built it; the AI sends `Idempotency-Key` | — |
 | ~~AD9~~ | Mark AI-track Kirana work in `CLAUDE.md` | **Settled:** yes, an "AI track" section in the root `CLAUDE.md` | — |
 | ~~AD11~~ | What history each turn resends | **Settled:** text only (user messages + final answers); tool calls and chunks are stored for display but not resent. Provider-neutral, cheaper; follow-ups search again | — |
 | ~~AD12~~ | Thread ownership before login | **Settled:** `X-User-Id` required (400 without), like the cart; replaced by the JWT `sub` in Phase 5 | — |
+| ~~AD13~~ | Python Kafka client | **Settled:** `confluent-kafka` | — |
+| ~~AD14~~ | Event from an upload with no `ai.documents` row (e.g. `mc cp` by an admin) | **Settled:** accept it if its metadata is valid (create the row); otherwise `FAILED` | — |
+| ~~AD15~~ | Retries in the ingest worker | **Settled:** in place (3 attempts, backoff), then the dead-letter topic; no retry topics, to keep per-document order | — |
 | AD10 | Default LLM | Gemini (as now) for generation and embeddings; Claude as the fallback in Phase 11 | Claude or OpenAI primary |
+
+---
+
+## 7. Features after Phase 2
+
+What a shopper or admin can do after each phase, and what it teaches.
+
+| Phase | Feature added | Who sees it | Main AI concepts |
+|---|---|---|---|
+| **2** | Admins upload PDFs and Markdown policies in Manage; they are live within about 30 s; deleting one removes it from answers; citations name the page | Admin, shopper | Storage events, Kafka consumers, idempotent ingestion, PDF parsing |
+| **3** | Answers **stream** word by word, with "Searching policies…" while tools run; the assistant says **"I don't know"** instead of guessing; every citation is checked | Shopper | SSE streaming, TTFT, relevance threshold, abstention, LLM-as-judge evals |
+| **4** | **"Healthy snacks under ₹200"** returns product cards with live price and stock; edits to products show up in search within seconds | Shopper | Catalog RAG, live hydration, reranking, filter extraction, index sync from an outbox |
+| **5** | **Sign in**, then "Where is my order?" answered from your own orders only | Shopper | JWT/JWKS, identity propagation, confused deputy, IDOR |
+| **6** | **"Cancel order 42"** and **"add everything for paneer butter masala for 4"**: the assistant proposes, you confirm with a button, it happens exactly once | Shopper | Human-in-the-loop, idempotent actions, policy as code, planning, parallel tools |
+| **7** | Long chats stay cheap; "cancel **that one**" resolves; optional remembered preferences ("I'm vegetarian") | Shopper | Context engineering, summarisation, memory, prompt caching |
+| **8** | Poisoned documents and hostile messages can't trick it; prices in replies are verified; personal data is masked before the LLM | Everyone | Prompt injection, capability removal, output validation, PII |
+| **9** | 👍 / 👎 on answers; one `make eval` gates every prompt or model change | Admin, developer | Golden sets, trajectory evals, regression gating |
+| **10** | Every answer traceable: prompt → tools → results → reply, with cost per feature | Developer | OpenTelemetry GenAI conventions, LLM tracing |
+| **11** | Provider outages fall back to another model; repeated policy questions answered from cache; per-user rate and cost limits | Shopper, operator | Timeouts, fallback, semantic cache, denial-of-wallet |
+| **12** | Switch embedding models with no downtime by replaying Kafka | Operator | Model lifecycle, blue/green indexes, pgvector vs Qdrant |
+| **13** | Pick any: MCP server, multi-agent experiment, model routing, seller copilot (descriptions from product photos, safe analytics), human handoff | Varies | MCP, orchestration, multimodal, text-to-SQL, LLMOps |

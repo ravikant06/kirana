@@ -23,8 +23,13 @@ cp .env.example .env                            # then set GEMINI_API_KEY
 docker exec -i kirana-postgres-1 psql -U kirana -d kirana < ../infra/seed/ai-schema.sql
 alembic upgrade head
 
-# 4. Index the knowledge base and ask
-python -m kirana_ai.cli ingest
+# 4. Knowledge base: topics + bucket (once), the ingest worker, the seed policies
+python -m kirana_ai.cli kafka-setup             # topics, kb-docs bucket, MinIO -> Kafka rule
+python -m kirana_ai.worker                      # keep running: Kafka consumer, indexes uploads
+python -m kirana_ai.cli seed-kb                 # (other terminal) upload kb/seed/* to MinIO
+# Admins upload more in Kirana: Manage -> Knowledge base
+python -m kirana_ai.cli reindex --dry-run       # repair drift MinIO / ai.documents / Qdrant
+python -m kirana_ai.cli redrive                 # replay the dead-letter topic once fixed
 python -m kirana_ai.cli ask "Can I return opened rice?"
 python -m kirana_ai.cli ask -t "..."            # trace every step
 python -m kirana_ai.cli chat --user 7           # saved conversation, with history
@@ -48,10 +53,14 @@ pytest                                          # no API key needed; DB tests ne
 | `kirana_ai/chat.py` | One chat turn: thread, history, agent, saved messages |
 | `kirana_ai/usage.py` | One `ai.llm_calls` row per LLM call, with cost from `pricing.yaml` |
 | `kirana_ai/api.py`, `schemas.py` | FastAPI routes, Pydantic request/response models, ProblemDetail errors |
-| `kirana_ai/cli.py` | `ingest`, `ask`, `chat`, `threads` |
+| `kirana_ai/kb.py` | Knowledge-base documents: signed upload policies, list, delete |
+| `kirana_ai/worker.py` | Ingest worker: Kafka consumer, parse → chunk → embed → Qdrant, retries, dead letters |
+| `kirana_ai/reconcile.py` | `seed-kb`, `redrive`, `reindex` |
+| `kirana_ai/kafka.py`, `storage.py` | Topics; MinIO bucket and its event rule |
+| `kirana_ai/cli.py` | `ask`, `chat`, `threads`, `kafka-setup`, `events`, `seed-kb`, `redrive`, `reindex` |
 | `kirana_ai/db/` | SQLAlchemy models and sessions (schema `ai`) |
 | `migrations/` | Alembic migrations (owns schema `ai`) |
-| `kb/seed/` | Seed store policies |
+| `kb/seed/` | Seed store policies (uploaded to MinIO by `seed-kb`) |
 | `eval/` | Retrieval eval with golden sets |
 | `tests/` | Tests: offline, plus Postgres via Testcontainers |
 

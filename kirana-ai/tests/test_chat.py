@@ -53,7 +53,7 @@ def test_a_turn_saves_thread_messages_and_one_row_per_llm_call(ai_db, priced):
     messages = _rows(ai_db, "SELECT role, content, citations FROM messages ORDER BY created_at")
     assert [m.role for m in messages] == ["user", "assistant"]
     assert messages[1].citations == [{"source": "policy-returns.md", "doc_id": "policy-returns",
-                                      "title": "Returns Policy"}]
+                                      "title": "Returns Policy", "pages": []}]
 
     calls = _rows(ai_db, "SELECT turn_id, status, input_tokens, output_tokens, cost_usd "
                          "FROM llm_calls ORDER BY id")

@@ -156,3 +156,56 @@ class LlmCall(Base):
         Index("ix_llm_calls_turn_id", "turn_id"),
         Index("ix_llm_calls_created_at", "created_at"),
     )
+
+
+class DocType(str, enum.Enum):
+    POLICY = "policy"
+    FAQ = "faq"
+    GUIDE = "guide"
+
+
+class DocStatus(str, enum.Enum):
+    """
+    A knowledge-base document's life:
+
+        pending ──upload event──► uploaded ──worker──► indexing ──► ready
+           │                                              └──────► failed (reason in `error`)
+           └─(delete before upload)─► deleted
+        ready / failed ──DELETE──► deleting ──delete event──► deleted
+
+    Only the API moves a document into pending / deleting; only the ingest worker
+    (Phase 2 M3) moves it on from there, driven by MinIO's events in Kafka.
+    """
+    PENDING = "pending"
+    UPLOADED = "uploaded"
+    INDEXING = "indexing"
+    READY = "ready"
+    FAILED = "failed"
+    DELETING = "deleting"
+    DELETED = "deleted"
+
+
+class Document(Base):
+    __tablename__ = "documents"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    title: Mapped[str] = mapped_column(String(200))
+    doc_type: Mapped[DocType] = mapped_column(_enum(DocType, "doc_type"))
+    file_name: Mapped[str] = mapped_column(String(255))
+    object_key: Mapped[str] = mapped_column(String(400), unique=True)
+    content_type: Mapped[str] = mapped_column(String(100))
+    size_bytes: Mapped[int | None] = mapped_column(BigInteger)
+    etag: Mapped[str | None] = mapped_column(String(100))
+    content_hash: Mapped[str | None] = mapped_column(String(64))
+    status: Mapped[DocStatus] = mapped_column(_enum(DocStatus, "status"))
+    page_count: Mapped[int | None] = mapped_column(Integer)
+    chunk_count: Mapped[int | None] = mapped_column(Integer)
+    error: Mapped[str | None] = mapped_column(Text)
+    uploaded_by: Mapped[str] = mapped_column(String(100))
+    upload_expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (Index("ix_documents_updated_at", "updated_at"),)

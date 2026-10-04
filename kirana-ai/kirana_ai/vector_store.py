@@ -35,7 +35,7 @@ def _unavailable(exc: Exception) -> UpstreamUnavailable:
         return UpstreamUnavailable(
             "knowledge base",
             f"collection {config.COLLECTION_NAME!r} does not exist. "
-            "Run `python -m kirana_ai.cli ingest` first.",
+            "Run `python -m kirana_ai.cli seed-kb` and start the worker, or `cli reindex`.",
         )
     return UpstreamUnavailable(
         "qdrant",
@@ -100,8 +100,8 @@ def _require_sparse_schema(client: QdrantClient) -> None:
     raise SystemExit(
         f"Collection {config.COLLECTION_NAME!r} predates hybrid search: it has no "
         f"{SPARSE!r} vector.\n"
-        "Rebuild it:  python -m kirana_ai.cli ingest --recreate\n"
-        "or run dense-only against it:  HYBRID_SEARCH=false python -m kirana_ai.cli ingest"
+        "Drop it in the Qdrant dashboard (http://localhost:6335/dashboard), then\n"
+        "  python -m kirana_ai.cli reindex"
     )
 
 
@@ -282,15 +282,30 @@ def list_documents(
     return result
 
 
-def drop_collection(client: QdrantClient) -> bool:
-    """
-    Delete the whole collection. Used by `ingest --recreate`.
+def delete_document_points(client: QdrantClient, doc_id: str) -> None:
+    """Remove every chunk of one document (by payload doc_id). A no-op if it has none."""
+    try:
+        client.delete(
+            collection_name=config.COLLECTION_NAME,
+            points_selector=models.FilterSelector(filter=models.Filter(must=[
+                models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_id)),
+            ])),
+            wait=True,
+        )
+    except Exception as exc:
+        raise _unavailable(exc) from exc
 
-    Until Phase 2 adds deletes, this is the only way to remove a document's
-    chunks: re-ingesting only upserts, so a deleted file or the tail chunks of
-    a shortened file would otherwise stay searchable.
-    """
-    if not client.collection_exists(config.COLLECTION_NAME):
-        return False
-    client.delete_collection(config.COLLECTION_NAME)
-    return True
+
+def indexed_doc_ids(client: QdrantClient) -> set[str]:
+    """Every doc_id that has chunks in the collection (for reconciliation)."""
+    ids: set[str] = set()
+    offset = None
+    try:
+        while True:
+            points, offset = client.scroll(collection_name=config.COLLECTION_NAME, limit=1000,
+                                           offset=offset, with_payload=["doc_id"], with_vectors=False)
+            ids.update(p.payload["doc_id"] for p in points if p.payload)
+            if offset is None:
+                return ids
+    except Exception as exc:
+        raise _unavailable(exc) from exc

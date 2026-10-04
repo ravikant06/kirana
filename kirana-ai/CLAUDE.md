@@ -32,12 +32,16 @@ the agent loop with a bounded budget, the LLM adapter pattern, hybrid BM25 + den
       api.py          FastAPI routes + ProblemDetail error handlers (uvicorn kirana_ai.api:app --port 8000)
       schemas.py      Pydantic DTOs for the API; never return db rows directly
       errors.py       UpstreamUnavailable (Qdrant / embeddings / empty KB) -> 503
-      cli.py          ingest / ask / chat / threads
+      kb.py           KB documents API side: signed POST policy with pinned x-amz-meta-*, list, delete
+      worker.py       ingest worker: Kafka kb.documents.v1 -> Qdrant; in-place retries, then <topic>-dlt
+      reconcile.py    seed-kb, redrive (to the original partition), reindex (MinIO is the source of truth)
+      kafka.py, storage.py   topics; kb-docs bucket + its MinIO -> Kafka rule
+      cli.py          ask / chat / threads / kafka-setup / events / seed-kb / redrive / reindex
       db/             SQLAlchemy models + session_scope()
       config.py       every tunable, overridable by env / .env
     migrations/       Alembic (schema `ai`)
     pricing.yaml      USD per 1M tokens; missing = cost NULL (unknown, not free)
-    kb/seed/          seed knowledge base (Phase 0–1; MinIO from Phase 2)
+    kb/seed/          seed policies; `cli seed-kb` uploads them to MinIO (the only ingestion path)
     eval/             retrieval eval: golden sets, recall@k, MRR, bootstrap CIs
     tests/            pytest, offline only (FakeAdapter, no network)
     docs/             plan and contract
@@ -66,9 +70,11 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
 
 ## Current phase
 
-**Phase 0: done** (engine copied, Kirana seed corpus, Qdrant in compose, CLI, retrieval
-eval, offline tests). **Phase 1: built** (schema `ai`, history + cost recording, FastAPI, chat panel in
-`frontend/src/components/chat/`); wrap-up experiments next, then Phase 2. Phase 1 decisions are settled: AD2 (SQLAlchemy + Alembic), AD11 (text-only history), AD12 (X-User-Id owns threads).
+**Phases 0–2 done.** Phase 2: knowledge base in MinIO (bucket `kb-docs`), uploads publish to
+Kafka `kb.documents.v1` with our `x-amz-meta-*` metadata, the worker (group
+`kirana-ai-ingest`) indexes them; dead letters in `kb.documents.v1-dlt`; Manage → Knowledge
+base tab; page numbers on citations. **Next: Phase 3** (streaming, relevance floor, answer evals).
+Phase 1 wrap-up (UI experiments, `docs/concepts-learned.md`) is still open.
 
 Only the current phase is in scope. Gaps listed in the plan (no deletes, no relevance
 floor, no streaming…) are deliberate: later phases fix them.

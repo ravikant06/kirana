@@ -36,11 +36,19 @@ services:
     environment:
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
+      # AI track, Phase 2: bucket events -> Kafka. Target id "KB" (ARN arn:minio:sqs::KB:kafka).
+      # Which bucket and which events use it is set by kirana-ai (`cli kafka-setup`).
+      MINIO_NOTIFY_KAFKA_ENABLE_KB: "on"
+      MINIO_NOTIFY_KAFKA_BROKERS_KB: kafka:9092
+      MINIO_NOTIFY_KAFKA_TOPIC_KB: kb.documents.v1
+      # Events wait on disk here while Kafka is unreachable, then are sent: none are lost.
+      MINIO_NOTIFY_KAFKA_QUEUE_DIR_KB: /events/kafka-kb
     ports:
       - "9000:9000"   # S3 API (backend and browser uploads)
       - "9001:9001"   # Web console
     volumes:
       - minio-data:/data
+      - minio-events:/events   # the queue_dir above; survives a restart
 
   redis:
     # Stage 4: cache, rate limiter and flash-sale gate. Redis 8 is AGPL/RSAL/SSPL-licensed;
@@ -151,5 +159,6 @@ services:
 volumes:
   pgdata:
   minio-data:
+  minio-events:
   kafka-data:
   qdrant-data:

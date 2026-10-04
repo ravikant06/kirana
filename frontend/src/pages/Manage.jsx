@@ -5,11 +5,13 @@ import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
 import Pager from '../components/Pager.jsx'
 import Modal from '../components/Modal.jsx'
-import { BoltIcon, BoxIcon, CheckIcon, ChevronRight, PlusIcon, SearchIcon, TrashIcon, UserIcon, XIcon } from '../components/icons.jsx'
+import { BoltIcon, BookIcon, BoxIcon, CheckIcon, ChevronRight, PlusIcon, SearchIcon, TrashIcon, UserIcon, XIcon } from '../components/icons.jsx'
+import KnowledgeBase from './KnowledgeBase.jsx'
 
 const TABS = [
   ['catalog', 'Catalogue', BoxIcon],
   ['shoppers', 'Shoppers', UserIcon],
+  ['knowledge', 'Knowledge base', BookIcon],
 ]
 
 function StatusPill({ p, onSale }) {
@@ -21,7 +23,7 @@ function StatusPill({ p, onSale }) {
 }
 
 export default function Manage({ notify, onUsersChanged, users, initialTab, userId, onChooseUser }) {
-  const [tab, setTab] = useState(initialTab === 'shoppers' ? 'shoppers' : 'catalog')
+  const [tab, setTab] = useState(TABS.some(([k]) => k === initialTab) ? initialTab : 'catalog')
   const [page, setPage] = useState(0)
   const list = useLoad(() => api.products.list(page, 10), [page])
   // null = closed, 'new' = create form, { id, name } = edit that product
@@ -39,7 +41,7 @@ export default function Manage({ notify, onUsersChanged, users, initialTab, user
         <div>
           <span className="eyebrow">Admin</span>
           <h1>Manage store</h1>
-          <p>Products, stock, flash sales, images and shoppers. Click a product to edit it.</p>
+          <p>Products, stock, flash sales, images, shoppers and the assistant’s knowledge base. Click a product to edit it.</p>
         </div>
         {list.data && (
           <div className="kpis">
@@ -111,6 +113,8 @@ export default function Manage({ notify, onUsersChanged, users, initialTab, user
           </div>
         </div>
       )}
+
+      {tab === 'knowledge' && <KnowledgeBase notify={notify} />}
 
       {tab === 'shoppers' && <Users users={users} onChanged={onUsersChanged} notify={notify} userId={userId} onChoose={onChooseUser} />}
 

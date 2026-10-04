@@ -83,6 +83,16 @@ def _heading_for(offset: int, headings: list[tuple[int, int, str]]) -> tuple[str
     return current, path
 
 
+def _page_at(offset: int, page_starts: list[int]) -> int:
+    """1-based page number for a character offset, given each page's starting offset."""
+    page = 1
+    for number, start in enumerate(page_starts, 1):
+        if start > offset:
+            break
+        page = number
+    return page
+
+
 def chunk_documents(
     documents: list[dict],
     chunk_size: int,
@@ -136,6 +146,9 @@ def chunk_documents(
 
             if "title" in doc_meta:
                 chunk["title"] = doc_meta["title"]
+            # PDFs: the page this chunk starts on, for citations ("Returns Policy, p. 2").
+            if doc.get("page_starts"):
+                chunk["page"] = _page_at(start, doc["page_starts"])
 
             all_chunks.append(chunk)
 

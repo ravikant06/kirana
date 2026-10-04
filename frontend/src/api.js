@@ -289,11 +289,23 @@ export const api = {
   },
   // The AI assistant (kirana-ai). Same X-User-Id, same ProblemDetail errors, different service.
   ai: {
-    chat: (message, threadId) =>
-      request('POST', '/v1/chat', threadId ? { message, thread_id: threadId } : { message }, { service: 'ai' }),
-    threads: () => request('GET', '/v1/threads', undefined, { service: 'ai' }),
-    thread: (id) => request('GET', `/v1/threads/${q(id)}`, undefined, { service: 'ai' }),
-    deleteThread: (id) => request('DELETE', `/v1/threads/${q(id)}`, undefined, { service: 'ai' }),
+    // userId is passed explicitly: the dock knows whose chat it shows, and a hot reload of this
+    // module resets currentUserId to null while the dock still holds a shopper.
+    chat: (userId, message, threadId) =>
+      request('POST', '/v1/chat', threadId ? { message, thread_id: threadId } : { message }, { service: 'ai', userId }),
+    threads: (userId) => request('GET', '/v1/threads', undefined, { service: 'ai', userId }),
+    thread: (userId, id) => request('GET', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
+    deleteThread: (userId, id) => request('DELETE', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
+    // Knowledge base (AI Phase 2). The upload itself goes browser -> MinIO with uploadToStorage.
+    kb: {
+      list: (quiet = false) => request('GET', '/v1/kb/documents', undefined, { service: 'ai', quiet }),
+      requestUpload: async (body) => {
+        const t = await request('POST', '/v1/kb/documents/upload-url', body, { service: 'ai' })
+        // uploadToStorage expects Kirana's image-ticket shape.
+        return { ...t, uploadUrl: t.upload_url, formFields: t.form_fields }
+      },
+      remove: (id) => request('DELETE', `/v1/kb/documents/${q(id)}`, undefined, { service: 'ai' }),
+    },
   },
 }
 

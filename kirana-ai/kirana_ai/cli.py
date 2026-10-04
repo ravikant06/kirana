@@ -1,58 +1,28 @@
 """
-Command line for the AI service until the HTTP API exists (Phase 1).
+Command line for the AI service: try the agent, inspect Kafka, operate the knowledge base.
 
-    python -m kirana_ai.cli ingest              # kb/seed -> chunks -> embeddings -> Qdrant
-    python -m kirana_ai.cli ingest --recreate   # drop the collection first
     python -m kirana_ai.cli ask "Can I return opened rice?"
     python -m kirana_ai.cli ask -t "..."        # print every step: prompts, filters, hits
     python -m kirana_ai.cli chat --user 7       # a saved conversation (Postgres), with history
     python -m kirana_ai.cli chat --user 7 --thread <id>   # continue one
     python -m kirana_ai.cli threads --user 7    # list a shopper's threads
+    python -m kirana_ai.cli kafka-setup         # topics + kb-docs bucket + its event rule (idempotent)
+    python -m kirana_ai.cli events              # raw records on kb.documents.v1 (commits nothing)
+    python -m kirana_ai.cli seed-kb             # upload kb/seed/* to MinIO (the worker indexes them)
+    python -m kirana_ai.cli redrive             # replay the dead-letter topic
+    python -m kirana_ai.cli reindex [--dry-run] # repair drift between MinIO, ai.documents and Qdrant
+    python -m kirana_ai.worker                  # the ingest worker (Kafka consumer)
 
 `ask` is stateless and touches no database. `chat` is the real turn: history,
 thread and messages in Postgres, every LLM call recorded in ai.llm_calls.
 """
 import argparse
-import uuid
-from datetime import datetime, timezone
-
+import json
 import uuid as uuid_mod
 
-from kirana_ai import agent, chat, chunker, config, embeddings, loader, sparse, trace, vector_store
+from kirana_ai import agent, chat, config, trace
 from kirana_ai.errors import UpstreamUnavailable
 from kirana_ai.llm import LLMError, get_adapter
-
-
-def ingest(recreate: bool) -> None:
-    batch_id = f"{datetime.now(timezone.utc):%Y%m%dT%H%M%S}-{uuid.uuid4().hex[:6]}"
-
-    print(f"Loading documents from {config.KB_DIR} ...")
-    documents = loader.load_documents(config.KB_DIR)
-    chunks = chunker.chunk_documents(
-        documents, config.CHUNK_SIZE, config.CHUNK_OVERLAP, batch_id=batch_id
-    )
-
-    client = vector_store.get_client()
-    if recreate and vector_store.drop_collection(client):
-        print(f"Dropped collection {config.COLLECTION_NAME}")
-
-    print(f"Embedding {len(chunks)} chunks with {config.EMBEDDING_MODEL} ...")
-    vectors = embeddings.embed_documents(chunks)
-
-    sparse_vectors = None
-    if config.HYBRID_SEARCH:
-        # BM25 weights are computed locally — no API call, no model.
-        sparse_vectors = sparse.encode_documents([c["text"] for c in chunks])
-
-    vector_store.ensure_collection(client)
-    written = vector_store.upsert_chunks(client, chunks, vectors, sparse_vectors)
-
-    print()
-    print(f"Documents loaded: {len(documents)}")
-    print(f"Chunks indexed:   {written}")
-    print(f"Hybrid (BM25):    {'on' if sparse_vectors else 'off'}")
-    print(f"Batch id:         {batch_id}")
-    print(f"Collection:       {config.COLLECTION_NAME} @ {config.QDRANT_URL}")
 
 
 def _print_steps(steps: list[dict]) -> None:
@@ -104,6 +74,31 @@ def _chat(user_id: int, thread_id: uuid_mod.UUID | None) -> None:
               f"{u['latency_ms']} ms, cost {chat.total_cost(u)}")
 
 
+def _kafka_setup() -> None:
+    from kirana_ai import kafka, storage
+    for topic, what in kafka.ensure_topics().items():
+        print(f"topic  {topic:<24} {what}")
+    for part, what in storage.ensure_kb_bucket().items():
+        print(f"{part:<6} {what}")
+
+
+def _events(topic: str, limit: int, full: bool) -> None:
+    from kirana_ai import kafka
+    n = 0
+    for rec in kafka.tail(topic, max_messages=limit):
+        n += 1
+        print(f"partition {rec['partition']}  offset {rec['offset']}  key {rec['key']!r}")
+        value = rec["value"] or {}
+        if full:
+            print(json.dumps(value, indent=2))
+        for r in value.get("Records", []):
+            obj = r.get("s3", {}).get("object", {})
+            print(f"  {r.get('eventName')}  {obj.get('key')}  size={obj.get('size')}")
+            for k, v in (obj.get("userMetadata") or {}).items():
+                print(f"    {k}: {v}")
+    print(f"{n} record(s) on {topic}")
+
+
 def _threads(user_id: int) -> None:
     threads = chat.list_threads(user_id)
     if not threads:
@@ -124,9 +119,15 @@ def _main() -> None:
                                      formatter_class=argparse.RawDescriptionHelpFormatter)
     sub = parser.add_subparsers(dest="command", required=True)
 
-    p_ingest = sub.add_parser("ingest", help="index the knowledge base into Qdrant")
-    p_ingest.add_argument("--recreate", action="store_true",
-                          help="drop the collection first (removes chunks of deleted files)")
+    sub.add_parser("seed-kb", help="upload kb/seed/* into MinIO; the worker indexes them")
+    sub.add_parser("redrive", help=f"replay {config.KB_DLT} onto {config.KB_TOPIC}")
+    p_reindex = sub.add_parser("reindex", help="make Qdrant and ai.documents match the files in MinIO")
+    p_reindex.add_argument("--dry-run", action="store_true", help="only print what would change")
+    sub.add_parser("kafka-setup", help="create kb topics, the kb-docs bucket and its Kafka event rule")
+    p_events = sub.add_parser("events", help="print records on a topic, from the start (commits nothing)")
+    p_events.add_argument("--topic", default=config.KB_TOPIC)
+    p_events.add_argument("--limit", type=int, default=20)
+    p_events.add_argument("--full", action="store_true", help="print each event's whole JSON")
 
     p_threads = sub.add_parser("threads", help="list a shopper's threads")
     p_threads.add_argument("--user", type=int, required=True, help="Kirana user id")
@@ -146,11 +147,26 @@ def _main() -> None:
 
     args = parser.parse_args()
 
-    if args.command == "ingest":
-        ingest(args.recreate)
-        return
     if args.command == "threads":
         _threads(args.user)
+        return
+    if args.command == "seed-kb":
+        from kirana_ai import reconcile
+        print("\n".join(reconcile.seed()))
+        return
+    if args.command == "redrive":
+        from kirana_ai import reconcile
+        print(f"re-drove {reconcile.redrive()} message(s) from {config.KB_DLT}")
+        return
+    if args.command == "reindex":
+        from kirana_ai import reconcile
+        print("\n".join(reconcile.reindex(dry_run=args.dry_run)))
+        return
+    if args.command == "kafka-setup":
+        _kafka_setup()
+        return
+    if args.command == "events":
+        _events(args.topic, args.limit, args.full)
         return
 
     if args.trace or args.trace_full:

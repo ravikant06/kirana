@@ -54,7 +54,7 @@ def test_chat_answers_and_reports_usage(client, llm_script):
     body = r.json()
     assert body["reply"].startswith("Unopened rice")
     assert body["citations"] == [{"source": "policy-returns.md", "doc_id": "policy-returns",
-                                  "title": "Returns Policy"}]
+                                  "title": "Returns Policy", "pages": []}]
     assert body["steps"] == [{"tool": "search_docs", "query": "return rice",
                               "where": {"doc_type": "policy"}, "count": 1}]
     assert body["usage"]["llm_calls"] == 2 and body["usage"]["input_tokens"] == 2300
@@ -166,14 +166,14 @@ def test_database_down_is_503_database_busy(client, monkeypatch):
     assert "SELECT" not in r.text and "refused" not in r.text   # no SQL or driver detail
 
 
-def test_missing_collection_says_run_ingest():
+def test_missing_collection_says_how_to_build_it():
     import httpx
     from qdrant_client.http.exceptions import UnexpectedResponse
     from kirana_ai import vector_store
 
     err = vector_store._unavailable(UnexpectedResponse(404, "Not Found", b"", httpx.Headers()))
 
-    assert err.service == "knowledge base" and "ingest" in str(err)
+    assert err.service == "knowledge base" and "reindex" in str(err)
 
 
 def test_list_and_delete_threads(client, llm_script):
