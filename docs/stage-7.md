@@ -270,9 +270,19 @@ The real `api.js`, run in Node against a scripted network:
 ### Try it
 
 Restart the backend (V9) and reload the frontend. Add to cart and place an order: the Requests
-panel shows `key` on each POST. To see a retry, pause the backend for a moment while placing an
-order (Ctrl+Z in its terminal, then `fg` within a few seconds): the panel shows `retry 1`, and if
-the first attempt had got through, `replayed`.
+panel shows `key` on each POST.
+
+To see the client retry with the same key, in the UI:
+1. Manage → Resilience lab → payment-mock **down**.
+2. Add something to the cart, **Place order**: placed, but "payment temporarily unavailable"
+   (the order has no gateway order yet).
+3. Orders → **Pay now**: the panel shows three `payment` requests, 503 each, the **same key**,
+   tagged `retry 1`, `retry 2` (waits honour `Retry-After`, capped at 5 s).
+4. Set payment-mock back to **normal** (reset its breaker) and click **Pay now** again: the same
+   key is still kept for that order, so this is a repeat of the same action, and it succeeds.
+
+(Pausing the backend does *not* show a retry: `fetch` has no timeout and the dev proxy waits, so
+the original request simply completes when the backend resumes.)
 
 ---
 
