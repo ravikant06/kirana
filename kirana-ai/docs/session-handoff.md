@@ -1,6 +1,6 @@
 # Session handoff: AI track (kirana-ai)
 
-Written 2026-10-04 to start a fresh Claude session. Read this first, then `CLAUDE.md` (repo
+Written 2026-10-04 to start a fresh Claude session (updated later the same day). Read this first, then `CLAUDE.md` (repo
 root), `kirana-ai/CLAUDE.md`, `kirana-ai/docs/AI-PLAN.md`, and `kirana-ai/docs/ai-contract.md`.
 
 Suggested first prompt for the new session:
@@ -33,7 +33,7 @@ Suggested first prompt for the new session:
 | Track | Where | Status |
 |---|---|---|
 | Kirana system-design stages (Java backend) | root `CLAUDE.md`, `docs/` | Stages 1–7 done. **Stage 8 (distributed locking) is next, handled in other sessions.** |
-| AI assistant (Python service) | `kirana-ai/`, own `CLAUDE.md` and `docs/AI-PLAN.md` | Phases 0–2 done, **Phase 3 and Phase 4 built** (details below) |
+| AI assistant (Python service) | `kirana-ai/`, own `CLAUDE.md` and `docs/AI-PLAN.md` | Phases 0–4 built and committed. **Next: Phase 5** (waiting for AD7) |
 
 The tracks run in parallel. The Kirana-side changes each AI phase needs (AI-PLAN §5) are
 pre-approved and don't count as "jumping ahead".
@@ -64,7 +64,8 @@ pre-approved and don't count as "jumping ahead".
 - **Product search (Phase 4):**
   - Kirana's outbox publishes `catalog.v1` with the envelope `{eventId,type,occurredAt,productId,data{name,description,category}}`.
   - `catalog.py` (group `kirana-ai-catalog`) indexes products into Qdrant `kirana_products`, skipping a product whose text hash hasn't changed.
-  - `products.py` runs: hybrid retrieve 30 → optional cross-encoder rerank → **live hydration** from Kirana `GET /products/batch` → drop out-of-stock and over-price → top 5.
+  - `products.py` runs: hybrid retrieve 30 → **live hydration** from Kirana `GET /products/batch` → drop out-of-stock and over-price → top 5. The cross-encoder rerank is built but off (`RERANK_ENABLED=false`, AD22).
+  - Qdrant payload indexes on `kirana_products`: `tenant_id`, `doc_id`, `category` (keyword) and `product_id` (integer, lookup only). In the dashboard, `product_id:134` works only because of that index: the UI types a value from the index schema. Values with spaces don't work there (it splits on spaces); use the Console tab (http://localhost:6335/dashboard → Console).
   - The model sends only product ids. The UI renders the cards from Kirana's live data.
 - **SSE streaming (Phase 3):** `Accept: text/event-stream` on `POST /v1/chat`. Events: `start`, `status`, `step`, `token`, `reset`, `citation`, `products`, `done`, `error`. With Starlette 1.7 and uvicorn, the body iterator is never closed on disconnect. The workaround:
   - `ClosingStreamingResponse` plus the `_closing()` wrapper;
@@ -79,7 +80,7 @@ pre-approved and don't count as "jumping ahead".
 - **Phase 1:** chat API, threads and messages in Postgres (SQLAlchemy 2.0 + hand-written Alembic SQL), cost recording, ProblemDetail errors in Kirana's shape, chat dock UI. *Wrap-up still open:* UI experiments and `concepts-learned.md`.
 - **Phase 2:** KB in MinIO → Kafka → worker → Qdrant; DLT and redrive; Manage → Knowledge base tab; page numbers on citations.
 - **Phase 3 (built):** SSE streaming in every adapter, a relevance floor on dense cosine (`RELEVANCE_FLOOR=0.60`, from `eval.run_floor`), answer evals (`eval.run_answers` with a Gemini judge and `--grade` calibration), unverified citations flagged. `GEMINI_THINKING_LEVEL`: setting it to minimal cut time to first token from 3.4 s to 1.1 s.
-- **Phase 4 (built, not committed):**
+- **Phase 4 (built, committed `3395f99`):**
   - **Backend:** `category` on products (DTOs, entity, mapper, cache keys bumped to `v2`); `ProductEvents` (MANDATORY propagation) written through the generic `OutboxWriter.append`; topics `catalog.v1` and `catalog.v1-dlt`; `GET /products/batch` (1–50 ids, request order kept, deleted products skipped). 114 backend tests pass.
   - **AI service:** `search_products` tool; `catalog.py`; `products.py`; `kirana.py` (httpx client for Kirana); CLI `index-products`; evals `eval.run_products` (25 golden cases) and `eval.run_routing`. 95 Python tests pass.
   - **Frontend:** `ProductCards.jsx` (live fetch; Add to cart sends an Idempotency-Key); category in Shop, ProductDetail and Manage.
@@ -126,25 +127,26 @@ openjdk 25. For manual Maven runs, set
 ## 8. Git state
 
 - Branch `ai-phase-3`. Latest commit: `120052b AI Phase 3: streaming, relevance floor, answer evals` (not pushed).
-- **Uncommitted:** ~53 entries covering Phase 4 (backend, AI service, frontend), the reset and seed scripts, `infra/infra.py`, and the README's "Daily use" section. Waiting for Ravi to say "commit". Exclude `.claude/` and `infra/__pycache__/`.
+- Commits on top: `3395f99` (Phase 4 + seed/reset scripts + `infra/infra.py`, reranker off), `ff5e697` (`product_id` index; each collection gets only its own indexes), then the docs update. None pushed. Never commit `.claude/` or `infra/__pycache__/`.
 - Earlier phases were merged to `main` with `git checkout main && git merge --ff-only <branch> && git push`, run when Ravi asked.
 
 ## 9. Open decisions (Ravi's to make)
 
 | Id | Question | Recommendation |
 |---|---|---|
-| **AD22** | Keep the cross-encoder reranker? | **Off** (`RERANK_ENABLED=false`): no measured gain, extra latency, and the order mismatch |
 | AD20 | Gemini thinking level | Pending Ravi's thinking-level comparison run |
-| AD7 | Login style for Phase 5 (JWT) | Must be decided before Phase 5 |
+| **AD7** | Login style for Phase 5 (JWT) | **Dev login** (pick a user, get a real RS256 JWT); passwords later. Ravi is deciding |
 | AD10 | Default LLM | Gemini for now (it's the only API key) |
 
 ## 10. Pending work, in order
 
-1. Ravi: commit Phase 4 + scripts + infra.py, and decide AD22.
-2. Phase 3 runs by Ravi: answer-eval baseline, `--grade` calibration, thinking-level comparison (→ AD20).
-3. Phase 1 wrap-up: UI experiments and an update to `kirana-ai/docs/concepts-learned.md` (25 concepts, through Phase 2). Add the Phase 3 and 4 concepts too.
-4. Optional: replay the catalog through Kafka (so far the index was loaded via REST) to show the event path end to end.
-5. **Next phase: Phase 5:** JWT login plus a "my orders" tool. Needs AD7 first. Plan it with Ravi; don't start without his go-ahead.
+1. **AD7, then plan Phase 5** (JWT login + "my orders" tool) with Ravi. Don't start building without his go-ahead.
+2. **Deferred by Ravi to the very end:** the Phase 3 runs (answer-eval baseline, `--grade` calibration,
+   thinking-level comparison → AD20). He will check every phase's results together.
+3. Optional: Phase 1 UI experiments (explain, don't run); replay the catalog through Kafka.
+
+Done since the first handoff: Phase 4 committed, reranker off (AD22 settled), `product_id` index,
+`concepts-learned.md` now covers Phases 0–4 (41 concepts).
 
 ## 11. Known gotchas
 

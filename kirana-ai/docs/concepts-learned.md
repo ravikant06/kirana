@@ -87,3 +87,63 @@ built, measured or broken in `kirana-ai/`, stated the way you would explain it i
     down and sends them when it returns; without it, uploads during an outage would never be indexed.
 25. **PDF parsing keeps page boundaries.** Pages are joined with a paragraph break and each page's
     start offset recorded, so every chunk knows its page and citations can say "p. 2".
+
+## Phase 3: streaming, grounding and answer evals
+
+26. **SSE over POST.** Server-Sent Events are one-way, plain HTTP and proxy-friendly: enough for
+    server → browser tokens. `EventSource` can only GET, so the browser reads the POST body with
+    `fetch` and a stream reader. WebSockets would add a two-way channel nobody needs.
+27. **Streaming hides writing, not thinking.** Time to first token was 4.2 s of 4.4 s total:
+    Gemini reasons before its first visible word. What streaming did buy was a `status` event at
+    ~1.9 s ("Searching store policies…") instead of a blank wait. TTFT and total latency are
+    different numbers; optimise the one the user feels.
+28. **Thinking level is a latency/cost/quality dial.** `minimal` cut TTFT from 3.4 s to 1.1 s and
+    output tokens from 548 to 58 on one prompt. Whether answers stay as good is an eval question,
+    not a feeling (AD20, still open).
+29. **Streaming with tool calls.** Text the model writes before deciding to call a tool is a
+    preamble, not the answer. A `reset` event tells the UI to discard it.
+30. **A disconnected client must stop the work.** With uvicorn and Starlette 1.7 the response
+    body iterator was never closed on disconnect: the turn stayed suspended, the in-flight LLM
+    call was never recorded and Gemini's stream stayed open. Fix: close the iterator always, and
+    close every layer's child stream explicitly, before the cost recorder is removed. Found by
+    experiment, not by reading code.
+31. **A relevance floor needs a real similarity.** RRF scores depend only on rank, so a threshold
+    on them means nothing; the floor uses each chunk's dense cosine. Even then, answerable
+    (0.61–0.76) and unanswerable (0.57–0.68) questions overlap: one store's questions are all near
+    *some* chunk. A floor catches clear misses; abstention mostly comes from the model.
+32. **Declining costs more than answering** (~12 s vs ~5 s): the model searches again with new
+    words before giving up. Budget for it (`MAX_STEPS`, prompt).
+33. **Check citations against what was retrieved.** A cited source that wasn't among this turn's
+    chunks is flagged as unverified instead of shown as proof.
+34. **LLM-as-judge needs calibration.** Faithfulness and correctness are graded by a model, and
+    that judge is checked against hand grades (`--grade`) before its numbers are trusted. The
+    same model family judging itself risks self-preference bias (AD19).
+
+## Phase 4: product search on live data
+
+35. **Embed descriptions, fetch live facts.** Qdrant holds name, category and description;
+    price and stock come from Kirana (`GET /products/batch`) on every query. The price filter
+    runs on today's price, a deleted product simply isn't returned, and the UI renders cards
+    from Kirana's response: the model sends ids only, so a price on screen never comes from it.
+36. **Keeping an index in sync from an outbox.** The product event is written in the same
+    transaction as the change (`MANDATORY` propagation makes calling it outside one an error),
+    so a save can't happen without its event. Events give changes, not the starting state: the
+    150 seeded products predated the events, so a snapshot (`index-products`) bootstraps the
+    index and events keep it current (~1 s per edit).
+37. **Skip work by content hash.** Kirana sends an event on every edit, a price change too; the
+    consumer embeds only if the text's hash changed (61 ms vs 835 ms, no embedding call).
+38. **Two-stage retrieval, and measuring the second stage.** Retrieve wide (30), rerank with a
+    cross-encoder that reads query and product together. Here it bought nothing measurable
+    (hit@1 92% both ways) on 150 well-described products, and its order disagreed with the
+    model's picks (chocolate first for "healthy snacks for kids"). So it is off (AD22). Rerankers
+    pay off on large, noisy catalogues; measure before adding a stage.
+39. **The UI shows what the tool returned, not what the model chose.** The model recommended three
+    healthy items; the cards showed all five in ranker order. Model text and structured output can
+    disagree; decide which one the user sees.
+40. **Tool routing is prompt engineering.** The model picks tools from their descriptions and the
+    system prompt; a routing eval (16/16: products, policies, both, neither) catches a vague
+    description before shoppers do.
+41. **Payload indexes live per segment, inside Qdrant.** Each segment stores its own vectors,
+    payloads and index files (a value → points map; a sorted copy for ranges; a null list). An id
+    index needs lookup only. Indexes also tell the dashboard a field's type: without one,
+    `product_id:134` was sent as the string "134" and matched nothing.

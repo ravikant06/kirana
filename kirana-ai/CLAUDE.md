@@ -78,7 +78,7 @@ adapter, `agent.answer_stream`, `chat.prepare` + `chat.run`), relevance floor on
 (`RELEVANCE_FLOOR`, from `eval.run_floor`), answer evals (`eval.run_answers`, Gemini judge,
 `--grade`), unverified citations flagged. Ravi's Phase 3 runs still open (baseline, grading, thinking level).
 **Phase 4 built:** `search_products` tool (`products.py`: hybrid → live hydration from Kirana via `kirana.py`; the reranker is built but off, AD22), `kirana_products` index from `catalog.v1` events (`catalog.py`, group `kirana-ai-catalog`) plus `cli index-products`, product cards in chat, evals `eval.run_products` and `eval.run_routing`. Shared Kafka loop in `consumer.py`.
-Phase 1 wrap-up (UI experiments, `docs/concepts-learned.md`) is still open.
+`docs/concepts-learned.md` covers Phases 0–4. Ravi runs the Phase 3 evals at the very end, with every phase's results. **Next: Phase 5**, once AD7 is decided and the plan approved.
 
 Only the current phase is in scope. Gaps listed in the plan for later phases (no auth, no
 actions, no budgets or timeouts…) are deliberate: those phases fix them.
