@@ -422,6 +422,15 @@ scripts sign up and sign in like any client. Sign-up is public and always SHOPPE
 read from the token alone (no DB read per request), so a role change applies at the next sign-in.
 Costs: no Spring Security, no refresh tokens or revocation (1 h lifetime), key in memory.
 
+**D74. Finer permissions and token exchange for the AI service.** (AI Phase 6 M3, closes AI AD26)
+`shop` split into `orders:read`, `orders:write`, `cart:read`, `cart:write` (SHOPPER and ADMIN keep the
+same effective rights). `POST /auth/token-exchange` lets the AI service, authenticated as a client,
+trade the shopper's token for a short-lived one with only the scopes a tool needs, `aud` kirana-api
+only and an `act` claim naming the AI service. A chat turn therefore holds only read tokens; a write
+token exists for 2 minutes, after the shopper's click, for one action. Rules: narrow only, no chained
+exchange, the subject token must have been issued for the client. Costs: one more call per turn (the
+exchange), and a client secret to manage.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

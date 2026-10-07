@@ -3,6 +3,7 @@ import { api, streamChat } from '../../api.js'
 import Problem from '../Problem.jsx'
 import Markdown, { withoutSourcesLine } from './Markdown.jsx'
 import ProductCards from './ProductCards.jsx'
+import ApprovalCard from './ApprovalCard.jsx'
 import { Back, Chevron, Close, Doc, Expand, History, Plus, Search, Send, Shrink, Sparkle, Trash } from './icons.jsx'
 import './chat.css'
 
@@ -53,6 +54,8 @@ function ago(iso) {
 // API message -> what the UI renders.
 // Product cards of a saved answer come from its steps: search_products recorded the ids it showed.
 const productIdsOf = (steps) => [...new Set((steps || []).flatMap((s) => s.product_ids || []))]
+// Phase 6: actions waiting for the shopper, recorded on the step that proposed them.
+const approvalsOf = (steps) => (steps || []).filter((s) => s.approval).map((s) => s.approval)
 const fromApi = (m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations || [],
   steps: m.steps || [], productIds: productIdsOf(m.steps) })
 
@@ -230,6 +233,16 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
   }
 
   const cardProps = { onOpen: (id) => { setExpanded(false); onOpenProduct?.(id) }, onCartChanged, notify }
+  // The outcome of a confirmed action is written by the server from Kirana's answer; show it here too.
+  // Stable across renders: the card's "still executing" poll depends on it.
+  const onDecided = useCallback((v) => {
+    if (v.message && v.status !== 'pending') {
+      const id = `action-${v.id}-${v.status}`
+      setMessages((ms) => (ms.some((m) => m.id === id) ? ms
+        : [...ms, { id, role: 'assistant', content: v.message, fresh: true }]))
+    }
+    if (v.status === 'done') onCartChanged?.()
+  }, [onCartChanged])
   const firstName = (userName || '').split(' ')[0]
   const empty = messages.length === 0 && !pending && !failure
 
@@ -302,7 +315,7 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
               <ol className="chat-log" aria-live="polite">
                 {messages.map((m) => (m.role === 'user'
                   ? <li key={m.id} className="msg msg-user"><div className="bubble">{m.content}</div></li>
-                  : <AssistantMessage key={m.id} m={m} cards={cardProps} />))}
+                  : <AssistantMessage key={m.id} m={m} cards={cardProps} onDecided={onDecided} />))}
                 {pending && (pending.text
                   ? <LiveAnswer text={pending.text} productIds={pending.productIds} cards={cardProps} />
                   : <Thinking startedAt={pending.startedAt} status={pending.status} productIds={pending.productIds} cards={cardProps} />)}
@@ -360,7 +373,7 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
   )
 }
 
-function AssistantMessage({ m, cards }) {
+function AssistantMessage({ m, cards, onDecided }) {
   const [showSteps, setShowSteps] = useState(false)
   const u = m.usage
   return (
@@ -369,6 +382,9 @@ function AssistantMessage({ m, cards }) {
       <div className="msg-card">
         {m.content ? <Markdown text={withoutSourcesLine(m.content)} /> : <p className="msg-stopped-empty">No answer yet.</p>}
         {m.productIds?.length > 0 && <ProductCards ids={m.productIds} {...cards} />}
+        {approvalsOf(m.steps).map((a) => (
+          <ApprovalCard key={a.approval_id} approval={a} onDecided={onDecided} notify={cards.notify} />
+        ))}
         {m.stopped && <div className="msg-stopped">Stopped · not saved</div>}
 
         {m.citations?.length > 0 && (
@@ -412,9 +428,14 @@ function AssistantMessage({ m, cards }) {
                   {s.query && <span className="step-query"> “{s.query}”</span>}
                   <div className="step-sub">
                     {Object.keys(s.where || {}).length
-                      ? Object.entries(s.where).map(([k, v]) => `${k}: ${v}`).join(' · ')
+                      ? Object.entries(s.where).map(([k, v]) => `${k}: ${typeof v === 'object' ? JSON.stringify(v) : v}`).join(' · ')
                       : 'no filters'} · {s.count} {s.count === 1 ? 'result' : 'results'}
                   </div>
+                  {s.decision && (
+                    <div className={`step-policy step-policy-${s.decision}`}>
+                      policy: {s.decision}{s.reason ? ` (${s.reason})` : ''}{s.denied_by === 'kirana' ? ' · refused by Kirana' : ''}
+                    </div>
+                  )}
                 </div>
               </li>
             ))}

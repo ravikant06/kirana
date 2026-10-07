@@ -88,6 +88,10 @@ kirana:
   auth:
     # AI Phase 5: RS256 access tokens. The key lives in memory, so a restart signs everyone out.
     token-ttl: ${KIRANA_TOKEN_TTL:1h}
+    # Phase 6 M3: the AI service exchanges a shopper's token for a narrower one, as this client.
+    ai-client:
+      id: kirana-ai
+      secret: ${KIRANA_AI_CLIENT_SECRET:kirana-ai-dev-secret}
   storage:
     endpoint: ${STORAGE_ENDPOINT:http://localhost:9000}          # what browsers use (signed URLs)
     api-endpoint: ${STORAGE_API_ENDPOINT:}                       # what the backend calls; empty = endpoint

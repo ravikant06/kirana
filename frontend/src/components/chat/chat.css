@@ -260,3 +260,17 @@
 .pc-note { margin-top: 10px; font-size: 0.82rem; color: var(--muted); }
 @keyframes pc-shimmer { to { background-position: -200% 0; } }
 @media (prefers-reduced-motion: reduce) { .pc-skeleton { animation: none; } }
+
+/* ---- Phase 6: the policy's decision per step, and approval cards ---- */
+.step-policy { font-size: 0.74rem; color: var(--muted); }
+.step-policy-deny { color: var(--chili); }
+.step-policy-approval { color: var(--marigold-deep); }
+.approval { margin-top: 12px; padding: 12px 14px; border: 1px solid var(--marigold); border-radius: 12px; background: var(--marigold-wash); display: grid; gap: 8px; }
+.approval-done { border-color: var(--leaf); background: var(--leaf-wash); }
+.approval-failed, .approval-expired, .approval-rejected { border-color: var(--line-strong); background: var(--surface-2); }
+.approval-head { display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.approval-status { font-size: 0.75rem; font-weight: 700; color: var(--muted); white-space: nowrap; }
+.approval-lines { margin: 0; padding-left: 18px; font-size: 0.85rem; }
+.approval-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.approval-expiry { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
+.approval-message { margin: 0; font-size: 0.85rem; }

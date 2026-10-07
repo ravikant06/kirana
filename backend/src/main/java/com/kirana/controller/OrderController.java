@@ -28,7 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/orders")
-@RequiresPermission(Permission.SHOP)
+@RequiresPermission(Permission.ORDERS_WRITE)
 public class OrderController {
 
     private final OrderService orders;
@@ -59,11 +59,13 @@ public class OrderController {
                 () -> resilience.checkout(() -> checkout.start(userId, req == null ? null : req.paymentProvider())));
     }
 
+    @RequiresPermission(Permission.ORDERS_READ)
     @GetMapping
     public List<OrderResponse> list(@CurrentUser Long userId) {
         return orders.list(userId);
     }
 
+    @RequiresPermission(Permission.ORDERS_READ)
     @GetMapping("/{id}")
     public OrderResponse get(@CurrentUser Long userId, @PathVariable Long id) {
         return orders.get(userId, id);

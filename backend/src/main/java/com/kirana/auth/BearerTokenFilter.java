@@ -37,7 +37,13 @@ public class BearerTokenFilter extends OncePerRequestFilter {
         String auth = request.getHeader("Authorization");
         if (auth != null && auth.regionMatches(true, 0, "Bearer ", 0, 7)) {
             try {
-                request.setAttribute(AuthUser.ATTRIBUTE, tokens.verify(auth.substring(7).trim()));
+                AuthUser user = tokens.verify(auth.substring(7).trim());
+                if (user.actor() != null) {
+                    // Delegated: "user 2, via kirana-ai". Every such request is visible in the log.
+                    log.info("{} acting for user {}: {} {} scope={}", user.actor(), user.id(),
+                            request.getMethod(), request.getRequestURI(), user.scopes());
+                }
+                request.setAttribute(AuthUser.ATTRIBUTE, user);
             } catch (TokenService.InvalidTokenException e) {
                 log.info("Rejected token on {} {}: {}", request.getMethod(), request.getRequestURI(), e.getMessage());
                 unauthorized(request, response, e.getMessage());

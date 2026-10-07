@@ -84,3 +84,53 @@ def my_orders(token: str) -> list[dict]:
 def my_order(token: str, order_id: int) -> dict | None:
     """One order, or None: missing and someone else's look the same (Kirana answers 404 for both)."""
     return _get(f"/orders/{order_id}", token=token)
+
+
+def exchange(user_token: str, scopes: tuple[str, ...]) -> str:
+    """
+    Kirana's token exchange (RFC 8693 style, Phase 6 M3): the shopper's token in, a narrower one out.
+    The AI service authenticates itself as a client (HTTP Basic), so Kirana knows who the actor is.
+    401/403 here mean the shopper's token can't be narrowed to these scopes: a refusal, not an outage.
+    """
+    body = {"grant_type": "urn:ietf:params:oauth:grant-type:token-exchange",
+            "subject_token": user_token, "scope": " ".join(scopes)}
+    try:
+        r = _client().post("/auth/token-exchange", json=body,
+                           auth=(config.AI_CLIENT_ID, config.AI_CLIENT_SECRET))
+    except httpx.HTTPError as exc:
+        raise UpstreamUnavailable("kirana", f"token exchange: {type(exc).__name__}: {exc}") from exc
+    if r.status_code == 401:
+        raise SessionExpired()
+    if r.status_code in (400, 403):
+        raise NotPermitted()
+    if r.status_code >= 400:
+        raise UpstreamUnavailable("kirana", f"token exchange answered {r.status_code}: {r.text[:200]}")
+    return r.json()["access_token"]
+
+
+def _post(path: str, token: str, body: dict, idempotency_key: str) -> tuple[int, dict | None]:
+    """A write, always with an Idempotency-Key (Kirana Stage 7): a retry replays, never repeats."""
+    try:
+        r = _client().post(path, json=body, headers={"Authorization": f"Bearer {token}",
+                                                      "Idempotency-Key": idempotency_key})
+    except httpx.HTTPError as exc:
+        raise UpstreamUnavailable("kirana", f"{path}: {type(exc).__name__}: {exc}") from exc
+    if r.status_code == 401:
+        raise SessionExpired()
+    if r.status_code == 403:
+        raise NotPermitted()
+    if r.status_code >= 500:
+        raise UpstreamUnavailable("kirana", f"{path} answered {r.status_code}: {r.text[:200]}")
+    return r.status_code, (r.json() if r.content else None)
+
+
+def cancel_order(token: str, order_id: int, idempotency_key: str) -> tuple[int, dict | None]:
+    return _post(f"/orders/{order_id}/cancel", token, None, idempotency_key)
+
+
+def add_to_cart(token: str, product_id: int, quantity: int, idempotency_key: str) -> tuple[int, dict | None]:
+    return _post("/cart/items", token, {"productId": product_id, "quantity": quantity}, idempotency_key)
+
+
+def my_cart(token: str) -> dict | None:
+    return _get("/cart", token=token)

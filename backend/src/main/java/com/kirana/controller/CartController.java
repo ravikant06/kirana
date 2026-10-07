@@ -22,7 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/cart")
-@RequiresPermission(Permission.SHOP)
+@RequiresPermission(Permission.CART_WRITE)
 public class CartController {
 
     private final CartService carts;
@@ -33,6 +33,7 @@ public class CartController {
         this.idempotency = idempotency;
     }
 
+    @RequiresPermission(Permission.CART_READ)
     @GetMapping
     public CartResponse get(@CurrentUser Long userId) {
         return carts.get(userId);

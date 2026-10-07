@@ -42,7 +42,10 @@ such an endpoint → 401; a token without the endpoint's permission → 403.
 
 | Permission (`scope`) | SHOPPER | ADMIN | Endpoints |
 |---|---|---|---|
-| `shop` | ✅ | ✅ | `/cart/**`, `/orders/**` (payment, verify, cancel) |
+| `orders:read` | ✅ | ✅ | `GET /orders`, `GET /orders/{id}` |
+| `orders:write` | ✅ | ✅ | `POST /orders`, payment, verify, cancel |
+| `cart:read` | ✅ | ✅ | `GET /cart` |
+| `cart:write` | ✅ | ✅ | `POST/PUT/DELETE /cart/items/**` |
 | `chat` | ✅ | ✅ | the AI assistant (kirana-ai) |
 | `catalog:write` | | ✅ | product create/update/delete, `/products/{id}/images/**`, `/products/{id}/inventory/**`, flash-sale create/delete |
 | `users:read` | | ✅ | `GET /users` |
@@ -103,7 +106,15 @@ unknown (no response, 409 in progress, 502/503/504).
 |--------|------------------------|------------------------|---------|
 | POST   | /auth/login            | `{ email, password }`  | `{ accessToken, tokenType: "Bearer", expiresAt, user: User, permissions: [scope] }`; 401 "Invalid email or password" for an unknown email or a wrong password alike |
 | GET    | /auth/me               | — (token)              | `User` |
+| POST   | /auth/token-exchange   | `{ grant_type, subject_token, scope }` + HTTP Basic client auth | `{ access_token, issued_token_type, token_type, expires_in, scope }` (Phase 6) |
 | GET    | /.well-known/jwks.json | —                      | `{ keys: [ { kty: "RSA", kid, alg: "RS256", use: "sig", n, e } ] }` |
+
+**Token exchange (AI Phase 6, RFC 8693 style):** a registered client (today only `kirana-ai`, HTTP
+Basic id + secret) trades a user's token for a narrower one. The subject token must be valid and
+issued for that client (`aud` names it), must not itself be delegated, and the requested scopes must
+be a subset of the user's. The result: `aud` = `kirana-api` only, `act` = `{sub: "kirana-ai"}`, 2 minutes
+if any scope writes, else 5. 401 bad client or subject token · 403 a scope the user doesn't hold.
+Kirana logs every delegated request ("kirana-ai acting for user N").
 
 The token is an RS256 JWT: `sub` (user id), `role`, `scope` (space-separated permissions), `iss` =
 `kirana`, `aud` = `["kirana-api", "kirana-ai"]`, `exp` (1 h), `name`, header `kid`. Passwords are

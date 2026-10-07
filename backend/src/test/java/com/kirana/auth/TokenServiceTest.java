@@ -34,8 +34,9 @@ class TokenServiceTest {
         AuthUser user = tokens.verify(tokens.issue(7, "Puja", Role.SHOPPER).token());
         assertThat(user.id()).isEqualTo(7);
         assertThat(user.role()).isEqualTo("SHOPPER");
-        assertThat(user.scopes()).containsExactlyInAnyOrder("shop", "chat");
+        assertThat(user.scopes()).containsExactlyInAnyOrder("orders:read", "orders:write", "cart:read", "cart:write", "chat");
         assertThat(user.can(Permission.CATALOG_WRITE)).isFalse();
+        assertThat(user.actor()).isNull();
     }
 
     @Test
@@ -47,7 +48,7 @@ class TokenServiceTest {
     @Test
     void editedScopeBreaksTheSignature() {
         String[] parts = tokens.issue(7, "Puja", Role.SHOPPER).token().split("\\.");
-        String payload = new String(Base64.getUrlDecoder().decode(parts[1])).replace("\"shop chat\"", "\"shop chat catalog:write\"");
+        String payload = new String(Base64.getUrlDecoder().decode(parts[1])).replace("\"scope\":\"", "\"scope\":\"catalog:write ");
         String forged = parts[0] + "." + Base64.getUrlEncoder().withoutPadding().encodeToString(payload.getBytes()) + "." + parts[2];
         assertThatThrownBy(() -> tokens.verify(forged)).hasMessage("Bad signature");
     }
@@ -100,6 +101,55 @@ class TokenServiceTest {
         @SuppressWarnings("unchecked")
         var k = ((List<java.util.Map<String, Object>>) tokens.jwks().get("keys")).get(0);
         assertThat(k).containsKeys("kty", "n", "e", "kid").doesNotContainKeys("d", "p", "q");
+    }
+
+    // --- token exchange (Phase 6 M3) -------------------------------------------------------
+
+    @Test
+    void exchangeNarrowsScopesAndMarksTheActor() {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        TokenService.Issued narrow = tokens.exchange(user, java.util.Set.of("orders:read"), "kirana-ai");
+        AuthUser seen = tokens.verify(narrow.token());
+        assertThat(seen.id()).isEqualTo(7);
+        assertThat(seen.scopes()).containsExactly("orders:read");
+        assertThat(seen.actor()).isEqualTo("kirana-ai");
+        assertThat(narrow.expiresAt()).isEqualTo(NOW.plus(Duration.ofMinutes(5)));
+    }
+
+    @Test
+    void aWriteScopeLivesTwoMinutes() {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        assertThat(tokens.exchange(user, java.util.Set.of("orders:write"), "kirana-ai").expiresAt())
+                .isEqualTo(NOW.plus(Duration.ofMinutes(2)));
+    }
+
+    @Test
+    void youCanOnlyNarrowNeverWiden() {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        assertThatThrownBy(() -> tokens.exchange(user, java.util.Set.of("orders:read", "catalog:write"), "kirana-ai"))
+                .isInstanceOf(ForbiddenException.class);
+    }
+
+    @Test
+    void anExchangedTokenCantBeExchangedAgain() {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        String narrow = tokens.exchange(user, java.util.Set.of("orders:read", "orders:write"), "kirana-ai").token();
+        assertThatThrownBy(() -> tokens.exchange(narrow, java.util.Set.of("orders:read"), "kirana-ai"))
+                .isInstanceOf(TokenService.InvalidTokenException.class);
+    }
+
+    @Test
+    void aTokenNotIssuedForTheClientCantBeExchanged() {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        assertThatThrownBy(() -> tokens.exchange(user, java.util.Set.of("orders:read"), "some-other-app"))
+                .hasMessageContaining("not issued for client");
+    }
+
+    @Test
+    void theNarrowTokenIsOnlyForKiranaApi() throws Exception {
+        String user = tokens.issue(7, "Puja", Role.SHOPPER).token();
+        SignedJWT narrow = SignedJWT.parse(tokens.exchange(user, java.util.Set.of("orders:read"), "kirana-ai").token());
+        assertThat(narrow.getJWTClaimsSet().getAudience()).containsExactly("kirana-api");   // the AI service would refuse it
     }
 
     private static JWTClaimsSet claims(long sub, String aud, Instant exp) {

@@ -5,8 +5,14 @@ package com.kirana.auth;
  * so the AI service checks the same names without asking Kirana.
  */
 public enum Permission {
-    /** Own cart, own orders, payments, cancels. */
-    SHOP("shop"),
+    /** Read your own orders. The AI's order questions get a token with only this (Phase 6 M3). */
+    ORDERS_READ("orders:read"),
+    /** Place, pay and cancel your own orders. */
+    ORDERS_WRITE("orders:write"),
+    /** Read your own cart. */
+    CART_READ("cart:read"),
+    /** Change your own cart. */
+    CART_WRITE("cart:write"),
     /** Talk to the AI assistant (checked by kirana-ai). */
     CHAT("chat"),
     /** Create, edit and delete products, images, stock and flash sales. */

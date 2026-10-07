@@ -1,4 +1,4 @@
-# ai-contract.md: Kirana ⇄ Kirana AI (v0.6)
+# ai-contract.md: Kirana ⇄ Kirana AI (v0.7)
 
 The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every change.
 **(Pn)** = added in phase n of `AI-PLAN.md`. Build only what the current phase needs.
@@ -20,6 +20,7 @@ The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every chan
 | Phase | Browser → AI | AI → Kirana |
 |---|---|---|
 | P1–P4 | `X-User-Id` (used **only** to scope threads; forgeable, like Kirana today) | none: tools call only public endpoints |
+| P6 ✅ | same as P5 | never the user's own token: a token exchanged for exactly the scopes a tool needs |
 | P5+ ✅ | `Authorization: Bearer <Kirana JWT>` on every route (RS256; verified against Kirana's `/.well-known/jwks.json`: `iss` = kirana, `aud` ∋ kirana-ai, `exp`). Permissions from the `scope` claim: chat and threads need `chat`, `/v1/kb/**` needs `kb:write` (403 otherwise). `X-User-Id` is not read | the same header, forwarded unchanged by the order tools |
 
 The request body and tool arguments **never** contain a user id.
@@ -33,7 +34,8 @@ The request body and tool arguments **never** contain a user id.
 | P1 | `GET /v1/threads` | → `[ThreadSummary]` newest first, max 50 |
 | P1 | `GET /v1/threads/{id}` | → `Thread` (404 if not the caller's) |
 | P1 | `DELETE /v1/threads/{id}` | → 204 |
-| P6 | `POST /v1/approvals/{approval_id}` | `{decision: "confirm" \| "reject"}` → SSE continuing the turn |
+| P6 ✅ | `GET /v1/approvals/{approval_id}` | → `Approval` (404 if not the caller's) |
+| P6 ✅ | `POST /v1/approvals/{approval_id}` | `{decision: "confirm" \| "reject"}` → `Approval`. Runs the server's stored copy; a repeat returns the first outcome; 409 `APPROVAL_TAMPERED` if the stored row no longer matches its seal |
 | P9 | `POST /v1/messages/{message_id}/feedback` | `{rating: "up" \| "down", comment?}` → 204 |
 
     ChatRequest   = { thread_id?, message }          // message 1–2000 chars after trimming; unknown fields → 400
@@ -41,7 +43,11 @@ The request body and tool arguments **never** contain a user id.
     Usage         = { llm_calls, input_tokens, output_tokens, latency_ms,
                       cost_usd }                      // decimal string "0.004170", or null = unknown price
     Citation      = { source, doc_id, title?, pages: [int] }   // pages: PDFs only (P2)
-    Step          = { tool, query, where, count }    // one tool call: filters the model chose, hits returned
+    Step          = { tool, query, where, count,     // one tool call: filters the model chose, hits returned
+                      decision, reason, denied_by?,  // P6: the policy's allow|deny|approval, why, and who refused
+                      approval? }                    // P6: the card, when an action awaits confirmation
+    Approval      = { id, tool, summary, lines: [str], status, message?, expires_at }
+                    // status: pending | executing | done | failed | rejected | expired
     ThreadSummary = { id, title, updated_at }
     Thread        = { id, title, created_at, updated_at,
                       messages: [{ id, role, content, citations, steps, created_at }] }
@@ -71,7 +77,7 @@ a stream reader (the request is a POST); `streamChat()` in Kirana's `api.js` par
 | `done` | `{thread_id, message_id, reply, steps, usage}` | finalise; `usage` adds `first_token_ms`, `unverified_sources` |
 | `error` | `ProblemDetail` (`status`, `code`) | show it with Retry: the HTTP status was already 200 when it failed |
 | `products` (P4) | `{product_ids: [..]}` | fetch cards from Kirana |
-| `approval_required` (P6) | `{approval_id, summary, lines?, expires_at}` | Confirm / Reject card |
+| `approval_required` (P6 ✅) | `{approval_id, tool, summary, lines, expires_at}` | Confirm / Reject card (built from the server's copy) |
 
 Closing the stream abandons the turn: the LLM call in flight is recorded in `llm_calls` as
 "stream abandoned by the client" (it may still be billed), and no answer is saved.
@@ -148,8 +154,9 @@ of truth if anything is ever lost.
 | P4 | `GET /products/batch?ids=` → `[ProductSummary]` (new) | Product search hydration |
 | P4 | `GET /products?page=&size=` (exists) | `make index-products` |
 | P5 ✅ | `GET /orders`, `GET /orders/{id}` (user from the forwarded token; 404 if foreign) | `get_my_orders(status?)`, `get_order(order_id)`: offered only when the turn has a token; no identity parameter |
-| P6 | `POST /orders/{id}/cancel` (exists since Stage 5), `Idempotency-Key` = approval id | Cancel after approval |
-| P6 | `POST /cart/items` (exists), one call per line, `Idempotency-Key` = approval id + `:` + product id | Cart builder after approval |
+| P6 ✅ | `POST /auth/token-exchange` (HTTP Basic as client `kirana-ai`) | every Kirana call: `orders:read` for order tools; `orders:write` / `cart:write cart:read` only when an approval runs |
+| P6 ✅ | `POST /orders/{id}/cancel`, `Idempotency-Key` = approval id | `cancel_order` after approval |
+| P6 ✅ | `POST /cart/items`, one call per line, `Idempotency-Key` = approval id + `:` + product id; then `GET /cart` for the total | `add_to_cart` after approval |
 
 Rules: timeouts on every call (P11); retries only on GETs and idempotency-keyed writes;
 Kirana's ProblemDetail is passed to the LLM as a tool error, never raised to the user raw.

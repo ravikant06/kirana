@@ -11,7 +11,8 @@ import com.kirana.auth.Permission;
  * Matches the CHECK constraint on users.role.
  */
 public enum Role {
-    SHOPPER(EnumSet.of(Permission.SHOP, Permission.CHAT)),
+    SHOPPER(EnumSet.of(Permission.ORDERS_READ, Permission.ORDERS_WRITE, Permission.CART_READ,
+            Permission.CART_WRITE, Permission.CHAT)),
     ADMIN(EnumSet.allOf(Permission.class));
 
     private final Set<Permission> permissions;

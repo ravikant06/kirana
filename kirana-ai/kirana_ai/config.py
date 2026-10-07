@@ -57,6 +57,12 @@ KIRANA_TIMEOUT_SECONDS = float(os.getenv("KIRANA_TIMEOUT_SECONDS", "5"))
 KIRANA_JWKS_URL = os.getenv("KIRANA_JWKS_URL", KIRANA_API_URL + "/.well-known/jwks.json")
 TOKEN_ISSUER = os.getenv("TOKEN_ISSUER", "kirana")
 TOKEN_AUDIENCE = os.getenv("TOKEN_AUDIENCE", "kirana-ai")
+# Phase 6: how the AI service authenticates to Kirana's token exchange (a confidential client).
+AI_CLIENT_ID = os.getenv("AI_CLIENT_ID", "kirana-ai")
+AI_CLIENT_SECRET = os.getenv("AI_CLIENT_SECRET", "kirana-ai-dev-secret")
+# Phase 6 M4: pending actions expire, and are sealed with an HMAC so a changed row is refused.
+APPROVAL_TTL_SECONDS = int(os.getenv("APPROVAL_TTL_SECONDS", "300"))
+APPROVAL_HMAC_KEY = os.getenv("APPROVAL_HMAC_KEY", "kirana-ai-dev-approval-key")
 
 # --- Product search (Phase 4) ---
 PRODUCTS_COLLECTION = os.getenv("PRODUCTS_COLLECTION", "kirana_products")

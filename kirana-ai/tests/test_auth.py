@@ -4,7 +4,7 @@ import pytest
 from cryptography.hazmat.primitives.asymmetric import rsa
 
 from conftest import FakeAdapter, make_token
-from kirana_ai import agent, auth, kirana
+from kirana_ai import agent, auth, kirana, policy
 from kirana_ai.llm import LLMResponse, ToolCall, Usage
 
 
@@ -65,72 +65,82 @@ def test_jwks_unreachable_fails_closed(monkeypatch):
         auth.verify(make_token(1))
 
 
-# --- order tools ---------------------------------------------------------------------------
+# --- order tools (identity through narrowed credentials, never the model) ------------------
 
 ORDER = {"id": 42, "status": "PAID", "total": 230.0, "createdAt": "2026-10-04T10:00:00Z",
          "items": [{"productName": "Paneer (200 g)", "quantity": 2, "unitPrice": 90.0, "lineTotal": 180.0}]}
-
-
-SHOPPER = frozenset({"shop", "chat"})
+SHOPPER = frozenset({"orders:read", "orders:write", "cart:read", "cart:write", "chat"})
 CHAT_ONLY = frozenset({"chat"})
 
 
-def _agent_turn(monkeypatch, tool_call, token, scopes=SHOPPER):
-    sent = {}
+class FakeCredentials:
+    """Records which scopes the tools asked for; hands out a token naming them."""
+    def __init__(self):
+        self.asked = []
+
+    def token(self, *scopes):
+        self.asked.append(scopes)
+        return "narrow:" + " ".join(sorted(scopes))
+
+
+def caller_with(scopes=SHOPPER, user_id=7):
+    return policy.Caller(user_id=user_id, scopes=scopes, credentials=FakeCredentials())
+
+
+def _agent_turn(monkeypatch, tool_call, caller):
+    sent, recorded = {}, []
     monkeypatch.setattr(kirana, "my_orders", lambda t: sent.setdefault("token", t) and [ORDER])
     monkeypatch.setattr(kirana, "my_order", lambda t, oid: (sent.update(token=t, order_id=oid), None)[1])
     llm = FakeAdapter([LLMResponse(tool_calls=(tool_call,), usage=Usage(10, 1)),
                        LLMResponse(text="ok", usage=Usage(10, 1))])
-    events = list(agent.answer_stream("q", llm=llm, user_token=token, user_scopes=scopes))
-    return sent, llm, [e.data for e in events if e.kind == "step"]
+    events = list(agent.answer_stream("q", llm=llm, caller=caller, decisions=lambda r: recorded.append(r) or True))
+    return sent, llm, [e.data for e in events if e.kind == "step"], recorded
 
 
-def test_order_tools_exist_only_for_a_token_with_shop():
+def test_order_tools_exist_only_for_a_caller_with_orders_read():
     public = {"search_products", "search_docs", "list_documents"}
-    assert {t.name for t in agent.tools_for(None)} == public
-    assert {t.name for t in agent.tools_for("tok", CHAT_ONLY)} == public          # G1: signed in, no "shop"
-    assert {"get_my_orders", "get_order"} <= {t.name for t in agent.tools_for("tok", SHOPPER)}
+    assert {t.name for t in policy.tools_for(policy.ANONYMOUS, agent.SPECS)} == public
+    assert {t.name for t in policy.tools_for(caller_with(CHAT_ONLY), agent.SPECS)} == public   # G1
+    assert {"get_my_orders", "get_order", "cancel_order", "add_to_cart"} <= \
+        {t.name for t in policy.tools_for(caller_with(), agent.SPECS)}
 
 
-def test_order_tools_have_no_identity_parameter():
-    for tool in agent.ORDER_TOOLS:
+def test_no_tool_has_an_identity_parameter():
+    for tool in agent.SPECS.values():
         params = set(tool.parameters.get("properties", {}))
-        assert not params & {"user_id", "userId", "user", "customer_id", "token"}
+        assert not params & {"user_id", "userId", "user", "customer_id", "token", "email"}
 
 
-def test_get_my_orders_forwards_the_callers_token(monkeypatch):
-    sent, _, steps = _agent_turn(monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}), "tok-7")
-    assert sent["token"] == "tok-7" and steps[0]["count"] == 1
+def test_get_my_orders_uses_a_narrowed_read_token(monkeypatch):
+    caller = caller_with()
+    sent, _, steps, _ = _agent_turn(monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}), caller)
+    assert sent["token"] == "narrow:orders:read"         # never the shopper's own token
+    assert caller.credentials.asked == [("orders:read",)] and steps[0]["count"] == 1
 
 
-def test_a_foreign_or_missing_order_is_not_found(monkeypatch):
-    sent, llm, steps = _agent_turn(monkeypatch, ToolCall(id="1", name="get_order", arguments={"order_id": 99}), "tok-7")
-    assert sent == {"token": "tok-7", "order_id": 99} and steps[0]["count"] == 0
-    tool_result = llm.calls[1][-1].tool_result.content
-    assert tool_result["found"] is False
+def test_a_foreign_or_missing_order_is_not_found_and_logged_as_kirana(monkeypatch):
+    sent, llm, steps, recorded = _agent_turn(
+        monkeypatch, ToolCall(id="1", name="get_order", arguments={"order_id": 99}), caller_with())
+    assert sent["order_id"] == 99 and steps[0]["count"] == 0
+    assert llm.calls[1][-1].tool_result.content["found"] is False
+    assert [(r.decision.outcome.value, r.decision.layer) for r in recorded] == [("allow", "policy"), ("deny", "kirana")]
 
 
-def test_a_hallucinated_order_call_without_a_token_gets_nothing(monkeypatch):
-    sent, _, steps = _agent_turn(monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}), None)
-    assert sent == {} and steps[0]["count"] == 0
-
-
-def test_permissions_come_from_the_tokens_scope():
-    shopper = auth.verify(make_token(7))
-    assert shopper.role == "SHOPPER" and shopper.scopes == {"shop", "chat"}
-    with pytest.raises(auth.Forbidden, match="kb:write"):
-        shopper.require("kb:write")
-    assert auth.verify(make_token(1, role="ADMIN", scope="chat kb:write")).require("kb:write")
+def test_an_anonymous_order_call_gets_nothing(monkeypatch):
+    sent, _, steps, recorded = _agent_turn(
+        monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}), policy.ANONYMOUS)
+    assert sent == {} and steps[0]["decision"] == "deny" and steps[0]["denied_by"] == "policy"
 
 
 # --- G1: a chat-only account (found by experiment: the turn used to fail with 503) -----------
 
-def test_g1_an_order_call_without_shop_is_refused_before_kirana(monkeypatch):
-    sent, llm, steps = _agent_turn(monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}),
-                                   "tok-2", scopes=CHAT_ONLY)
+def test_g1_an_order_call_without_orders_read_is_refused_before_kirana(monkeypatch):
+    sent, llm, steps, recorded = _agent_turn(
+        monkeypatch, ToolCall(id="1", name="get_my_orders", arguments={}), caller_with(CHAT_ONLY))
     assert sent == {}                                          # Kirana never asked
     result = llm.calls[1][-1].tool_result.content
     assert result["denied_by"] == "policy" and "not allowed" in result["error"]
+    assert recorded[0].decision.reason == "missing-scope:orders:read"
 
 
 def test_g1_kiranas_403_is_a_tool_result_not_an_outage(monkeypatch):
@@ -139,7 +149,7 @@ def test_g1_kiranas_403_is_a_tool_result_not_an_outage(monkeypatch):
     monkeypatch.setattr(kirana, "my_orders", refuse)
     llm = FakeAdapter([LLMResponse(tool_calls=(ToolCall(id="1", name="get_my_orders", arguments={}),), usage=Usage(10, 1)),
                        LLMResponse(text="Your account can't view orders.", usage=Usage(10, 1))])
-    events = list(agent.answer_stream("my orders?", llm=llm, user_token="tok", user_scopes=SHOPPER))
+    events = list(agent.answer_stream("my orders?", llm=llm, caller=caller_with()))
     assert events[-1].kind == "done" and "can't view orders" in events[-1].data["answer"]
     assert llm.calls[1][-1].tool_result.content["denied_by"] == "kirana"
 

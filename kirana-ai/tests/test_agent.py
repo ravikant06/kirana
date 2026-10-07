@@ -44,7 +44,8 @@ def test_one_search_then_answer(monkeypatch):
 
     assert answer.startswith("Unopened rice")
     assert steps == [{"tool": "search_docs", "query": "return window rice",
-                      "where": {"doc_type": "policy"}, "count": 1}]
+                      "where": {"doc_type": "policy"}, "count": 1,
+                      "decision": "allow", "reason": "ok:read-public"}]
     assert len(chunks) == 1
     # The second call carries the tool result back: user, assistant(tool call), tool.
     assert len(fake.calls[1]) == 3

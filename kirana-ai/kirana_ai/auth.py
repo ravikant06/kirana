@@ -89,3 +89,29 @@ def from_header(authorization: str | None) -> Caller:
     if not authorization or not authorization[:7].lower() == "bearer ":
         raise InvalidToken("sign in first: Authorization: Bearer <token> is required")
     return verify(authorization[7:].strip())
+
+
+class Credentials:
+    """
+    The shopper's verified token, held privately for one request, and the only way to get a token
+    for Kirana (Phase 6 M3). Tools never see the shopper's own token, which carries every permission
+    they have: they ask for exactly the scopes they need, and Kirana's token exchange returns a
+    short-lived token with only those, marked as acting for the shopper via kirana-ai (`act` claim).
+
+    A read turn can therefore never hold a token that writes; a write token is minted only by the
+    approval endpoint, after the shopper's click, for that one action.
+    """
+
+    def __init__(self, user_token: str) -> None:
+        self._user_token = user_token
+        self._cache: dict[tuple[str, ...], str] = {}
+
+    def token(self, *scopes: str) -> str:
+        key = tuple(sorted(scopes))
+        if key not in self._cache:
+            from kirana_ai import kirana
+            self._cache[key] = kirana.exchange(self._user_token, key)
+        return self._cache[key]
+
+    def __repr__(self) -> str:          # never print a token, not even by accident in a log line
+        return "Credentials(<hidden>)"

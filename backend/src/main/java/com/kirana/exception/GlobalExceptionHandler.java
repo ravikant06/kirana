@@ -48,6 +48,15 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
         return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.WWW_AUTHENTICATE, "Bearer").body(pd);
     }
 
+    /**
+     * A token that failed verification outside the filter: the subject token of a token exchange.
+     * 401, like the filter: a bad or expired token is the caller's problem, never a 500.
+     */
+    @ExceptionHandler(com.kirana.auth.TokenService.InvalidTokenException.class)
+    public ResponseEntity<ProblemDetail> invalidToken(com.kirana.auth.TokenService.InvalidTokenException ex) {
+        return unauthenticated(new com.kirana.auth.UnauthenticatedException(ex.getMessage()));
+    }
+
     /** Signed in, not allowed. Fine to say so: the endpoint's existence is no secret. */
     @ExceptionHandler(com.kirana.auth.ForbiddenException.class)
     public ProblemDetail forbidden(com.kirana.auth.ForbiddenException ex) {

@@ -70,7 +70,7 @@ def ai_db(pg, monkeypatch):
     db.engine.cache_clear()
     db._session_factory.cache_clear()
     with pg.begin() as conn:
-        conn.execute(text("TRUNCATE threads, messages, llm_calls"))
+        conn.execute(text("TRUNCATE threads, messages, llm_calls, tool_decisions, pending_actions"))
     yield pg
     db.engine().dispose()
     db.engine.cache_clear()
@@ -96,7 +96,7 @@ TEST_KID = "test-key"
 
 
 def make_token(user_id: int = 7, *, key=None, kid: str = TEST_KID, aud="kirana-ai", iss: str = "kirana",
-               expires_in: int = 3600, alg: str = "RS256", role: str = "SHOPPER", scope: str = "shop chat") -> str:
+               expires_in: int = 3600, alg: str = "RS256", role: str = "SHOPPER", scope: str = "orders:read orders:write cart:read cart:write chat") -> str:
     now = datetime.now(timezone.utc)
     claims = {"sub": str(user_id), "aud": aud, "iss": iss, "iat": now, "exp": now + timedelta(seconds=expires_in),
               "role": role, "scope": scope}
@@ -108,7 +108,7 @@ def bearer(user_id: int = 7, **kw) -> dict:
 
 
 def admin_bearer(user_id: int = 1) -> dict:
-    return bearer(user_id, role="ADMIN", scope="shop chat catalog:write users:read kb:write system")
+    return bearer(user_id, role="ADMIN", scope="orders:read orders:write cart:read cart:write chat catalog:write users:read kb:write system")
 
 
 class FakeJwks:

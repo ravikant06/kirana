@@ -73,6 +73,54 @@ public class TokenService {
                 // OAuth's convention: permissions as one space-separated string. Both services check these.
                 .claim("scope", role.permissions().stream().map(Permission::scope).collect(Collectors.joining(" ")))
                 .build();
+        return new Issued(sign(claims), exp);
+    }
+
+    /**
+     * Token exchange (Phase 6 M3, RFC 8693 style): a client acting for a user trades the user's token
+     * for a narrower one. Rules, each closing a way to gain power:
+     *   - the subject token must be valid AND issued for this client (its aud names the client), so a
+     *     token meant for one app can't be laundered through another;
+     *   - no chains: a token that is already the result of an exchange can't be exchanged again;
+     *   - the requested scopes must be a subset of the subject's: you can only ever narrow;
+     *   - short life: 2 minutes if any scope writes, 5 minutes for reads;
+     *   - aud is kirana-api only, so the narrowed token is useless at the AI service;
+     *   - act = {sub: client}: every request with it says "user N, via kirana-ai" (audit).
+     */
+    public Issued exchange(String subjectToken, Set<String> requested, String clientId) {
+        JWTClaimsSet subject = verifiedClaims(subjectToken, THIS_AUDIENCE);
+        try {
+            if (subject.getAudience() == null || !subject.getAudience().contains(clientId)) {
+                throw new InvalidTokenException("Token not issued for client " + clientId);
+            }
+            if (subject.getClaim("act") != null) {
+                throw new InvalidTokenException("A delegated token can't be exchanged again");
+            }
+            Set<String> held = scopesOf(subject.getStringClaim("scope"));
+            if (requested.isEmpty() || !held.containsAll(requested)) {
+                throw new ForbiddenException("Requested scopes %s are not all held by the user".formatted(requested));
+            }
+            boolean writes = requested.stream().anyMatch(s -> s.endsWith(":write"));
+            Instant now = clock.instant();
+            Instant exp = now.plus(writes ? Duration.ofMinutes(2) : Duration.ofMinutes(5));
+            JWTClaimsSet claims = new JWTClaimsSet.Builder()
+                    .issuer(ISSUER)
+                    .subject(subject.getSubject())
+                    .audience(THIS_AUDIENCE)
+                    .issueTime(Date.from(now))
+                    .expirationTime(Date.from(exp))
+                    .jwtID(UUID.randomUUID().toString())
+                    .claim("role", subject.getStringClaim("role"))
+                    .claim("scope", String.join(" ", requested))
+                    .claim("act", Map.of("sub", clientId))
+                    .build();
+            return new Issued(sign(claims), exp);
+        } catch (ParseException e) {
+            throw new InvalidTokenException("Malformed token");
+        }
+    }
+
+    private String sign(JWTClaimsSet claims) {
         // The kid tells a verifier which published key to use (and makes rotation possible).
         SignedJWT jwt = new SignedJWT(new JWSHeader.Builder(JWSAlgorithm.RS256).keyID(key.getKeyID()).build(), claims);
         try {
@@ -80,7 +128,11 @@ public class TokenService {
         } catch (JOSEException e) {
             throw new IllegalStateException("Could not sign a token", e);
         }
-        return new Issued(jwt.serialize(), exp);
+        return jwt.serialize();
+    }
+
+    private static Set<String> scopesOf(String scope) {
+        return scope == null || scope.isBlank() ? Set.of() : Set.copyOf(new LinkedHashSet<>(List.of(scope.trim().split("\\s+"))));
     }
 
     /**
@@ -89,6 +141,18 @@ public class TokenService {
      * the signature, then issuer, audience and expiry.
      */
     public AuthUser verify(String token) {
+        JWTClaimsSet claims = verifiedClaims(token, THIS_AUDIENCE);
+        try {
+            Object act = claims.getClaim("act");
+            String actor = act instanceof Map<?, ?> m && m.get("sub") != null ? m.get("sub").toString() : null;
+            return new AuthUser(Long.parseLong(claims.getSubject()), claims.getStringClaim("role"),
+                    scopesOf(claims.getStringClaim("scope")), actor);
+        } catch (ParseException | NumberFormatException e) {
+            throw new InvalidTokenException("Malformed token");
+        }
+    }
+
+    private JWTClaimsSet verifiedClaims(String token, String audience) {
         try {
             SignedJWT jwt = SignedJWT.parse(token);
             if (!JWSAlgorithm.RS256.equals(jwt.getHeader().getAlgorithm())) {
@@ -104,18 +168,15 @@ public class TokenService {
             if (!ISSUER.equals(claims.getIssuer())) {
                 throw new InvalidTokenException("Wrong issuer");
             }
-            if (claims.getAudience() == null || !claims.getAudience().contains(THIS_AUDIENCE)) {
+            if (claims.getAudience() == null || !claims.getAudience().contains(audience)) {
                 throw new InvalidTokenException("Token not meant for this service");
             }
             Date exp = claims.getExpirationTime();
             if (exp == null || !exp.toInstant().isAfter(clock.instant())) {
                 throw new InvalidTokenException("Token expired");
             }
-            String scope = claims.getStringClaim("scope");
-            Set<String> scopes = scope == null || scope.isBlank() ? Set.of()
-                    : new LinkedHashSet<>(List.of(scope.trim().split("\\s+")));
-            return new AuthUser(Long.parseLong(claims.getSubject()), claims.getStringClaim("role"), Set.copyOf(scopes));
-        } catch (ParseException | JOSEException | NumberFormatException e) {
+            return claims;
+        } catch (ParseException | JOSEException e) {
             throw new InvalidTokenException("Malformed token");
         }
     }

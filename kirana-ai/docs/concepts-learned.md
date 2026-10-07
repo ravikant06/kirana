@@ -184,3 +184,28 @@ built, measured or broken in `kirana-ai/`, stated the way you would explain it i
     "not allowed" looked temporary, the UI offered a useless retry, and the answerable half of a mixed
     question was lost. Map each status to its meaning: 403 → a tool result the model explains; 5xx →
     unavailable. And don't offer a tool the caller's permissions can't use (found by experiment, G1).
+
+## Phase 6: the tool policy layer and actions with approval
+
+54. **The model proposes, deterministic code decides.** Every tool call passes `policy.authorize()`:
+    does the tool exist, does the token carry its permission, are the arguments valid, is the turn
+    within budget, is it a write (→ ask the human). Denials go back to the model as tool results.
+55. **Offer, then enforce again.** The tool list a caller sees is filtered by permission, and every
+    call is checked again, because a model can call a tool it was never shown. G2 was the proof: an
+    unknown tool name used to fall through to `search_docs`.
+56. **Permission vs policy.** A permission is a fact about the user ("has orders:write"); the policy
+    decides a specific call ("cancel order 102, now, with these arguments, after a click").
+57. **Every decision is audited** (`ai.tool_decisions`: tool, args hash, decision, reason, layer). A
+    write whose audit row can't be written is refused: an action nobody can trace must not happen.
+58. **Least privilege for the agent: token exchange.** The tools never see the shopper's own token.
+    Each Kirana call uses a token exchanged for exactly the scopes it needs (`orders:read`), 5 minutes
+    long, `aud` kirana-api only, with `act: kirana-ai`. A write token exists for 2 minutes, after the
+    click, for one action. You can only narrow, never widen, and never re-exchange.
+59. **Human approval binds the exact arguments.** The card is built from the server's stored copy,
+    the click sends only confirm/reject, the row is single-use, expires in 5 minutes, and is sealed
+    with an HMAC so an edited row is refused.
+60. **Exactly once, end to end.** The approval id is Kirana's Idempotency-Key: a double click (measured:
+    two simultaneous confirms, one cancellation), a retry after a timeout, or a crash after Kirana acted
+    all replay the first outcome.
+61. **The confirmation comes from the API, not the model.** "Done: order #102 is cancelled" is written
+    from Kirana's answer, so the assistant can never claim an action that didn't happen.

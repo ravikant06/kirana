@@ -363,6 +363,9 @@ export const api = {
     threads: (userId) => request('GET', '/v1/threads', undefined, { service: 'ai', userId }),
     thread: (userId, id) => request('GET', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
     deleteThread: (userId, id) => request('DELETE', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
+    // Phase 6: actions the assistant proposed. The body is only the decision; the server runs its own copy.
+    approval: (id) => request('GET', `/v1/approvals/${q(id)}`, undefined, { service: 'ai', quiet: true }),
+    decide: (id, decision) => request('POST', `/v1/approvals/${q(id)}`, { decision }, { service: 'ai' }),
     // Knowledge base (AI Phase 2). The upload itself goes browser -> MinIO with uploadToStorage.
     kb: {
       list: (quiet = false) => request('GET', '/v1/kb/documents', undefined, { service: 'ai', quiet }),

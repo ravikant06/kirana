@@ -68,7 +68,9 @@ Each package has a `package-info.java` stating its rules. Follow them.
   (bcrypt) → RS256 JWT with `role` and `scope` (permissions). Controllers get the caller only via
   `@CurrentUser Long userId`; protected endpoints carry `@RequiresPermission(Permission.X)`
   (401 no token, 403 missing permission). Roles are permission bundles (`entity.Role`): check
-  permissions, never role names. There is no X-User-Id. Tests sign in with `TestAuth.as(id)` /
+  permissions, never role names. Permissions: `orders:read|write`, `cart:read|write`, `chat`,
+  `catalog:write`, `users:read`, `kb:write`, `system`. The AI service gets narrowed tokens through
+  `POST /auth/token-exchange` (D74). There is no X-User-Id. Tests sign in with `TestAuth.as(id)` /
   `TestAuth.admin()`; scripts with `infra/perf/kirana_auth.py`. Demo password `kirana123`.
 - **Transactions:** `@Transactional` belongs on service methods. `open-in-view` is off.
 - **Images (D7):** three-step presigned **POST policy** flow: request policy, browser

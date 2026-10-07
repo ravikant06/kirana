@@ -140,15 +140,11 @@ openjdk 25. For manual Maven runs, set
 
 ## 10. Pending work, in order
 
-1. **Phase 5 is committed:** password login, roles as permission bundles, JWKS, `@RequiresPermission`,
-   X-User-Id removed; AI token check and order tools; login page; G1 fix (order tools need `shop`;
-   Kirana 403 → explainable tool result).
-2. **Next: Phase 6**, planned with Ravi first. Ravi wants **all policy work there together**: the tool
-   policy layer (registry, offer + enforce, G2 unknown tool, decision log), then actions with approval,
-   then narrowing the full-power token (AD26).
-3. Open question for Ravi: the security eval (`eval/run_security.py`, Phase 5 M6): finish it as part
-   of Phase 5, or build it with the Phase 6 policy layer?
-4. **Deferred by Ravi to the very end:** the Phase 3 runs (answer-eval baseline, `--grade`
+1. Phases 3–5 are merged to `main` (local; push only when Ravi says). Work continues on `ai-phase-6`.
+2. **Phase 6 is planned and approved** (AI-PLAN §4, AD28–AD32). Next: **M1 tool policy layer**, then
+   M2 security eval, M3 narrowed tokens, M4 cancel with approval, M5 cart with approval, M6 attacks.
+   One milestone at a time, reported to Ravi before the next.
+3. **Deferred by Ravi to the very end:** the Phase 3 runs (answer-eval baseline, `--grade`
    calibration, thinking-level comparison → AD20).
 
 ## 11. Known gotchas

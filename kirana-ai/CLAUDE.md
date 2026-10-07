@@ -32,6 +32,9 @@ the agent loop with a bounded budget, the LLM adapter pattern, hybrid BM25 + den
       api.py          FastAPI routes + ProblemDetail error handlers (uvicorn kirana_ai.api:app --port 8000)
       schemas.py      Pydantic DTOs for the API; never return db rows directly
       errors.py       UpstreamUnavailable (Qdrant / embeddings / empty KB) -> 503
+      auth.py         verify Kirana's RS256 token (JWKS); Credentials hands out exchanged, narrowed tokens
+      policy.py       the tool policy layer: RULES registry, tools_for (offer), authorize (enforce), decision log
+      actions.py      actions with approval: propose (pending action + card), decide (click → exchange → Kirana)
       kb.py           KB documents API side: signed POST policy with pinned x-amz-meta-*, list, delete
       worker.py       ingest worker: Kafka kb.documents.v1 -> Qdrant; in-place retries, then <topic>-dlt
       reconcile.py    seed-kb, redrive (to the original partition), reindex (MinIO is the source of truth)
@@ -55,6 +58,8 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
   (`get_adapter()`), embeddings through `embeddings.py`.
 - **No frameworks that hide the mechanics** (no LangChain etc.). Hand-written loops, so
   every step can be traced and explained.
+- **Every tool call goes through `policy.authorize()`.** A new tool needs a `policy.RULES` entry,
+  or it does not exist. Writes are never executed by the agent: they become pending actions.
 - **Scope and identity are injected by the server, never tool parameters.** The shopper's verified
   token rides in the turn (`PreparedTurn.user_token`), never in tool arguments, prompts or logs.
 - **Embed descriptions, fetch live facts.** Price, stock and order status never go in Qdrant.
@@ -79,7 +84,7 @@ adapter, `agent.answer_stream`, `chat.prepare` + `chat.run`), relevance floor on
 (`RELEVANCE_FLOOR`, from `eval.run_floor`), answer evals (`eval.run_answers`, Gemini judge,
 `--grade`), unverified citations flagged. Ravi's Phase 3 runs still open (baseline, grading, thinking level).
 **Phase 4 built:** `search_products` tool (`products.py`: hybrid → live hydration from Kirana via `kirana.py`; the reranker is built but off, AD22), `kirana_products` index from `catalog.v1` events (`catalog.py`, group `kirana-ai-catalog`) plus `cli index-products`, product cards in chat, evals `eval.run_products` and `eval.run_routing`. Shared Kafka loop in `consumer.py`.
-`docs/concepts-learned.md` covers Phases 0–4. Ravi runs the Phase 3 evals at the very end, with every phase's results. **Phase 5 built (slim):** `auth.py` verifies Kirana's RS256 token on every route (JWKS, `aud` kirana-ai); `X-User-Id` is gone; order tools `get_my_orders` / `get_order` forward the token, have no identity parameter, and are offered only to signed-in turns (`agent.tools_for`). Kirana: password login, roles as permission bundles in the token's `scope`, JWKS (D72, D73); the AI checks `chat` and `kb:write`. Next: Phase 6 planning with Ravi.
+`docs/concepts-learned.md` covers Phases 0–4. Ravi runs the Phase 3 evals at the very end, with every phase's results. **Phase 5 done** (merged to main): Kirana password login, roles as permission bundles in the token's `scope`, JWKS (D72, D73); `auth.py` verifies every route; order tools forward the token, need `shop`, have no identity parameter. **Phase 6 current** (branch `ai-phase-6`, AI-PLAN §4, AD28–AD32): M1 tool policy layer → M2 security eval → M3 narrowed tokens (token exchange) → M4 cancel with approval → M5 cart with approval → M6 attacks.
 
 Only the current phase is in scope. Gaps listed in the plan for later phases (no auth, no
 actions, no budgets or timeouts…) are deliberate: those phases fix them.

@@ -58,7 +58,8 @@ def test_chat_answers_and_reports_usage(client, llm_script):
                                   "title": "Returns Policy", "pages": []}]
     assert body["steps"] == [{"tool": "search_docs", "query": "return rice",
                               "where": {"doc_type": "policy"}, "count": 1, "below_floor": 0,
-                              "product_ids": []}]
+                              "product_ids": [], "decision": "allow", "reason": "ok:read-public",
+                              "denied_by": None, "approval": None}]
     assert body["usage"]["llm_calls"] == 2 and body["usage"]["input_tokens"] == 2300
     assert r.headers["X-AI-LLM-Calls"] == "2"
     assert r.headers["X-AI-Input-Tokens"] == "2300"

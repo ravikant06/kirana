@@ -31,12 +31,14 @@ from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from kirana_ai import auth, chat, config, kb
+from kirana_ai import actions, auth, chat, config, kb, policy
 from kirana_ai.db.models import DocType, Document
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.errors import UpstreamUnavailable
 from kirana_ai.llm import LLMError, get_adapter
 from kirana_ai.schemas import (
+    Approval,
+    ApprovalDecision,
     ChatReply,
     ChatRequest,
     Citation,
@@ -79,6 +81,11 @@ def kb_admin(authorization: Annotated[str | None, Header()] = None) -> auth.Call
 
 
 Caller = Annotated[auth.Caller, Depends(shopper)]
+
+
+def _turn_caller(caller: auth.Caller) -> policy.Caller:
+    """What the agent gets: permissions for the policy, and credentials instead of the raw token."""
+    return policy.Caller(user_id=caller.user_id, scopes=caller.scopes, credentials=auth.Credentials(caller.token))
 KbAdmin = Annotated[auth.Caller, Depends(kb_admin)]
 
 
@@ -89,12 +96,10 @@ def post_chat(body: ChatRequest, caller: Caller, request: Request, response: Res
     if "text/event-stream" in request.headers.get("accept", ""):
         # Ownership is checked here, before the stream starts: once it has, the 200 is sent
         # and a 404 can no longer be returned.
-        turn = chat.prepare(caller.user_id, body.message, thread_id=body.thread_id,
-                            user_token=caller.token, user_scopes=caller.scopes)
+        turn = chat.prepare(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
         return ClosingStreamingResponse(_closing(_sse(turn, request.url.path)), media_type="text/event-stream",
                                  headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
-    result = chat.send(caller.user_id, body.message, thread_id=body.thread_id,
-                       user_token=caller.token, user_scopes=caller.scopes)
+    result = chat.send(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
     usage = Usage(**result.usage)
     # Mirrors X-Query-Count: the Requests panel shows what each call cost.
     response.headers["X-AI-LLM-Calls"] = str(usage.llm_calls)
@@ -202,6 +207,20 @@ def delete_thread(thread_id: uuid.UUID, caller: Caller) -> Response:
     return Response(status_code=204)
 
 
+# --- approvals (Phase 6 M4) -----------------------------------------------------------------
+# The shopper's click. The body says only confirm or reject: what runs is the server's stored copy.
+
+@app.get("/v1/approvals/{approval_id}", response_model=Approval)
+def get_approval(approval_id: uuid.UUID, caller: Caller) -> Approval:
+    return Approval(**vars(actions.get(caller.user_id, approval_id)))
+
+
+@app.post("/v1/approvals/{approval_id}", response_model=Approval)
+def decide_approval(approval_id: uuid.UUID, body: ApprovalDecision, caller: Caller) -> Approval:
+    view = actions.decide(caller.user_id, auth.Credentials(caller.token), approval_id, body.decision)
+    return Approval(**vars(view))
+
+
 # --- knowledge base (Phase 2) --------------------------------------------------------
 
 @app.post("/v1/kb/documents/upload-url", response_model=KbUploadTicket)
@@ -281,6 +300,17 @@ async def invalid_token(request: Request, exc: auth.InvalidToken) -> JSONRespons
 @app.exception_handler(auth.Forbidden)
 async def forbidden(request: Request, exc: auth.Forbidden) -> JSONResponse:
     return problem(request, 403, "Forbidden", str(exc), code="FORBIDDEN")
+
+
+@app.exception_handler(actions.ApprovalNotFound)
+async def approval_not_found(request: Request, _exc: actions.ApprovalNotFound) -> JSONResponse:
+    return problem(request, 404, "Approval not found", "No such approval for this shopper")
+
+
+@app.exception_handler(actions.ApprovalTampered)
+async def approval_tampered(request: Request, _exc: actions.ApprovalTampered) -> JSONResponse:
+    return problem(request, 409, "Approval refused", "This request was changed after it was created, so it will not run",
+                   code="APPROVAL_TAMPERED")
 
 
 @app.exception_handler(chat.ThreadNotFound)
