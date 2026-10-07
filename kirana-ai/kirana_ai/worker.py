@@ -233,6 +233,12 @@ def process(value: bytes, dead_letter, sleep=time.sleep) -> str:
 
 
 def run() -> None:
+    # A consumer declares the topics it depends on (idempotent), like Kirana's KafkaConfig does,
+    # instead of relying on a one-time `cli kafka-setup`. Found when a Kafka reset removed them and
+    # the worker waited silently on "Unknown topic" while MinIO buffered the upload event.
+    from kirana_ai import kafka
+    for topic, outcome in kafka.ensure_topics().items():
+        log.info("topic %s: %s", topic, outcome)
     consumer.run(config.KB_TOPIC, GROUP, config.KB_DLT, process)
 
 

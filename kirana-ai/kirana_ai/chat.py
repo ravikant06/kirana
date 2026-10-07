@@ -194,10 +194,10 @@ def load_history(session: Session, thread_id: uuid.UUID, turns: int) -> list[Mes
 
 def citations_for(chunks: Sequence[dict], reply: str) -> list[dict]:
     """
-    Documents the answer says it used: retrieved sources named in the reply.
-
-    Deliberately simple for now. Phase 3 checks citations properly; until then
-    a source counts only if it was retrieved this turn AND the reply names it.
+    Documents the answer says it used: a source counts only if it was retrieved this turn AND
+    the reply names it, so a source the model never read is never shown as a chip (those are
+    caught by unverified_sources). Whether the source really supports each claim is measured
+    offline (eval.run_answers, faithfulness), not checked per answer.
     """
     seen: dict[str, dict] = {}
     for chunk in chunks:

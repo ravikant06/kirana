@@ -128,6 +128,9 @@ services:
       KAFKA_GROUP_INITIAL_REBALANCE_DELAY_MS: 0
       # Topics are created on purpose by the backend (KafkaConfig), never by a typo.
       KAFKA_AUTO_CREATE_TOPICS_ENABLE: "false"
+      # Where the broker writes its logs. Without it the image writes to /tmp/kafka-logs inside
+      # the container, the volume below stays empty, and every recreate wipes all topics.
+      KAFKA_LOG_DIRS: /var/lib/kafka/data
     ports:
       - "9094:9094"
     volumes:
