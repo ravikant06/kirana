@@ -234,6 +234,7 @@ export default function Shop({ userId, cartQty, search, onClearSearch, onOpen, o
                 {p.stock > 0 && p.stock <= 5 && !sale && <span className="tile-flag tile-flag-low">Only {p.stock} left</span>}
               </button>
               <div className="tile-body">
+                {p.category && <span className="tile-cat">{p.category}</span>}
                 <button className="tile-name" onClick={() => onOpen(p.id)} title={p.name}>{p.name}</button>
                 <div className="tile-row">
                   <span className="price">{money(p.price)}</span>

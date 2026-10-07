@@ -104,6 +104,12 @@ class LLMResponse:
         return bool(self.tool_calls)
 
 
+@dataclass(frozen=True)
+class TextDelta:
+    """One piece of answer text as it streams in. The full reply follows as an LLMResponse."""
+    text: str
+
+
 class LLMError(Exception):
     """
     A provider call failed (network, auth, quota, bad request).

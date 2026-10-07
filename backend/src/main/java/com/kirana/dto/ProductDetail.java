@@ -12,5 +12,6 @@ public record ProductDetail(
         List<ImageResponse> images,
         Instant createdAt,
         Instant updatedAt,
-        long version) {
+        long version,
+        String category) {
 }

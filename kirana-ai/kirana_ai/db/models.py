@@ -26,6 +26,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
@@ -209,3 +210,69 @@ class Document(Base):
     )
 
     __table_args__ = (Index("ix_documents_updated_at", "updated_at"),)
+
+
+class ToolDecision(Base):
+    """
+    Phase 6 M1: one row per policy decision on a tool call (allow, deny, approval), plus Kirana's
+    own refusals (layer "kirana"). The audit trail: who asked for what, what was decided, why, and
+    which layer decided. Written in its own transaction, like llm_calls, so it survives failed turns.
+
+    `arguments` are kept for the audit and the security eval. They can hold what a shopper typed
+    (a search query), so they are personal data: masking and retention are Phase 8.
+    """
+    __tablename__ = "tool_decisions"
+
+    id: Mapped[int] = mapped_column(BigInteger, Identity(), primary_key=True)
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    turn_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    user_id: Mapped[int | None] = mapped_column(BigInteger)
+    tool: Mapped[str] = mapped_column(String(60))
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
+    args_hash: Mapped[str] = mapped_column(String(16))
+    decision: Mapped[str] = mapped_column(String(20))
+    reason: Mapped[str] = mapped_column(String(200))
+    layer: Mapped[str] = mapped_column(String(20))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+
+    __table_args__ = (
+        CheckConstraint("decision IN ('allow', 'deny', 'approval')", name="decision"),
+        CheckConstraint("layer IN ('policy', 'kirana')", name="layer"),
+        Index("ix_tool_decisions_turn_id", "turn_id"),
+        Index("ix_tool_decisions_user_id_created_at", "user_id", "created_at"),
+    )
+
+
+class PendingAction(Base):
+    """
+    Phase 6 M4: an action the agent proposed and a human must confirm. It holds the exact arguments
+    that will run (the card is built from them, not from the model's text), is single use, expires,
+    and carries an HMAC seal over (id, user, tool, arguments) so an edited row is refused.
+
+        pending ──Confirm──► executing ──Kirana ok──► done
+           │                     └──── Kirana refused ──► failed
+           ├──Reject──► rejected
+           └──(5 min)──► expired
+    """
+    __tablename__ = "pending_actions"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    thread_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    tool: Mapped[str] = mapped_column(String(60))
+    arguments: Mapped[dict[str, Any]] = mapped_column(JSONB)
+    summary: Mapped[str] = mapped_column(String(300))
+    lines: Mapped[list[str]] = mapped_column(JSONB, server_default="[]")
+    seal: Mapped[str] = mapped_column(String(64))
+    status: Mapped[str] = mapped_column(String(20))
+    message: Mapped[str | None] = mapped_column(Text)
+    result: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
+    expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+
+    __table_args__ = (
+        CheckConstraint("status IN ('pending', 'executing', 'done', 'failed', 'rejected', 'expired')",
+                        name="status"),
+        Index("ix_pending_actions_user_id_created_at", "user_id", "created_at"),
+    )

@@ -36,7 +36,23 @@ Things that will bite you:
 
 ## API contract
 
-All user-scoped endpoints read the shopper from the `X-User-Id` header.
+Every endpoint that needs a user reads it from `Authorization: Bearer <token>` (AI Phase 5,
+D72-D73). There is no other way: the `X-User-Id` header of Stages 1-7 is gone. No or bad token on
+such an endpoint → 401; a token without the endpoint's permission → 403.
+
+| Permission (`scope`) | SHOPPER | ADMIN | Endpoints |
+|---|---|---|---|
+| `orders:read` | ✅ | ✅ | `GET /orders`, `GET /orders/{id}` |
+| `orders:write` | ✅ | ✅ | `POST /orders`, payment, verify, cancel |
+| `cart:read` | ✅ | ✅ | `GET /cart` |
+| `cart:write` | ✅ | ✅ | `POST/PUT/DELETE /cart/items/**` |
+| `chat` | ✅ | ✅ | the AI assistant (kirana-ai) |
+| `catalog:write` | | ✅ | product create/update/delete, `/products/{id}/images/**`, `/products/{id}/inventory/**`, flash-sale create/delete |
+| `users:read` | | ✅ | `GET /users` |
+| `kb:write` | | ✅ | knowledge-base admin (kirana-ai) |
+| `system` | | ✅ | `/system/**` (resilience lab) |
+| public | | | `GET /products/**`, `GET /flash-sales`, `GET /products/{id}/flash-sale`, `GET /payments/providers`, `POST /users` (sign-up), `POST /auth/login`, `GET /.well-known/jwks.json`, webhooks |
+
 Errors use RFC 7807 `ProblemDetail`:
 
     { "type": "...", "title": "Out of stock", "status": 409,
@@ -59,7 +75,7 @@ unavailable). The Requests panel shows all three.
 
 `POST /cart/items`, `POST /orders`, `POST /orders/{id}/payment` and `POST /orders/{id}/cancel`
 require an `Idempotency-Key` header: a unique value (a UUID) per user action, sent again,
-unchanged, when retrying that action. Keys belong to the shopper (`X-User-Id`) and are kept 24 h.
+unchanged, when retrying that action. Keys belong to the signed-in shopper and are kept 24 h.
 Follows the IETF draft *The Idempotency-Key HTTP Header Field*:
 
 | Situation | Response |
@@ -76,7 +92,7 @@ unknown (no response, 409 in progress, 502/503/504).
 
 ### Rate limits (Stage 4)
 
-`POST /orders` and cart writes are limited per shopper (`X-User-Id`). Responses carry
+`POST /orders` and cart writes are limited per signed-in shopper. Responses carry
 `X-RateLimit-Remaining`. Over the limit: 429 ProblemDetail `"Too many requests"` with a
 `Retry-After` header in seconds.
 
@@ -84,14 +100,36 @@ unknown (no response, 409 in progress, 502/503/504).
 
     { "content": [...], "page": 0, "size": 12, "totalElements": 40, "totalPages": 4 }
 
+### Sign-in (AI Phase 5)
+
+| Method | Path                   | Body                   | Returns |
+|--------|------------------------|------------------------|---------|
+| POST   | /auth/login            | `{ email, password }`  | `{ accessToken, tokenType: "Bearer", expiresAt, user: User, permissions: [scope] }`; 401 "Invalid email or password" for an unknown email or a wrong password alike |
+| GET    | /auth/me               | — (token)              | `User` |
+| POST   | /auth/token-exchange   | `{ grant_type, subject_token, scope }` + HTTP Basic client auth | `{ access_token, issued_token_type, token_type, expires_in, scope }` (Phase 6) |
+| GET    | /.well-known/jwks.json | —                      | `{ keys: [ { kty: "RSA", kid, alg: "RS256", use: "sig", n, e } ] }` |
+
+**Token exchange (AI Phase 6, RFC 8693 style):** a registered client (today only `kirana-ai`, HTTP
+Basic id + secret) trades a user's token for a narrower one. The subject token must be valid and
+issued for that client (`aud` names it), must not itself be delegated, and the requested scopes must
+be a subset of the user's. The result: `aud` = `kirana-api` only, `act` = `{sub: "kirana-ai"}`, 2 minutes
+if any scope writes, else 5. 401 bad client or subject token · 403 a scope the user doesn't hold.
+Kirana logs every delegated request ("kirana-ai acting for user N").
+
+The token is an RS256 JWT: `sub` (user id), `role`, `scope` (space-separated permissions), `iss` =
+`kirana`, `aud` = `["kirana-api", "kirana-ai"]`, `exp` (1 h), `name`, header `kid`. Passwords are
+bcrypt; seeded users have the demo password `kirana123`, user 1 is the ADMIN. The key is generated
+at startup, so a restart invalidates every token (the UI goes back to sign-in). 401/403 bodies are
+ProblemDetail with `code` `UNAUTHENTICATED` / `FORBIDDEN`.
+
 ### Users
 
 | Method | Path   | Body              | Returns      |
 |--------|--------|-------------------|--------------|
-| GET    | /users | `?q=&limit=`      | `[User]`     |
-| POST   | /users | `{ name, email }` | `User` (201) |
+| GET    | /users | `?q=&limit=`      | `[User]` (admin) |
+| POST   | /users | `{ name, email, password }` | `User` (201): public sign-up, always SHOPPER |
 
-`User = { id, name, email }`
+`User = { id, name, email, role }`
 
 `GET /users` is a bounded search, newest first: `q` matches part of the name or email
 (case-insensitive), `limit` defaults to 20 and is clamped to 1–50. Without `q` it returns
@@ -103,13 +141,17 @@ the newest shoppers. It never returns the whole table.
 |--------|----------------|--------------------------------|------------------------|
 | GET    | /products      | `?page=&size=`                 | `Page<ProductSummary>` |
 | GET    | /products/{id} |                                | `ProductDetail`        |
-| POST   | /products      | `{ name, description, price }` | `ProductDetail` (201)  |
-| PUT    | /products/{id} | `{ name, description, price, version }` | `ProductDetail` |
+| POST   | /products      | `{ name, description, price, category? }` | `ProductDetail` (201)  |
+| PUT    | /products/{id} | `{ name, description, price, version, category? }` | `ProductDetail` |
 | DELETE | /products/{id} |                                | 204                    |
 
-    ProductSummary = { id, name, price, stock, thumbnailUrl }
+    ProductSummary = { id, name, price, stock, thumbnailUrl, category }
     ProductDetail  = { id, name, description, price, stock,
-                       images: [Image], createdAt, updatedAt, version }
+                       images: [Image], createdAt, updatedAt, version, category }
+
+`category` (AI track, Phase 4 prep) is optional free text, at most 100 characters; blank means
+none. The admin form offers a fixed list (`CATEGORIES` in `frontend/src/api.js`), and the AI's
+product search filters on those exact values. PUT replaces it like the other fields.
 
 `PUT /products/{id}` must include `version`: the one the client loaded (400 without it).
 If someone saved the product since, the answer is 409 `"Product changed"`; reload and
@@ -159,7 +201,7 @@ Soft-deleted products return 404 from every product endpoint and are left out of
 While active, checkout refuses buyers once the gate's units run out, with the usual
 409 "Out of stock".
 
-### Checkout and payment (Stage 5, needs X-User-Id)
+### Checkout and payment (Stage 5, signed in)
 
 | Method | Path                          | Body                                       | Returns            |
 |--------|-------------------------------|--------------------------------------------|--------------------|
@@ -205,7 +247,7 @@ way there. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `POST /system/chaos/network/{redis|minio|payment}` `{ fault: normal|latency|hang|down, latencyMs }`
 (network faults need the `chaos` profile).
 
-### Cart (needs X-User-Id)
+### Cart (signed in)
 
 | Method | Path                    | Body                      | Returns |
 |--------|-------------------------|---------------------------|---------|
@@ -220,7 +262,7 @@ way there. 503 `"Payment unavailable"` and 503 `"Checkout busy"` carry
 `POST /cart/items` adds to the existing quantity if the product is already in the cart, which is
 why it needs an `Idempotency-Key` (★): a retry with the same key adds nothing.
 
-### Orders (needs X-User-Id)
+### Orders (signed in)
 
 | Method | Path         | Body | Returns       |
 |--------|--------------|------|---------------|

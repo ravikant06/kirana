@@ -1,5 +1,8 @@
 package com.kirana.controller;
 
+import com.kirana.auth.CurrentUser;
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import java.net.URI;
 import java.util.List;
 
@@ -25,6 +28,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/orders")
+@RequiresPermission(Permission.ORDERS_WRITE)
 public class OrderController {
 
     private final OrderService orders;
@@ -45,7 +49,7 @@ public class OrderController {
      * Stage 7: Idempotency-Key required; a retry gets the same order back (201, same body).
      */
     @PostMapping
-    public ResponseEntity<?> place(@RequestHeader(Headers.USER_ID) Long userId,
+    public ResponseEntity<?> place(@CurrentUser Long userId,
                                    @RequestHeader(name = IdempotentRequests.HEADER, required = false) String key,
                                    @RequestBody(required = false) CheckoutRequest req) {
         // A replay is answered before the bulkhead: it needs no checkout slot.
@@ -55,19 +59,21 @@ public class OrderController {
                 () -> resilience.checkout(() -> checkout.start(userId, req == null ? null : req.paymentProvider())));
     }
 
+    @RequiresPermission(Permission.ORDERS_READ)
     @GetMapping
-    public List<OrderResponse> list(@RequestHeader(Headers.USER_ID) Long userId) {
+    public List<OrderResponse> list(@CurrentUser Long userId) {
         return orders.list(userId);
     }
 
+    @RequiresPermission(Permission.ORDERS_READ)
     @GetMapping("/{id}")
-    public OrderResponse get(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long id) {
+    public OrderResponse get(@CurrentUser Long userId, @PathVariable Long id) {
         return orders.get(userId, id);
     }
 
     /** "Pay now" for an order awaiting payment. Returns the same gateway order if one exists. */
     @PostMapping("/{id}/payment")
-    public ResponseEntity<?> pay(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long id,
+    public ResponseEntity<?> pay(@CurrentUser Long userId, @PathVariable Long id,
                                  @RequestHeader(name = IdempotentRequests.HEADER, required = false) String key,
                                  @RequestBody(required = false) CheckoutRequest req) {
         return idempotency.execute(userId, key, "POST /orders/" + id + "/payment", req,
@@ -76,14 +82,14 @@ public class OrderController {
 
     /** The browser reports a successful payment; it counts only if the signature is valid. */
     @PostMapping("/{id}/payment/verify")
-    public OrderResponse verify(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long id,
+    public OrderResponse verify(@CurrentUser Long userId, @PathVariable Long id,
                                 @Valid @RequestBody VerifyPaymentRequest req) {
         return checkout.verifyPayment(userId, id, req.gatewayOrderId(), req.paymentId(), req.signature());
     }
 
     /** Stage 7: a retry gets the first answer (200, cancelled), not 409 "not awaiting payment". */
     @PostMapping("/{id}/cancel")
-    public ResponseEntity<?> cancel(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long id,
+    public ResponseEntity<?> cancel(@CurrentUser Long userId, @PathVariable Long id,
                                     @RequestHeader(name = IdempotentRequests.HEADER, required = false) String key) {
         return idempotency.execute(userId, key, "POST /orders/" + id + "/cancel", null,
                 () -> checkout.cancel(userId, id));

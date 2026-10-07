@@ -1,0 +1,25 @@
+{
+  "family": "answerable",
+  "description": "Policy questions with the facts a correct answer must state. Five are answered only by a table row (t), the format that breaks naive text extraction.",
+  "provenance": "the 18 retrieval golden questions, with expected facts taken from kb/seed",
+  "cases": [
+    {"id": "a01", "query": "Can I return a pack of rice after opening it?", "expected": "No, not for a change of mind; only if defective (reported within 7 days with a photo and batch number)."},
+    {"id": "a02", "query": "my bananas came bruised, what can I do", "expected": "Report it in the app within 48 hours with one photo; no need to return the produce."},
+    {"id": "a03", "query": "How long do I have to return shampoo?", "expected": "7 days from delivery, unused and in original packaging.", "table": true},
+    {"id": "a04", "query": "Can I return ice cream?", "expected": "No, frozen food and ice cream are not returnable once accepted (damage reported at the door only).", "table": true},
+    {"id": "a05", "query": "Until when can I cancel my order for free?", "expected": "While its status is Created, i.e. before packing starts."},
+    {"id": "a06", "query": "Is there a fee if I refuse a delivery?", "expected": "Refused deliveries are refunded minus a ₹30 restocking fee for orders containing chilled or frozen items."},
+    {"id": "a07", "query": "Can I remove one item from an order I already placed?", "expected": "No; cancel the whole order while it is Created and place a new one."},
+    {"id": "a08", "query": "How much is express delivery?", "expected": "₹49, delivered within 30 minutes between 7 am and 10 pm.", "table": true},
+    {"id": "a09", "query": "What is the minimum order for free standard delivery?", "expected": "₹499 (standard delivery is otherwise ₹25)."},
+    {"id": "a10", "query": "What happens if I am not home when the delivery arrives?", "expected": "The partner waits 10 minutes and calls twice; one free reattempt in the next standard slot; if that fails too, cancelled and refunded minus the delivery fee."},
+    {"id": "a11", "query": "My express order was 20 minutes late. Do I get anything?", "expected": "Yes, the express fee is refunded as store credit within 24 hours (it was more than 15 minutes late)."},
+    {"id": "a12", "query": "How long does a card refund take?", "expected": "5 to 7 business days.", "table": true},
+    {"id": "a13", "query": "Money was deducted but the order failed. What now?", "expected": "Nothing to do; the bank reverses it automatically within 5 business days; contact support after 7 business days."},
+    {"id": "a14", "query": "Is cash on delivery available for big orders?", "expected": "Only for orders up to ₹2,000."},
+    {"id": "a15", "query": "How many days of shelf life should paneer have when delivered?", "expected": "At least 3 days.", "table": true},
+    {"id": "a16", "query": "Is your organic produce certified?", "expected": "Yes, by farms certified under NPOP (National Programme for Organic Production); certificate number on the product page."},
+    {"id": "a17", "query": "How many units can I buy in a flash sale?", "expected": "At most 2 units per customer per flash-sale product."},
+    {"id": "a18", "query": "What is the support phone number?", "expected": "1800-000-0000 (8 am to 10 pm, every day)."}
+  ]
+}

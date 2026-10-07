@@ -97,7 +97,7 @@ class RedisIdempotencyIntegrationTest {
     }
 
     private MockHttpServletResponse post(long user, String key, String body) throws Exception {
-        return mvc.perform(MockMvcRequestBuilders.post("/cart/items").header("X-User-Id", user)
+        return mvc.perform(MockMvcRequestBuilders.post("/cart/items").with(com.kirana.auth.TestAuth.as(user))
                 .header(IdempotentRequests.HEADER, key).contentType(MediaType.APPLICATION_JSON).content(body))
                 .andReturn().getResponse();
     }

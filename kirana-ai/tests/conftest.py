@@ -70,8 +70,57 @@ def ai_db(pg, monkeypatch):
     db.engine.cache_clear()
     db._session_factory.cache_clear()
     with pg.begin() as conn:
-        conn.execute(text("TRUNCATE threads, messages, llm_calls"))
+        conn.execute(text("TRUNCATE threads, messages, llm_calls, tool_decisions, pending_actions"))
     yield pg
     db.engine().dispose()
     db.engine.cache_clear()
     db._session_factory.cache_clear()
+
+
+@pytest.fixture
+def anyio_backend():
+    return "asyncio"
+
+
+# --- Phase 5: tokens signed like Kirana's, verified by the real auth.verify ---------------
+
+from datetime import datetime, timedelta, timezone  # noqa: E402
+
+import jwt  # noqa: E402
+from cryptography.hazmat.primitives.asymmetric import rsa  # noqa: E402
+
+from kirana_ai import auth  # noqa: E402
+
+TEST_KEY = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+TEST_KID = "test-key"
+
+
+def make_token(user_id: int = 7, *, key=None, kid: str = TEST_KID, aud="kirana-ai", iss: str = "kirana",
+               expires_in: int = 3600, alg: str = "RS256", role: str = "SHOPPER", scope: str = "orders:read orders:write cart:read cart:write chat") -> str:
+    now = datetime.now(timezone.utc)
+    claims = {"sub": str(user_id), "aud": aud, "iss": iss, "iat": now, "exp": now + timedelta(seconds=expires_in),
+              "role": role, "scope": scope}
+    return jwt.encode(claims, key or TEST_KEY, algorithm=alg, headers={"kid": kid})
+
+
+def bearer(user_id: int = 7, **kw) -> dict:
+    return {"Authorization": f"Bearer {make_token(user_id, **kw)}"}
+
+
+def admin_bearer(user_id: int = 1) -> dict:
+    return bearer(user_id, role="ADMIN", scope="orders:read orders:write cart:read cart:write chat catalog:write users:read kb:write system")
+
+
+class FakeJwks:
+    """Stands in for PyJWKClient: knows one key id, like Kirana's JWKS with one key."""
+
+    def get_signing_key_from_jwt(self, token):
+        kid = jwt.get_unverified_header(token).get("kid")
+        if kid != TEST_KID:
+            raise jwt.PyJWKClientError(f'Unable to find a signing key that matches: "{kid}"')
+        return type("Key", (), {"key": TEST_KEY.public_key()})()
+
+
+@pytest.fixture(autouse=True)
+def fake_jwks(monkeypatch):
+    monkeypatch.setattr(auth, "_jwks", lambda: FakeJwks())

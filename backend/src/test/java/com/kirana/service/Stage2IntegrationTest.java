@@ -56,7 +56,7 @@ class Stage2IntegrationTest {
         }
 
         // Stage 1 ran 1 + 1 + 5 = 7 here (user, orders, then lines per order). Now: user + orders-with-lines.
-        mvc.perform(get("/orders").header("X-User-Id", user))
+        mvc.perform(get("/orders").with(com.kirana.auth.TestAuth.as(user)))
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Query-Count", "2"))
                 .andExpect(jsonPath("$.length()").value(5))
@@ -71,16 +71,16 @@ class Stage2IntegrationTest {
         users.create(new UserRequest("Asha K", "asha.k@test.com"));
         users.create(new UserRequest("Percent", "50%off@test.com"));
 
-        mvc.perform(get("/users").param("q", "ASHA"))
+        mvc.perform(get("/users").with(com.kirana.auth.TestAuth.admin()).param("q", "ASHA"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.length()").value(2))
                 .andExpect(jsonPath("$[0].name").value("Asha K")); // newest first
-        mvc.perform(get("/users").param("limit", "1"))
+        mvc.perform(get("/users").with(com.kirana.auth.TestAuth.admin()).param("limit", "1"))
                 .andExpect(jsonPath("$.length()").value(1));
-        mvc.perform(get("/users").param("q", "50%"))
+        mvc.perform(get("/users").with(com.kirana.auth.TestAuth.admin()).param("q", "50%"))
                 .andExpect(jsonPath("$.length()").value(1))
                 .andExpect(jsonPath("$[0].name").value("Percent"));
-        mvc.perform(get("/users").param("q", "_"))
+        mvc.perform(get("/users").with(com.kirana.auth.TestAuth.admin()).param("q", "_"))
                 .andExpect(jsonPath("$.length()").value(0)); // "_" is a literal, not "any character"
     }
 

@@ -10,6 +10,7 @@ import com.kirana.exception.ConflictException;
 import com.kirana.exception.NotFoundException;
 import com.kirana.mapper.UserMapper;
 import com.kirana.repository.UserRepository;
+import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.domain.Limit;
 import org.springframework.stereotype.Service;
@@ -21,6 +22,10 @@ public class UserService {
     private static final String EMAIL_UNIQUE_INDEX = "uq_users_email_lower";
 
     private final UserRepository users;
+    // Cost 10: ~70 ms per check. Slow on purpose: it is what makes a stolen hash expensive to guess.
+    private final BCryptPasswordEncoder passwords = new BCryptPasswordEncoder(10);
+    /** Checked when the email is unknown, so "no such user" takes as long as "wrong password". */
+    private static final String DUMMY_HASH = "$2a$10$dDIOEweO7gFbyqFoCnAewO7gzA03xcVJdlRfdb/1unFP7ss.0ye7K";
 
     public UserService(UserRepository users) {
         this.users = users;
@@ -50,7 +55,8 @@ public class UserService {
         String email = req.email().trim();
         try {
             // saveAndFlush: run the INSERT now, inside this try, instead of at commit.
-            User user = users.saveAndFlush(new User(req.name().trim(), email));
+            String hash = req.password() == null ? null : passwords.encode(req.password());
+            User user = users.saveAndFlush(new User(req.name().trim(), email, hash));
             return UserMapper.toResponse(user);
         } catch (DataIntegrityViolationException e) {
             if (Constraints.violated(e, EMAIL_UNIQUE_INDEX)) {
@@ -64,6 +70,21 @@ public class UserService {
     /** % and _ are LIKE wildcards; a shopper searching for "50%" means the characters. */
     private static String escapeLike(String s) {
         return s.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
+    }
+
+    /**
+     * Sign-in. Unknown email and wrong password give the same answer in the same time, so the
+     * login form can't be used to find out which emails are registered.
+     */
+    @Transactional(readOnly = true)
+    public User authenticate(String email, String password) {
+        User user = users.findByEmailIgnoreCase(email.trim()).orElse(null);
+        String hash = user == null || user.getPasswordHash() == null ? DUMMY_HASH : user.getPasswordHash();
+        boolean ok = passwords.matches(password, hash);
+        if (!ok || user == null || user.getPasswordHash() == null) {
+            throw new com.kirana.auth.UnauthenticatedException("Invalid email or password");
+        }
+        return user;
     }
 
     /** For other services: the user entity, or 404. */

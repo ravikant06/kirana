@@ -27,14 +27,14 @@ import urllib.error
 import urllib.request
 import uuid
 
+import kirana_auth  # AI Phase 5: bearer tokens instead of X-User-Id
+
 MOCK = "http://localhost:8090"
 WEBHOOK_SECRET = "kirana-mock-webhook-secret"  # payment-mock's dev secret (infra/docker-compose.yml)
 
 
 def call(api, method, path, body=None, user=None, key=None, headers=None):
-    h = {"Content-Type": "application/json", **(headers or {})}
-    if user:
-        h["X-User-Id"] = str(user)
+    h = {"Content-Type": "application/json", **kirana_auth.headers(api, user), **(headers or {})}
     if key:
         h["Idempotency-Key"] = key
     data = body if isinstance(body, bytes) else (None if body is None else json.dumps(body).encode())
@@ -86,7 +86,7 @@ def main():
     ap.add_argument("--api", default="http://localhost:8080")
     api = ap.parse_args().api
 
-    _, _, u, _ = call(api, "POST", "/users", {"name": "Tour", "email": f"tour-{time.time_ns()}@t.com"})
+    u = kirana_auth.signup(api, "Tour", f"tour-{time.time_ns()}@t.com")
     user = u["id"]
     _, _, p, _ = call(api, "POST", "/products", {"name": f"Tour tea {time.time_ns() % 100000}", "price": "50"})
     call(api, "PUT", f"/products/{p['id']}/inventory", {"quantity": 10})

@@ -1,0 +1,1204 @@
+{
+ "products": [
+  {
+   "name": "Bananas (Robusta, 1 dozen)",
+   "price": 60,
+   "stock": 80,
+   "image_query": "bananas bunch",
+   "description": "Ripe Robusta bananas, naturally sweet and rich in potassium. A quick energy snack for kids and after workouts.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Alphonso Mangoes (1 kg)",
+   "price": 450,
+   "stock": 25,
+   "image_query": "alphonso mango",
+   "description": "Ratnagiri Alphonso mangoes with deep saffron flesh and no fibre. In season April to June.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Shimla Apples (1 kg)",
+   "price": 180,
+   "stock": 60,
+   "image_query": "red apples",
+   "description": "Crisp, juicy apples from Himachal Pradesh. High in fibre; good for lunchboxes.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Pomegranate (1 kg)",
+   "price": 220,
+   "stock": 40,
+   "image_query": "pomegranate fruit",
+   "description": "Ruby-red arils, sweet with a light tang. Rich in antioxidants.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Papaya (1 pc, ~1 kg)",
+   "price": 70,
+   "stock": 30,
+   "image_query": "papaya fruit",
+   "description": "Ripe papaya, soft and sweet, easy on digestion. Cut and eat chilled.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Watermelon (1 pc, ~3 kg)",
+   "price": 90,
+   "stock": 20,
+   "image_query": "watermelon",
+   "description": "Sweet, hydrating summer watermelon. About 92% water.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Onions (1 kg)",
+   "price": 40,
+   "stock": 200,
+   "image_query": "red onions",
+   "description": "Nashik red onions, the base of almost every Indian curry. Store in a cool, dry place.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Tomatoes (1 kg)",
+   "price": 35,
+   "stock": 150,
+   "image_query": "tomatoes",
+   "description": "Firm, ripe desi tomatoes for curries, chutneys and salads.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Potatoes (1 kg)",
+   "price": 30,
+   "stock": 200,
+   "image_query": "potatoes",
+   "description": "All-purpose potatoes for sabzi, fries and parathas.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Spinach (Palak, 250 g)",
+   "price": 25,
+   "stock": 40,
+   "image_query": "spinach leaves",
+   "description": "Fresh palak leaves, rich in iron. Ideal for palak paneer and dal palak.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Coriander Leaves (100 g)",
+   "price": 15,
+   "stock": 60,
+   "image_query": "coriander leaves",
+   "description": "Fresh dhaniya to garnish curries, chaats and chutneys.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Green Chillies (100 g)",
+   "price": 12,
+   "stock": 70,
+   "image_query": "green chillies",
+   "description": "Spicy green chillies for tadka, pickles and chutneys.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Ginger (250 g)",
+   "price": 40,
+   "stock": 50,
+   "image_query": "ginger root",
+   "description": "Fresh ginger root for chai, curries and home remedies.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Garlic (250 g)",
+   "price": 60,
+   "stock": 50,
+   "image_query": "garlic bulbs",
+   "description": "Strong-flavoured desi garlic for tadka and pickles.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Cauliflower (1 pc)",
+   "price": 40,
+   "stock": 35,
+   "image_query": "cauliflower",
+   "description": "Fresh white cauliflower for aloo gobi and gobi paratha.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Okra (Bhindi, 500 g)",
+   "price": 45,
+   "stock": 40,
+   "image_query": "okra",
+   "description": "Tender ladyfinger, for bhindi masala and crispy bhindi fry.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Cucumber (500 g)",
+   "price": 30,
+   "stock": 50,
+   "image_query": "cucumbers",
+   "description": "Crunchy cucumbers for raita, salads and sandwiches. Very low calorie.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Carrots (500 g)",
+   "price": 35,
+   "stock": 60,
+   "image_query": "carrots",
+   "description": "Sweet orange carrots for salads, gajar halwa and soups. High in vitamin A.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Lemons (6 pcs)",
+   "price": 30,
+   "stock": 80,
+   "image_query": "lemons",
+   "description": "Juicy lemons for nimbu pani, dal and salads. Rich in vitamin C.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Baby Corn (200 g)",
+   "price": 55,
+   "stock": 0,
+   "image_query": "baby corn",
+   "description": "Tender baby corn for stir-fries and Indo-Chinese dishes.",
+   "category": "Fruits & Vegetables"
+  },
+  {
+   "name": "Toned Milk (1 L)",
+   "price": 58,
+   "stock": 120,
+   "image_query": "milk bottle",
+   "description": "Pasteurised toned milk, 3% fat. For chai, coffee and daily use.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Full Cream Milk (1 L)",
+   "price": 68,
+   "stock": 90,
+   "image_query": "glass of milk",
+   "description": "Rich full cream milk, 6% fat. Ideal for paneer, kheer and growing kids.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Paneer (200 g)",
+   "price": 95,
+   "stock": 45,
+   "image_query": "paneer cubes",
+   "description": "Soft, fresh malai paneer. High protein, vegetarian; for paneer butter masala and tikka.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Low-Fat Paneer (200 g)",
+   "price": 110,
+   "stock": 15,
+   "image_query": "paneer",
+   "description": "Paneer made from toned milk: high protein with less fat. Good for weight-conscious diets.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Curd (Dahi, 400 g)",
+   "price": 40,
+   "stock": 70,
+   "image_query": "yogurt bowl",
+   "description": "Thick, set curd with live cultures. Good for digestion; for raita and lassi.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Greek Yogurt, Unsweetened (100 g)",
+   "price": 50,
+   "stock": 30,
+   "image_query": "greek yogurt",
+   "description": "Strained, high-protein yogurt with no added sugar. A healthy snack.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Butter, Salted (100 g)",
+   "price": 58,
+   "stock": 60,
+   "image_query": "butter block",
+   "description": "Creamy salted butter for toast, parathas and pav bhaji.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Ghee, Cow (500 ml)",
+   "price": 340,
+   "stock": 40,
+   "image_query": "ghee jar",
+   "description": "Pure cow ghee with a rich aroma. For tadka, sweets and rotis.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Cheese Slices (10 pcs)",
+   "price": 145,
+   "stock": 35,
+   "image_query": "cheese slices",
+   "description": "Processed cheese slices for sandwiches and burgers. Kids' favourite.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Fresh Cream (200 ml)",
+   "price": 65,
+   "stock": 25,
+   "image_query": "fresh cream",
+   "description": "Low-fat cooking cream for gravies, desserts and soups.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Eggs, Brown (6 pcs)",
+   "price": 72,
+   "stock": 80,
+   "image_query": "brown eggs",
+   "description": "Farm-fresh brown eggs. High protein, a quick breakfast.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Eggs, White (12 pcs)",
+   "price": 84,
+   "stock": 100,
+   "image_query": "white eggs carton",
+   "description": "Fresh white eggs, a tray of 12. Protein for the whole family.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Buttermilk (Chaas, 500 ml)",
+   "price": 25,
+   "stock": 40,
+   "image_query": "buttermilk",
+   "description": "Spiced, cooling buttermilk with jeera. Aids digestion in summer.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Sweet Lassi (200 ml)",
+   "price": 30,
+   "stock": 4,
+   "image_query": "lassi",
+   "description": "Thick Punjabi-style sweet lassi. A cool treat.",
+   "category": "Dairy & Eggs"
+  },
+  {
+   "name": "Whole Wheat Bread (400 g)",
+   "price": 50,
+   "stock": 40,
+   "image_query": "whole wheat bread",
+   "description": "Soft bread made with whole wheat flour, high in fibre. For toast and sandwiches.",
+   "category": "Bakery"
+  },
+  {
+   "name": "White Bread (400 g)",
+   "price": 40,
+   "stock": 50,
+   "image_query": "sliced white bread",
+   "description": "Classic soft white sandwich bread.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Multigrain Bread (400 g)",
+   "price": 60,
+   "stock": 20,
+   "image_query": "multigrain bread",
+   "description": "Bread with oats, flax and millets. A healthier choice, high in fibre.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Pav (6 pcs)",
+   "price": 30,
+   "stock": 40,
+   "image_query": "pav bread rolls",
+   "description": "Soft ladi pav for pav bhaji and vada pav.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Rusk (Toast, 300 g)",
+   "price": 45,
+   "stock": 60,
+   "image_query": "rusk toast",
+   "description": "Crunchy suji rusk, made to dunk in chai.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Burger Buns (4 pcs)",
+   "price": 40,
+   "stock": 25,
+   "image_query": "burger buns",
+   "description": "Soft sesame-topped buns for home-made burgers.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Atta Cookies (250 g)",
+   "price": 60,
+   "stock": 45,
+   "image_query": "cookies",
+   "description": "Whole wheat cookies with jaggery. No maida, a better tea-time snack.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Plum Cake (300 g)",
+   "price": 150,
+   "stock": 10,
+   "image_query": "fruit cake",
+   "description": "Rich plum cake with dried fruits. Festive favourite.",
+   "category": "Bakery"
+  },
+  {
+   "name": "Basmati Rice (5 kg)",
+   "price": 650,
+   "stock": 40,
+   "image_query": "basmati rice",
+   "description": "Aged long-grain basmati rice. Fluffy, aromatic; for biryani and pulao.",
+   "category": "Staples"
+  },
+  {
+   "name": "Sona Masoori Rice (5 kg)",
+   "price": 380,
+   "stock": 50,
+   "image_query": "white rice grains",
+   "description": "Light, everyday rice from South India. For daily meals.",
+   "category": "Staples"
+  },
+  {
+   "name": "Brown Rice (1 kg)",
+   "price": 140,
+   "stock": 25,
+   "image_query": "brown rice",
+   "description": "Unpolished brown rice, high in fibre with a low glycaemic index. Good for diabetics.",
+   "category": "Staples"
+  },
+  {
+   "name": "Whole Wheat Atta (5 kg)",
+   "price": 260,
+   "stock": 60,
+   "image_query": "wheat flour",
+   "description": "Chakki-ground whole wheat flour for soft rotis and parathas.",
+   "category": "Staples"
+  },
+  {
+   "name": "Multigrain Atta (5 kg)",
+   "price": 340,
+   "stock": 20,
+   "image_query": "flour",
+   "description": "Atta blended with soya, chana, oats and millets. More protein and fibre than plain atta.",
+   "category": "Staples"
+  },
+  {
+   "name": "Besan (Gram Flour, 1 kg)",
+   "price": 110,
+   "stock": 40,
+   "image_query": "gram flour besan",
+   "description": "Fine chickpea flour for pakoras, kadhi and laddoos. Naturally gluten-free.",
+   "category": "Staples"
+  },
+  {
+   "name": "Toor Dal (1 kg)",
+   "price": 160,
+   "stock": 60,
+   "image_query": "toor dal",
+   "description": "Unpolished split pigeon peas for everyday dal and sambar. Plant protein.",
+   "category": "Staples"
+  },
+  {
+   "name": "Moong Dal (1 kg)",
+   "price": 150,
+   "stock": 50,
+   "image_query": "moong dal",
+   "description": "Split yellow moong, light and easy to digest. For khichdi and dal tadka.",
+   "category": "Staples"
+  },
+  {
+   "name": "Chana Dal (1 kg)",
+   "price": 110,
+   "stock": 45,
+   "image_query": "chana dal",
+   "description": "Split Bengal gram for dal, halwa and snacks. High in protein and fibre.",
+   "category": "Staples"
+  },
+  {
+   "name": "Masoor Dal (1 kg)",
+   "price": 120,
+   "stock": 40,
+   "image_query": "red lentils",
+   "description": "Quick-cooking red lentils. Protein-rich and budget friendly.",
+   "category": "Staples"
+  },
+  {
+   "name": "Rajma (Kidney Beans, 1 kg)",
+   "price": 170,
+   "stock": 35,
+   "image_query": "kidney beans",
+   "description": "Red kidney beans for rajma chawal. High in protein and fibre.",
+   "category": "Staples"
+  },
+  {
+   "name": "Kabuli Chana (1 kg)",
+   "price": 150,
+   "stock": 35,
+   "image_query": "chickpeas",
+   "description": "White chickpeas for chole and salads. Protein-rich.",
+   "category": "Staples"
+  },
+  {
+   "name": "Poha (Flattened Rice, 500 g)",
+   "price": 45,
+   "stock": 50,
+   "image_query": "poha flattened rice",
+   "description": "Thick poha for a quick, light breakfast.",
+   "category": "Staples"
+  },
+  {
+   "name": "Rava (Suji, 1 kg)",
+   "price": 60,
+   "stock": 45,
+   "image_query": "semolina",
+   "description": "Fine semolina for upma, rava dosa and halwa.",
+   "category": "Staples"
+  },
+  {
+   "name": "Sugar (1 kg)",
+   "price": 48,
+   "stock": 100,
+   "image_query": "sugar",
+   "description": "Fine white sugar for tea and sweets.",
+   "category": "Staples"
+  },
+  {
+   "name": "Jaggery (Gur, 1 kg)",
+   "price": 90,
+   "stock": 30,
+   "image_query": "jaggery",
+   "description": "Chemical-free sugarcane jaggery. A traditional, less refined sweetener.",
+   "category": "Staples"
+  },
+  {
+   "name": "Salt, Iodised (1 kg)",
+   "price": 25,
+   "stock": 100,
+   "image_query": "salt",
+   "description": "Free-flowing iodised salt for everyday cooking.",
+   "category": "Staples"
+  },
+  {
+   "name": "Rock Salt (Sendha Namak, 500 g)",
+   "price": 45,
+   "stock": 30,
+   "image_query": "rock salt",
+   "description": "Pink rock salt, used in fasting (vrat) recipes.",
+   "category": "Staples"
+  },
+  {
+   "name": "Mustard Oil, Kachi Ghani (1 L)",
+   "price": 180,
+   "stock": 50,
+   "image_query": "mustard oil",
+   "description": "Cold-pressed mustard oil with a strong pungent aroma. For pickles and North Indian cooking.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Sunflower Oil (1 L)",
+   "price": 150,
+   "stock": 70,
+   "image_query": "sunflower oil bottle",
+   "description": "Light, refined sunflower oil for everyday cooking and frying.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Groundnut Oil (1 L)",
+   "price": 210,
+   "stock": 40,
+   "image_query": "peanut oil",
+   "description": "Filtered groundnut oil, nutty flavour; good for deep frying.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Cold-Pressed Coconut Oil (500 ml)",
+   "price": 230,
+   "stock": 30,
+   "image_query": "coconut oil",
+   "description": "Virgin coconut oil for South Indian cooking, hair and skin.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Rice Bran Oil (1 L)",
+   "price": 170,
+   "stock": 35,
+   "image_query": "cooking oil",
+   "description": "Heart-friendly rice bran oil with oryzanol. High smoke point for frying.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Extra Virgin Olive Oil (500 ml)",
+   "price": 650,
+   "stock": 15,
+   "image_query": "olive oil",
+   "description": "Cold-extracted olive oil for salads and light sautéing.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Sesame Oil, Gingelly (500 ml)",
+   "price": 260,
+   "stock": 20,
+   "image_query": "sesame oil",
+   "description": "Cold-pressed til oil for tadka and South Indian dishes.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Desi Ghee, Buffalo (1 L)",
+   "price": 620,
+   "stock": 0,
+   "image_query": "ghee",
+   "description": "Granular desi ghee with a rich aroma. For sweets and festive cooking.",
+   "category": "Oils & Ghee"
+  },
+  {
+   "name": "Turmeric Powder (200 g)",
+   "price": 55,
+   "stock": 80,
+   "image_query": "turmeric powder",
+   "description": "Pure haldi with high curcumin. The colour and goodness of every curry.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Red Chilli Powder (200 g)",
+   "price": 70,
+   "stock": 70,
+   "image_query": "red chilli powder",
+   "description": "Kashmiri chilli powder: bright red colour with mild heat.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Coriander Powder (200 g)",
+   "price": 50,
+   "stock": 60,
+   "image_query": "coriander powder",
+   "description": "Freshly ground dhaniya powder for curries and sabzis.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Cumin Seeds (Jeera, 100 g)",
+   "price": 60,
+   "stock": 70,
+   "image_query": "cumin seeds",
+   "description": "Whole jeera for tadka, jeera rice and raita.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Garam Masala (100 g)",
+   "price": 75,
+   "stock": 50,
+   "image_query": "garam masala spices",
+   "description": "Aromatic blend of cardamom, cloves, cinnamon and pepper. Finish curries with a pinch.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Kitchen King Masala (100 g)",
+   "price": 70,
+   "stock": 30,
+   "image_query": "spice mix",
+   "description": "All-purpose masala for sabzis and gravies.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Chole Masala (100 g)",
+   "price": 65,
+   "stock": 30,
+   "image_query": "masala powder",
+   "description": "Spice blend for Punjabi-style chole.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Biryani Masala (50 g)",
+   "price": 55,
+   "stock": 25,
+   "image_query": "biryani spices",
+   "description": "Fragrant whole and ground spice mix for biryani.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Pav Bhaji Masala (100 g)",
+   "price": 60,
+   "stock": 25,
+   "image_query": "pav bhaji",
+   "description": "Mumbai-style blend for pav bhaji.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Black Pepper, Whole (100 g)",
+   "price": 110,
+   "stock": 40,
+   "image_query": "black pepper",
+   "description": "Bold Malabar peppercorns. Grind fresh for best flavour.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Green Cardamom (Elaichi, 50 g)",
+   "price": 180,
+   "stock": 25,
+   "image_query": "green cardamom",
+   "description": "Bold green cardamom pods for chai and sweets.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Mustard Seeds (Rai, 100 g)",
+   "price": 30,
+   "stock": 50,
+   "image_query": "mustard seeds",
+   "description": "Black mustard seeds for South Indian tadka.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Hing (Asafoetida, 50 g)",
+   "price": 95,
+   "stock": 30,
+   "image_query": "asafoetida",
+   "description": "Strong compounded hing; a pinch in dal aids digestion.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Kasuri Methi (25 g)",
+   "price": 35,
+   "stock": 40,
+   "image_query": "dried fenugreek leaves",
+   "description": "Dried fenugreek leaves that finish butter masala dishes.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Cinnamon Sticks (50 g)",
+   "price": 60,
+   "stock": 25,
+   "image_query": "cinnamon sticks",
+   "description": "Whole dalchini for biryani, pulao and chai.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Chaat Masala (100 g)",
+   "price": 55,
+   "stock": 40,
+   "image_query": "chaat masala",
+   "description": "Tangy chaat masala for fruits, salads and snacks.",
+   "category": "Spices & Masalas"
+  },
+  {
+   "name": "Roasted Makhana (Fox Nuts, 100 g)",
+   "price": 120,
+   "stock": 40,
+   "image_query": "makhana",
+   "description": "Roasted lotus seeds lightly salted. Low calorie, high protein: a healthy snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Salted Almonds (200 g)",
+   "price": 320,
+   "stock": 30,
+   "image_query": "almonds",
+   "description": "Roasted, lightly salted California almonds. A protein-rich snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Cashews, Whole (200 g)",
+   "price": 280,
+   "stock": 30,
+   "image_query": "cashew nuts",
+   "description": "Whole W320 cashews for snacking and sweets.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Mixed Dry Fruits (250 g)",
+   "price": 350,
+   "stock": 20,
+   "image_query": "mixed dry fruits",
+   "description": "Almonds, cashews, raisins and walnuts. No added sugar.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Roasted Chana (500 g)",
+   "price": 80,
+   "stock": 40,
+   "image_query": "roasted chickpeas",
+   "description": "Crunchy roasted Bengal gram. High-protein, low-fat snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Aloo Bhujia (400 g)",
+   "price": 110,
+   "stock": 60,
+   "image_query": "bhujia namkeen",
+   "description": "Spicy, crispy potato and besan bhujia. Classic tea-time namkeen.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Khakhra, Methi (200 g)",
+   "price": 70,
+   "stock": 30,
+   "image_query": "khakhra",
+   "description": "Roasted, crisp Gujarati wheat flatbread. A light, baked snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Baked Ragi Chips (100 g)",
+   "price": 60,
+   "stock": 25,
+   "image_query": "chips snack",
+   "description": "Baked, not fried, finger-millet chips. Fewer calories; good for kids' tiffin.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Potato Chips, Classic Salted (90 g)",
+   "price": 40,
+   "stock": 80,
+   "image_query": "potato chips",
+   "description": "Crispy salted potato chips.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Peanut Chikki (200 g)",
+   "price": 60,
+   "stock": 40,
+   "image_query": "peanut chikki",
+   "description": "Peanuts set in jaggery. A traditional energy bar for kids.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Dark Chocolate 70% (100 g)",
+   "price": 180,
+   "stock": 25,
+   "image_query": "dark chocolate",
+   "description": "Rich 70% cocoa dark chocolate, lower in sugar.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Milk Chocolate (100 g)",
+   "price": 100,
+   "stock": 50,
+   "image_query": "milk chocolate bar",
+   "description": "Creamy milk chocolate. A treat for kids.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Protein Bar, Peanut Butter (60 g)",
+   "price": 99,
+   "stock": 30,
+   "image_query": "protein bar",
+   "description": "20 g protein, no added sugar. Post-workout snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Popcorn, Ready to Cook (100 g)",
+   "price": 45,
+   "stock": 35,
+   "image_query": "popcorn",
+   "description": "Microwave butter popcorn for movie night.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Sugar-Free Digestive Biscuits (200 g)",
+   "price": 90,
+   "stock": 20,
+   "image_query": "digestive biscuits",
+   "description": "Whole wheat digestive biscuits with no added sugar. Suitable for diabetics.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Trail Mix with Seeds (200 g)",
+   "price": 220,
+   "stock": 0,
+   "image_query": "trail mix",
+   "description": "Nuts, seeds and cranberries. A healthy on-the-go snack.",
+   "category": "Snacks"
+  },
+  {
+   "name": "Assam Tea (500 g)",
+   "price": 260,
+   "stock": 60,
+   "image_query": "black tea leaves",
+   "description": "Strong, malty CTC Assam tea for kadak chai.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Green Tea (25 bags)",
+   "price": 160,
+   "stock": 40,
+   "image_query": "green tea",
+   "description": "Light green tea with antioxidants. Zero calories without sugar.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Filter Coffee Powder (200 g)",
+   "price": 180,
+   "stock": 30,
+   "image_query": "filter coffee",
+   "description": "South Indian filter coffee with chicory, for strong decoction.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Instant Coffee (100 g)",
+   "price": 250,
+   "stock": 35,
+   "image_query": "instant coffee",
+   "description": "Instant coffee granules for a quick cup.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Coconut Water (200 ml)",
+   "price": 45,
+   "stock": 40,
+   "image_query": "coconut water",
+   "description": "Natural tender coconut water. Hydrating, with electrolytes and no added sugar.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Mango Juice (1 L)",
+   "price": 110,
+   "stock": 40,
+   "image_query": "mango juice",
+   "description": "Mango drink made with Alphonso pulp.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Orange Juice, No Added Sugar (1 L)",
+   "price": 150,
+   "stock": 20,
+   "image_query": "orange juice",
+   "description": "100% orange juice with no added sugar.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Mineral Water (1 L)",
+   "price": 20,
+   "stock": 120,
+   "image_query": "water bottle",
+   "description": "Packaged drinking water.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Cola (750 ml)",
+   "price": 40,
+   "stock": 80,
+   "image_query": "cola soft drink",
+   "description": "Fizzy cola soft drink. Serve chilled.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Lemon Soda (750 ml)",
+   "price": 35,
+   "stock": 50,
+   "image_query": "lemon soda",
+   "description": "Sparkling lemon soda, a little tangy.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Rooh Afza Rose Syrup (750 ml)",
+   "price": 180,
+   "stock": 20,
+   "image_query": "rose syrup",
+   "description": "Rose sherbet syrup for summer coolers and falooda.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Chocolate Health Drink (500 g)",
+   "price": 260,
+   "stock": 30,
+   "image_query": "chocolate malt drink",
+   "description": "Malt-based chocolate drink powder with vitamins. Kids mix it in milk.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Kombucha, Ginger (300 ml)",
+   "price": 150,
+   "stock": 10,
+   "image_query": "kombucha",
+   "description": "Fermented tea with live probiotics. Low sugar.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Almond Milk, Unsweetened (1 L)",
+   "price": 250,
+   "stock": 15,
+   "image_query": "almond milk",
+   "description": "Dairy-free almond milk, lactose-free and vegan.",
+   "category": "Beverages"
+  },
+  {
+   "name": "Rolled Oats (1 kg)",
+   "price": 190,
+   "stock": 40,
+   "image_query": "rolled oats",
+   "description": "Whole grain rolled oats, high in fibre. For porridge, overnight oats and upma.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Masala Oats (40 g x 6)",
+   "price": 120,
+   "stock": 30,
+   "image_query": "oats porridge",
+   "description": "Ready-in-3-minutes savoury oats with vegetables.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Corn Flakes (475 g)",
+   "price": 190,
+   "stock": 40,
+   "image_query": "corn flakes",
+   "description": "Crunchy corn flakes. Breakfast with cold milk.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Muesli, No Added Sugar (500 g)",
+   "price": 320,
+   "stock": 20,
+   "image_query": "muesli",
+   "description": "Oats, nuts, seeds and dried fruit with no added sugar. A healthy breakfast.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Chocos (375 g)",
+   "price": 180,
+   "stock": 40,
+   "image_query": "chocolate cereal",
+   "description": "Chocolate-coated wheat scoops. Kids love it.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Peanut Butter, Crunchy (350 g)",
+   "price": 220,
+   "stock": 30,
+   "image_query": "peanut butter",
+   "description": "Roasted peanuts with no added sugar. High protein spread.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Honey (500 g)",
+   "price": 230,
+   "stock": 35,
+   "image_query": "honey jar",
+   "description": "Pure multiflora honey. A natural sweetener for tea and toast.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Mixed Fruit Jam (500 g)",
+   "price": 160,
+   "stock": 30,
+   "image_query": "fruit jam",
+   "description": "Sweet mixed fruit jam for bread and parathas.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Idli Dosa Batter (1 kg)",
+   "price": 80,
+   "stock": 25,
+   "image_query": "dosa batter",
+   "description": "Freshly ground fermented rice and urad dal batter. Soft idlis, crisp dosas.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Ragi Flour (500 g)",
+   "price": 70,
+   "stock": 20,
+   "image_query": "ragi finger millet",
+   "description": "Finger millet flour, rich in calcium. For ragi dosa and porridge; good for babies and diabetics.",
+   "category": "Breakfast & Cereals"
+  },
+  {
+   "name": "Frozen Green Peas (500 g)",
+   "price": 95,
+   "stock": 40,
+   "image_query": "green peas",
+   "description": "Sweet green peas, frozen fresh. For matar paneer and pulao.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Frozen Sweet Corn (500 g)",
+   "price": 110,
+   "stock": 30,
+   "image_query": "sweet corn kernels",
+   "description": "Sweet corn kernels for chaats and salads.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Frozen Malabar Parotta (5 pcs)",
+   "price": 120,
+   "stock": 25,
+   "image_query": "parotta flatbread",
+   "description": "Flaky layered parottas: heat on a tawa in minutes.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Frozen Aloo Tikki (400 g)",
+   "price": 140,
+   "stock": 20,
+   "image_query": "aloo tikki",
+   "description": "Ready-to-fry spiced potato patties.",
+   "category": "Frozen"
+  },
+  {
+   "name": "French Fries (400 g)",
+   "price": 130,
+   "stock": 30,
+   "image_query": "french fries",
+   "description": "Crispy frozen fries for the air fryer or oven.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Veg Momos (12 pcs)",
+   "price": 150,
+   "stock": 15,
+   "image_query": "momos dumplings",
+   "description": "Steamed vegetable momos. Steam for 8 minutes.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Vanilla Ice Cream (700 ml)",
+   "price": 220,
+   "stock": 20,
+   "image_query": "vanilla ice cream",
+   "description": "Creamy vanilla ice cream.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Kulfi, Malai (4 pcs)",
+   "price": 160,
+   "stock": 3,
+   "image_query": "kulfi",
+   "description": "Traditional malai kulfi on sticks.",
+   "category": "Frozen"
+  },
+  {
+   "name": "Neem Face Wash (100 ml)",
+   "price": 150,
+   "stock": 30,
+   "image_query": "face wash",
+   "description": "Neem and turmeric face wash for oily, acne-prone skin.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Herbal Shampoo (340 ml)",
+   "price": 260,
+   "stock": 30,
+   "image_query": "shampoo bottle",
+   "description": "Mild herbal shampoo with amla and reetha.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Coconut Hair Oil (500 ml)",
+   "price": 180,
+   "stock": 40,
+   "image_query": "hair oil",
+   "description": "Pure coconut oil for hair and scalp.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Toothpaste, Herbal (150 g)",
+   "price": 95,
+   "stock": 60,
+   "image_query": "toothpaste",
+   "description": "Clove and neem toothpaste for strong gums.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Toothbrush, Soft (Pack of 4)",
+   "price": 120,
+   "stock": 40,
+   "image_query": "toothbrush",
+   "description": "Soft-bristle toothbrushes for sensitive gums.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Bathing Soap, Sandal (4 x 100 g)",
+   "price": 160,
+   "stock": 50,
+   "image_query": "sandalwood soap",
+   "description": "Sandalwood soap with a long-lasting fragrance.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Hand Wash Refill (750 ml)",
+   "price": 140,
+   "stock": 30,
+   "image_query": "hand wash",
+   "description": "Germ-protection liquid hand wash refill.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Sunscreen SPF 50 (50 ml)",
+   "price": 350,
+   "stock": 15,
+   "image_query": "sunscreen",
+   "description": "Non-greasy broad-spectrum sunscreen for Indian summers.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Sanitary Pads, XL (30 pcs)",
+   "price": 320,
+   "stock": 25,
+   "image_query": "sanitary pads",
+   "description": "Ultra-thin, extra-long pads with wings.",
+   "category": "Personal Care"
+  },
+  {
+   "name": "Dishwash Liquid (750 ml)",
+   "price": 140,
+   "stock": 40,
+   "image_query": "dishwashing liquid",
+   "description": "Lemon dishwash liquid that cuts grease. Gentle on hands.",
+   "category": "Household"
+  },
+  {
+   "name": "Detergent Powder (1 kg)",
+   "price": 130,
+   "stock": 50,
+   "image_query": "laundry detergent",
+   "description": "Washing powder for machine and hand wash.",
+   "category": "Household"
+  },
+  {
+   "name": "Liquid Detergent (2 L)",
+   "price": 420,
+   "stock": 25,
+   "image_query": "liquid detergent",
+   "description": "For front and top-load machines; works in cold water.",
+   "category": "Household"
+  },
+  {
+   "name": "Floor Cleaner, Lavender (1 L)",
+   "price": 180,
+   "stock": 30,
+   "image_query": "floor cleaner",
+   "description": "Disinfectant floor cleaner that kills 99.9% of germs.",
+   "category": "Household"
+  },
+  {
+   "name": "Toilet Cleaner (500 ml)",
+   "price": 95,
+   "stock": 35,
+   "image_query": "toilet cleaner",
+   "description": "Thick liquid toilet cleaner, removes tough stains.",
+   "category": "Household"
+  },
+  {
+   "name": "Garbage Bags, Medium (30 pcs)",
+   "price": 99,
+   "stock": 40,
+   "image_query": "garbage bags",
+   "description": "Leak-proof biodegradable garbage bags.",
+   "category": "Household"
+  },
+  {
+   "name": "Kitchen Towels (2 rolls)",
+   "price": 120,
+   "stock": 30,
+   "image_query": "paper towels",
+   "description": "Absorbent kitchen paper towels.",
+   "category": "Household"
+  },
+  {
+   "name": "Scrub Pads (Pack of 3)",
+   "price": 45,
+   "stock": 50,
+   "image_query": "scouring pad",
+   "description": "Scrub pads for utensils.",
+   "category": "Household"
+  },
+  {
+   "name": "Aluminium Foil (9 m)",
+   "price": 110,
+   "stock": 30,
+   "image_query": "aluminium foil",
+   "description": "Food-grade foil to wrap rotis and bake.",
+   "category": "Household"
+  }
+ ]
+}

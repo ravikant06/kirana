@@ -53,3 +53,6 @@ Thumbs.db
 # ---------------------------------------------------------------- Logs
 *.log
 logs/
+
+# Python bytecode
+__pycache__/

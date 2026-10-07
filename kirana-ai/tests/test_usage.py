@@ -67,3 +67,36 @@ def test_pricing_file_skips_models_without_both_prices(tmp_path):
     prices = load_prices.__wrapped__(path)
     assert set(prices) == {"priced"}
     assert prices["priced"].input_per_mtok == Decimal("0.3")   # no float error
+
+
+def test_streaming_records_one_call_with_usage():
+    from kirana_ai.llm import TextDelta
+    records: list[CallRecord] = []
+    fake = FakeAdapter([LLMResponse(text="hello there", usage=Usage(12, 4))])
+    fake.add_listener(records.append)
+
+    items = list(fake.stream([Message.user("hi")]))
+
+    assert [type(i).__name__ for i in items] == ["TextDelta", "LLMResponse"]
+    assert records[0].ok and records[0].usage == Usage(12, 4)
+
+
+def test_abandoned_stream_is_recorded_as_such():
+    """The browser closed the stream: the call may still be billed, so it is recorded."""
+    records: list[CallRecord] = []
+    fake = FakeAdapter([LLMResponse(text="hello there", usage=Usage(12, 4))])
+    fake.add_listener(records.append)
+
+    stream = fake.stream([Message.user("hi")])
+    next(stream)          # the first delta arrives...
+    stream.close()        # ...and the client goes away
+
+    assert records[0].ok is False and records[0].error == "stream abandoned by the client"
+
+
+def test_judge_verdict_parsing_tolerates_fences_and_garbage():
+    from eval.judge import parse_verdict
+    v = parse_verdict('```json\n{"answered": true, "correct": false, "faithful": true, "reason": "x"}\n```')
+    assert (v["answered"], v["correct"], v["faithful"]) == (True, False, True)
+    bad = parse_verdict("I think it is fine")
+    assert bad["answered"] is None and "unparseable" in bad["reason"]

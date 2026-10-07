@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import com.kirana.dto.SystemStatus;
 import com.kirana.messaging.DeadLetters;
 import com.kirana.messaging.KafkaStatus;
@@ -20,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
  * the local fault injectors (payment-mock, Toxiproxy) and reset breakers.
  */
 @RestController
+@RequiresPermission(Permission.SYSTEM)
 public class SystemController {
 
     private final Resilience resilience;

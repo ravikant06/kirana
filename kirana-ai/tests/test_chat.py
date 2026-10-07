@@ -150,3 +150,12 @@ def test_threads_are_listed_newest_first_per_shopper(ai_db):
     chat.send(7, "again", thread_id=older.thread_id, llm=FakeAdapter([_answer("d")]))
 
     assert [t.id for t in chat.list_threads(7)] == [older.thread_id, newer.thread_id]
+
+
+def test_sources_cited_but_not_retrieved_are_flagged():
+    chunks = [{"source": "policy-returns.md", "doc_id": "d1", "title": "Returns"}]
+    reply = "Within 7 days.\n\nSources: `policy-returns.md`, `policy-warranty.pdf`"
+
+    assert chat.unverified_sources(chunks, reply) == ["policy-warranty.pdf"]
+    assert [c["source"] for c in chat.citations_for(chunks, reply)] == ["policy-returns.md"]
+    assert chat.unverified_sources(chunks, "No sources line here.") == []

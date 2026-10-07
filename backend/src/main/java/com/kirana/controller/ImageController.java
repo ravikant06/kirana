@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import com.kirana.dto.ImageResponse;
 import com.kirana.dto.UploadRequest;
 import com.kirana.dto.UploadTicket;
@@ -16,6 +18,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/products/{productId}/images")
+@RequiresPermission(Permission.CATALOG_WRITE)
 public class ImageController {
 
     private final ImageService images;

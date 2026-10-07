@@ -30,11 +30,11 @@ def get_client() -> QdrantClient:
     return QdrantClient(url=config.QDRANT_URL, timeout=5)
 
 
-def _unavailable(exc: Exception) -> UpstreamUnavailable:
+def _unavailable(exc: Exception, collection: str | None = None) -> UpstreamUnavailable:
     if isinstance(exc, UnexpectedResponse) and exc.status_code == 404:
         return UpstreamUnavailable(
             "knowledge base",
-            f"collection {config.COLLECTION_NAME!r} does not exist. "
+            f"collection {(collection or config.COLLECTION_NAME)!r} does not exist. "
             "Run `python -m kirana_ai.cli seed-kb` and start the worker, or `cli reindex`.",
         )
     return UpstreamUnavailable(
@@ -63,17 +63,17 @@ DENSE = "dense"    # meaning   — Gemini embedding, cosine
 SPARSE = "sparse"  # words     — BM25 weights, see src/sparse.py
 
 
-def ensure_collection(client: QdrantClient) -> None:
+def ensure_collection(client: QdrantClient, collection: str | None = None, indexes: dict | None = None) -> None:
     """
-    Create the collection if missing.
+    Create the collection if missing, with its payload indexes (`indexes`, default: the KB's).
 
     Two named vectors per point. The sparse one sets `Modifier.IDF`, which
     tells Qdrant to compute inverse document frequency itself at query time —
     so adding a document does not invalidate the vectors already stored.
     """
-    if not client.collection_exists(config.COLLECTION_NAME):
+    if not client.collection_exists((collection or config.COLLECTION_NAME)):
         client.create_collection(
-            collection_name=config.COLLECTION_NAME,
+            collection_name=(collection or config.COLLECTION_NAME),
             vectors_config={
                 DENSE: models.VectorParams(
                     size=config.EMBEDDING_DIM, distance=models.Distance.COSINE
@@ -84,33 +84,33 @@ def ensure_collection(client: QdrantClient) -> None:
             },
         )
     elif config.HYBRID_SEARCH:
-        _require_sparse_schema(client)
-    ensure_payload_indexes(client)
+        _require_sparse_schema(client, collection)
+    ensure_payload_indexes(client, collection, indexes)
 
 
-def _require_sparse_schema(client: QdrantClient) -> None:
+def _require_sparse_schema(client: QdrantClient, collection: str | None = None) -> None:
     """
     A collection built before hybrid search has no sparse vector, and writing
     one into it fails deep inside the client with an opaque 400. Fail here
     instead, with the fix in the message.
     """
-    params = client.get_collection(config.COLLECTION_NAME).config.params
+    params = client.get_collection((collection or config.COLLECTION_NAME)).config.params
     if SPARSE in (params.sparse_vectors or {}):
         return
     raise SystemExit(
-        f"Collection {config.COLLECTION_NAME!r} predates hybrid search: it has no "
+        f"Collection {(collection or config.COLLECTION_NAME)!r} predates hybrid search: it has no "
         f"{SPARSE!r} vector.\n"
         "Drop it in the Qdrant dashboard (http://localhost:6335/dashboard), then\n"
         "  python -m kirana_ai.cli reindex"
     )
 
 
-def ensure_payload_indexes(client: QdrantClient) -> None:
+def ensure_payload_indexes(client: QdrantClient, collection: str | None = None, indexes: dict | None = None) -> None:
     """Create a payload index per filterable field. Safe to call repeatedly."""
-    for field_name, field_schema in PAYLOAD_INDEXES.items():
+    for field_name, field_schema in (indexes or PAYLOAD_INDEXES).items():
         try:
             client.create_payload_index(
-                collection_name=config.COLLECTION_NAME,
+                collection_name=(collection or config.COLLECTION_NAME),
                 field_name=field_name,
                 field_schema=field_schema,
             )
@@ -128,6 +128,7 @@ def upsert_chunks(
     chunks: list[dict],
     vectors: list[list[float]],
     sparse_vectors: list[models.SparseVector] | None = None,
+    collection: str | None = None,
 ) -> int:
     """Write one point per chunk, carrying its dense and (optionally) BM25 vector."""
     sparse_vectors = sparse_vectors or [None] * len(chunks)
@@ -139,21 +140,28 @@ def upsert_chunks(
         points.append(
             models.PointStruct(id=_point_id(chunk["chunk_id"]), vector=vector, payload=chunk)
         )
-    client.upsert(collection_name=config.COLLECTION_NAME, points=points)
+    client.upsert(collection_name=(collection or config.COLLECTION_NAME), points=points)
     return len(points)
 
 
-def _query(client, query_vector, top_k, query_filter, sparse_vector):
-    """The Qdrant call behind search(), dense or hybrid."""
+def _cosine(a: list[float], b: list[float]) -> float:
+    dot = sum(x * y for x, y in zip(a, b))
+    norm = (sum(x * x for x in a) ** 0.5) * (sum(y * y for y in b) ** 0.5)
+    return dot / norm if norm else 0.0
+
+
+def _query(client, query_vector, top_k, query_filter, sparse_vector, collection=None):
+    """The Qdrant call behind search(), dense or hybrid. Returns each hit's dense vector too."""
     if sparse_vector is None:
         # Dense only: one similarity search over the meaning vectors.
         result = client.query_points(
-            collection_name=config.COLLECTION_NAME,
+            collection_name=(collection or config.COLLECTION_NAME),
             query=query_vector,
             using=DENSE,
             limit=top_k,
             query_filter=query_filter,
             with_payload=True,
+            with_vectors=[DENSE],
         )
     else:
         # Hybrid: run both searches, then let Qdrant fuse the two ranked
@@ -162,7 +170,7 @@ def _query(client, query_vector, top_k, query_filter, sparse_vector):
         # is applied to BOTH — a filter that leaked on one branch would be
         # a tenancy bug, not just a quality issue.
         result = client.query_points(
-            collection_name=config.COLLECTION_NAME,
+            collection_name=(collection or config.COLLECTION_NAME),
             prefetch=[
                 models.Prefetch(query=query_vector, using=DENSE,
                                 limit=PREFETCH_LIMIT, filter=query_filter),
@@ -172,6 +180,7 @@ def _query(client, query_vector, top_k, query_filter, sparse_vector):
             query=models.FusionQuery(fusion=models.Fusion.RRF),
             limit=top_k,
             with_payload=True,
+            with_vectors=[DENSE],
         )
     return result
 
@@ -182,6 +191,7 @@ def search(
     top_k: int,
     query_filter: models.Filter | None = None,
     sparse_vector: models.SparseVector | None = None,
+    collection: str | None = None,
 ) -> list[dict]:
     """
     Return the top_k best chunks, each with its score.
@@ -195,7 +205,7 @@ def search(
     """
     if trace.is_on():
         trace.section("QDRANT SEARCH")
-        trace.kv("collection", config.COLLECTION_NAME)
+        trace.kv("collection", (collection or config.COLLECTION_NAME))
         trace.kv("limit (top_k)", top_k)
         trace.kv("mode", "hybrid (dense + BM25, RRF)" if sparse_vector is not None else "dense only")
         trace.kv("query vector", trace.preview_vector(query_vector))
@@ -203,11 +213,17 @@ def search(
 
     with trace.timed() as elapsed:
         try:
-            result = _query(client, query_vector, top_k, query_filter, sparse_vector)
+            result = _query(client, query_vector, top_k, query_filter, sparse_vector, collection)
         except Exception as exc:
-            raise _unavailable(exc) from exc
+            raise _unavailable(exc, collection) from exc
 
-    chunks = [{**hit.payload, "score": hit.score} for hit in result.points]
+    # `score` is whatever ranked the hit: cosine for dense, but for hybrid it is RRF, a
+    # function of *rank position* only (the top hit scores the same whether it matches or
+    # not). So every hit also gets its dense cosine `similarity`, the one number that says
+    # how close it actually is; the relevance floor (Phase 3) is applied to that.
+    chunks = [{**hit.payload, "score": hit.score,
+               "similarity": round(_cosine(query_vector, (hit.vector or {}).get(DENSE) or []), 4)}
+              for hit in result.points]
     if trace.is_on():
         trace.result(f"{len(chunks)} hit(s)", elapsed[0])
         trace.bullets(
@@ -231,6 +247,7 @@ def list_documents(
     client: QdrantClient,
     query_filter: models.Filter | None = None,
     limit: int = 500,
+    collection: str | None = None,
 ) -> list[dict]:
     """
     Enumerate the distinct documents matching a filter.
@@ -241,21 +258,21 @@ def list_documents(
     """
     if trace.is_on():
         trace.section("QDRANT SCROLL (enumerate)")
-        trace.kv("collection", config.COLLECTION_NAME)
+        trace.kv("collection", (collection or config.COLLECTION_NAME))
         trace.kv("scan limit", limit)
         trace.bullets("filter (must)", trace.describe_filter(query_filter))
 
     with trace.timed() as elapsed:
         try:
             points, _ = client.scroll(
-                collection_name=config.COLLECTION_NAME,
+                collection_name=(collection or config.COLLECTION_NAME),
                 scroll_filter=query_filter,
                 limit=limit,
                 with_payload=True,
                 with_vectors=False,
             )
         except Exception as exc:
-            raise _unavailable(exc) from exc
+            raise _unavailable(exc, collection) from exc
 
     documents: dict[str, dict] = {}
     for point in points:
@@ -282,30 +299,30 @@ def list_documents(
     return result
 
 
-def delete_document_points(client: QdrantClient, doc_id: str) -> None:
+def delete_document_points(client: QdrantClient, doc_id: str, collection: str | None = None) -> None:
     """Remove every chunk of one document (by payload doc_id). A no-op if it has none."""
     try:
         client.delete(
-            collection_name=config.COLLECTION_NAME,
+            collection_name=(collection or config.COLLECTION_NAME),
             points_selector=models.FilterSelector(filter=models.Filter(must=[
                 models.FieldCondition(key="doc_id", match=models.MatchValue(value=doc_id)),
             ])),
             wait=True,
         )
     except Exception as exc:
-        raise _unavailable(exc) from exc
+        raise _unavailable(exc, collection) from exc
 
 
-def indexed_doc_ids(client: QdrantClient) -> set[str]:
+def indexed_doc_ids(client: QdrantClient, collection: str | None = None) -> set[str]:
     """Every doc_id that has chunks in the collection (for reconciliation)."""
     ids: set[str] = set()
     offset = None
     try:
         while True:
-            points, offset = client.scroll(collection_name=config.COLLECTION_NAME, limit=1000,
+            points, offset = client.scroll(collection_name=(collection or config.COLLECTION_NAME), limit=1000,
                                            offset=offset, with_payload=["doc_id"], with_vectors=False)
             ids.update(p.payload["doc_id"] for p in points if p.payload)
             if offset is None:
                 return ids
     except Exception as exc:
-        raise _unavailable(exc) from exc
+        raise _unavailable(exc, collection) from exc

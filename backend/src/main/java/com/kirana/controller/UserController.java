@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import java.util.List;
 
 import com.kirana.dto.UserRequest;
@@ -25,13 +27,15 @@ public class UserController {
         this.users = users;
     }
 
-    /** Limit is clamped to 1..50. */
+    /** Admins only (it lists everyone). Limit is clamped to 1..50. */
+    @RequiresPermission(Permission.USERS_READ)
     @GetMapping
     public List<UserResponse> search(@RequestParam(required = false) String q,
                                      @RequestParam(defaultValue = "20") int limit) {
         return users.search(q, limit);
     }
 
+    /** Public sign-up: always a SHOPPER (the request has no role field). */
     @PostMapping
     @ResponseStatus(HttpStatus.CREATED)
     public UserResponse create(@Valid @RequestBody UserRequest req) {

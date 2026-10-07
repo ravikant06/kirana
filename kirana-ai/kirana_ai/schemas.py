@@ -38,6 +38,12 @@ class Step(BaseModel):
     query: str = ""
     where: dict[str, Any] = Field(default_factory=dict)   # filters the model chose
     count: int                                             # hits (or documents) returned
+    below_floor: int = 0                                   # hits dropped by the relevance floor
+    product_ids: list[int] = Field(default_factory=list)   # search_products: what the UI shows as cards
+    decision: str = "allow"                                 # Phase 6: the policy's decision (allow, deny, approval)
+    reason: str | None = None                              # why, e.g. missing-scope:orders:read
+    denied_by: str | None = None                           # policy or kirana, when refused
+    approval: dict[str, Any] | None = None                 # the card, when an action awaits confirmation
 
 
 class Usage(BaseModel):
@@ -45,6 +51,10 @@ class Usage(BaseModel):
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    # Streaming only: time from the start of the agent to the first answer token.
+    first_token_ms: int | None = None
+    # Sources named in the reply that were not retrieved this turn: never shown as citations.
+    unverified_sources: list[str] = Field(default_factory=list)
     # A decimal string ("0.004170"), never a float: money is exact. null = unknown price.
     cost_usd: Decimal | None
 
@@ -121,3 +131,19 @@ class KbDocument(BaseModel):
     uploaded_by: str
     created_at: datetime
     updated_at: datetime
+
+
+class ApprovalDecision(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    decision: Literal["confirm", "reject"]
+
+
+class Approval(BaseModel):
+    """A pending action as the shopper sees it. Built from the server's copy, never the model's text."""
+    id: uuid.UUID
+    tool: str
+    summary: str
+    lines: list[str]
+    status: str                  # pending, executing, done, failed, rejected, expired
+    message: str | None = None
+    expires_at: datetime

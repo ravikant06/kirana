@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, money, uploadToStorage } from '../api.js'
+import { api, CATEGORIES, money, uploadToStorage } from '../api.js'
 import { useLoad, usePoll } from '../hooks.js'
 import Problem from '../components/Problem.jsx'
 import Thumb from '../components/Thumb.jsx'
@@ -22,7 +22,7 @@ function StatusPill({ p, onSale }) {
   return <span className="pill pill-ok">In stock</span>
 }
 
-export default function Manage({ notify, onUsersChanged, users, initialTab, userId, onChooseUser }) {
+export default function Manage({ notify, onUsersChanged, users, initialTab }) {
   const [tab, setTab] = useState(TABS.some(([k]) => k === initialTab) ? initialTab : 'catalog')
   const [page, setPage] = useState(0)
   const list = useLoad(() => api.products.list(page, 10), [page])
@@ -116,7 +116,7 @@ export default function Manage({ notify, onUsersChanged, users, initialTab, user
 
       {tab === 'knowledge' && <KnowledgeBase notify={notify} />}
 
-      {tab === 'shoppers' && <Users users={users} onChanged={onUsersChanged} notify={notify} userId={userId} onChoose={onChooseUser} />}
+      {tab === 'shoppers' && <Users users={users} onChanged={onUsersChanged} notify={notify} />}
 
       {selected === 'new' && (
         <Modal title="New product" subtitle="Add the basics now. Stock, flash sale and images open after you create it." onClose={close}>
@@ -153,6 +153,7 @@ function ProductForm({ product, onSaved, onReload }) {
     name: product?.name || '',
     description: product?.description || '',
     price: product?.price ?? '',
+    category: product?.category || '',
   })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
@@ -164,7 +165,7 @@ function ProductForm({ product, onSaved, onReload }) {
     setError(null)
     // Price is sent exactly as typed (a string). Decide in the backend how to parse it.
     // version: the one this form loaded. If someone saved since, the backend answers 409.
-    const body = { name: form.name, description: form.description, price: form.price, version: product?.version }
+    const body = { name: form.name, description: form.description, price: form.price, category: form.category, version: product?.version }
     try {
       const saved = product ? await api.products.update(product.id, body) : await api.products.create(body)
       onSaved(saved)
@@ -187,6 +188,17 @@ function ProductForm({ product, onSaved, onReload }) {
         <span>Description</span>
         <textarea rows="3" value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} />
         {fieldErr('description') && <em className="field-err">{fieldErr('description')}</em>}
+      </label>
+      <label>
+        <span>Category</span>
+        <select className="kb-select" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })}>
+          <option value="">(none)</option>
+          {/* a product saved earlier with a category not in the list still shows it */}
+          {[...CATEGORIES, ...(form.category && !CATEGORIES.includes(form.category) ? [form.category] : [])].map((c) => (
+            <option key={c} value={c}>{c}</option>
+          ))}
+        </select>
+        {fieldErr('category') && <em className="field-err">{fieldErr('category')}</em>}
       </label>
       <label>
         <span>Price (₹)</span>
@@ -323,16 +335,16 @@ function Rush({ productId, productName, notify, onDone }) {
     try {
       const n = Math.min(Math.max(Number(buyers) || 1, 1), 50)
       const run = Date.now().toString(36)
-      setPhase(`Creating ${n} shoppers and filling their carts…`)
+      setPhase(`Signing up ${n} shoppers and filling their carts…`)
       const ids = []
       for (let i = 1; i <= n; i++) {
         const u = await api.rush.createShopper(`Rush buyer ${run}-${i}`, `rush-${run}-${i}@kirana.test`)
-        await api.rush.addToCart(u.id, productId)
-        ids.push(u.id)
+        await api.rush.addToCart(u.token, productId)
+        ids.push(u.token)
       }
       setPhase(`${n} checkouts at once…`)
       const started = performance.now()
-      const outcomes = await Promise.all(ids.map((id) => api.rush.checkout(id)))
+      const outcomes = await Promise.all(ids.map((token) => api.rush.checkout(token)))
       const took = Math.round(performance.now() - started)
       const won = outcomes.filter((o) => o.status === 201)
       const refusedAtGate = outcomes.filter((o) => o.status === 409 && (o.queries ?? 99) <= 1)
@@ -529,9 +541,8 @@ function Images({ product, notify, onChanged }) {
   )
 }
 
-// Shoppers: a bounded search over GET /users (20 newest, or 20 matches). "Shop as" only changes
-// which X-User-Id the app sends from now on, exactly like the menu in the top bar.
-function Users({ users, onChanged, notify, userId, onChoose }) {
+// Shoppers: a bounded search over GET /users (20 newest, or 20 matches). Admins only (users:read).
+function Users({ users, onChanged, notify }) {
   const [q, setQ] = useState('')
   const [adding, setAdding] = useState(false)
   const qRef = useRef('')
@@ -568,7 +579,7 @@ function Users({ users, onChanged, notify, userId, onChoose }) {
         <div className="table-note">
           <UserIcon size={16} />
           <span>
-            No login yet. The shopper you pick is sent as the <code>X-User-Id</code> header.{' '}
+            Shoppers sign in with their email and password. Everyone seeded has the demo password <code>kirana123</code>.{' '}
             {q ? `Showing up to 20 matches for “${q}”.` : 'Showing the 20 newest shoppers; search to find others.'}
           </span>
         </div>
@@ -582,13 +593,12 @@ function Users({ users, onChanged, notify, userId, onChoose }) {
         ) : (
           <table className="ptable utable">
             <thead>
-              <tr><th>Shopper</th><th>Email</th><th>ID</th><th aria-label="Actions" /></tr>
+              <tr><th>Shopper</th><th>Email</th><th>ID</th><th>Role</th></tr>
             </thead>
             <tbody>
               {list.map((u) => {
-                const current = u.id === userId
                 return (
-                  <tr key={u.id} className={current ? 'is-current' : ''}>
+                  <tr key={u.id}>
                     <td data-label="Shopper">
                       <div className="ptable-product">
                         <span className="avatar">{(u.name || '?').slice(0, 1).toUpperCase()}</span>
@@ -600,11 +610,7 @@ function Users({ users, onChanged, notify, userId, onChoose }) {
                     <td data-label="Email" className="utable-email" title={u.email}>{u.email}</td>
                     <td data-label="ID"><code className="ptable-id">{u.id}</code></td>
                     <td className="utable-act">
-                      {current ? (
-                        <span className="utable-check"><CheckIcon size={16} /> Current</span>
-                      ) : (
-                        <button className="btn-quiet" onClick={() => { onChoose(u); notify(`Now shopping as ${u.name}`) }}>Shop as</button>
-                      )}
+                      <span className={`role-badge role-${(u.role || 'shopper').toLowerCase()}`}>{u.role || 'SHOPPER'}</span>
                     </td>
                   </tr>
                 )
@@ -631,7 +637,7 @@ function Users({ users, onChanged, notify, userId, onChoose }) {
 }
 
 function UserForm({ notify, onCreated }) {
-  const [form, setForm] = useState({ name: '', email: '' })
+  const [form, setForm] = useState({ name: '', email: '', password: '' })
   const [error, setError] = useState(null)
   const [busy, setBusy] = useState(false)
   const fieldErr = (f) => error?.problem?.errors?.find((e) => e.field === f)?.message
@@ -662,6 +668,11 @@ function UserForm({ notify, onCreated }) {
         <span>Email</span>
         <input type="email" placeholder="asha@example.com" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} />
         {fieldErr('email') && <em className="field-err">{fieldErr('email')}</em>}
+      </label>
+      <label>
+        <span>Password</span>
+        <input type="password" placeholder="At least 8 characters" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} />
+        {fieldErr('password') && <em className="field-err">{fieldErr('password')}</em>}
       </label>
       {error && !error.problem?.errors?.length && <Problem error={error} compact />}
       <button className="btn btn-add" disabled={busy}><PlusIcon size={16} /> {busy ? 'Adding…' : 'Add shopper'}</button>

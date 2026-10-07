@@ -23,8 +23,6 @@ next event on this partition may be the same document's delete, and it must not 
 """
 import json
 import logging
-import random
-import signal
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -33,7 +31,9 @@ from urllib.parse import unquote
 
 from minio.error import S3Error
 
-from kirana_ai import chunker, config, embeddings, loader, sparse, storage, vector_store
+from kirana_ai import chunker, config, consumer, embeddings, loader, sparse, storage, vector_store
+# Shared with every worker; re-exported for callers that used them from here.
+from kirana_ai.consumer import PermanentError, dlt_producer, produce_confirmed, retrying  # noqa: F401
 from kirana_ai.db import session_scope
 from kirana_ai.db.models import DocStatus, DocType, Document
 
@@ -42,10 +42,6 @@ log = logging.getLogger("kirana_ai.worker")
 GROUP = "kirana-ai-ingest"
 RETRY_ATTEMPTS = 3
 RETRY_BASE_SECONDS = 1.0
-
-
-class PermanentError(Exception):
-    """Retrying cannot help: the event or the file itself is the problem."""
 
 
 @dataclass(frozen=True)
@@ -214,7 +210,7 @@ def mark_failed(document_id: uuid.UUID | None, reason: str) -> None:
         _update(document_id, status=DocStatus.FAILED, error=reason[:1000])
 
 
-# --- one Kafka message, with the retry policy ---------------------------------------------
+# --- one Kafka message ---------------------------------------------------------------------
 
 def process(value: bytes, dead_letter, sleep=time.sleep) -> str:
     """
@@ -227,122 +223,17 @@ def process(value: bytes, dead_letter, sleep=time.sleep) -> str:
     except PermanentError as exc:
         dead_letter(str(exc), 0)      # nothing to mark: we don't even know the document
         return f"dead-lettered: {exc}"
-
-    outcomes = []
-    for event in events:
-        for attempt in range(1, RETRY_ATTEMPTS + 1):
-            try:
-                outcomes.append(handle(event))
-                break
-            except PermanentError as exc:
-                mark_failed(event.document_id, str(exc))
-                outcomes.append(f"failed: {exc}")
-                break
-            except Exception as exc:       # transient until proven otherwise
-                if attempt == RETRY_ATTEMPTS:
-                    reason = f"{type(exc).__name__}: {exc}"
-                    dead_letter(reason, attempt)
-                    mark_failed(event.document_id,
-                                f"Could not index after {attempt} attempts ({reason}). "
-                                "The event is in the dead-letter topic; run `cli redrive` once fixed.")
-                    outcomes.append(f"dead-lettered after {attempt} attempts: {reason}")
-                    break
-                delay = RETRY_BASE_SECONDS * 2 ** (attempt - 1) * random.uniform(0.8, 1.2)
-                log.warning("attempt %d failed (%s: %s); retrying in %.1f s",
-                            attempt, type(exc).__name__, exc, delay)
-                sleep(delay)
+    outcomes = [
+        retrying(lambda event=event: handle(event), attempts=RETRY_ATTEMPTS, base_seconds=RETRY_BASE_SECONDS,
+                 dead_letter=dead_letter, on_failed=lambda reason, event=event: mark_failed(event.document_id, reason),
+                 sleep=sleep)
+        for event in events
+    ]
     return "; ".join(outcomes) or "nothing to do"
 
 
-# --- the consumer loop -----------------------------------------------------------------------
-
-def consumer_config(group: str = GROUP) -> dict:
-    return {
-        "bootstrap.servers": config.KAFKA_BOOTSTRAP,
-        "group.id": group,
-        "enable.auto.commit": False,             # we commit after the work, never before
-        "auto.offset.reset": "earliest",         # a new group starts with events already waiting
-        "partition.assignment.strategy": "cooperative-sticky",
-    }
-
-
-def dlt_producer():
-    from confluent_kafka import Producer
-    return Producer({"bootstrap.servers": config.KAFKA_BOOTSTRAP,
-                     "acks": "all", "enable.idempotence": True})
-
-
-def produce_confirmed(producer, topic: str, **kwargs) -> None:
-    """
-    Produce one message and wait until the broker has it, or raise.
-
-    flush() returning is not proof: a failed delivery is reported only through the
-    delivery callback, and a timed-out flush just returns how many are still queued.
-    Callers commit an offset right after this, so "probably sent" would lose the event.
-    """
-    errors = []
-    producer.produce(topic, on_delivery=lambda err, _msg: err and errors.append(err), **kwargs)
-    remaining = producer.flush(10)
-    if errors or remaining:
-        raise RuntimeError(f"could not write to {topic}: {errors[0] if errors else 'timed out'}")
-
-
 def run() -> None:
-    from confluent_kafka import Consumer, KafkaError
-
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
-    # One line per message is the useful signal; per-HTTP-request lines from the SDKs drown it.
-    for noisy in ("httpx", "httpcore", "google_genai", "urllib3"):
-        logging.getLogger(noisy).setLevel(logging.WARNING)
-    consumer = Consumer(consumer_config())
-    producer = dlt_producer()
-    stopping = False
-
-    def stop(*_):
-        nonlocal stopping
-        stopping = True
-    signal.signal(signal.SIGINT, stop)
-    signal.signal(signal.SIGTERM, stop)
-
-    def on_assign(_c, partitions):
-        log.info("assigned partitions %s", sorted(p.partition for p in partitions))
-
-    def on_revoke(_c, partitions):
-        log.info("revoked partitions %s", sorted(p.partition for p in partitions))
-
-    consumer.subscribe([config.KB_TOPIC], on_assign=on_assign, on_revoke=on_revoke)
-    log.info("worker in group %s reading %s from %s", GROUP, config.KB_TOPIC, config.KAFKA_BOOTSTRAP)
-    try:
-        while not stopping:
-            msg = consumer.poll(1.0)
-            if msg is None:
-                continue
-            if msg.error():
-                if msg.error().code() != KafkaError._PARTITION_EOF:
-                    log.error("kafka: %s", msg.error())
-                continue
-
-            def dead_letter(reason: str, attempts: int, msg=msg) -> None:
-                produce_confirmed(producer, config.KB_DLT, key=msg.key(), value=msg.value(), headers=[
-                    ("error", reason.encode()[:1000]),
-                    ("attempts", str(attempts).encode()),
-                    ("original-topic", msg.topic().encode()),
-                    ("original-partition", str(msg.partition()).encode()),
-                    ("original-offset", str(msg.offset()).encode()),
-                ])
-                # If that raised, process() raises too: no commit, the worker stops, and the
-                # message is read again on restart. Losing it is the one unacceptable outcome.
-
-            started = time.perf_counter()
-            outcome = process(msg.value(), dead_letter)
-            consumer.commit(message=msg, asynchronous=False)
-            log.info("p%d@%d %s -> %s (%d ms)", msg.partition(), msg.offset(),
-                     msg.key().decode() if msg.key() else "-", outcome,
-                     (time.perf_counter() - started) * 1000)
-    finally:
-        log.info("stopping: leaving the group")
-        consumer.close()          # commits nothing extra; hands our partitions to the others
-        producer.flush(10)
+    consumer.run(config.KB_TOPIC, GROUP, config.KB_DLT, process)
 
 
 if __name__ == "__main__":

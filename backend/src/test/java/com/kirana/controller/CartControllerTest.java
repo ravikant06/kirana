@@ -31,7 +31,7 @@ class CartControllerTest {
 
     @Test
     void missingIdempotencyKeyIs400() throws Exception {
-        mvc.perform(post("/cart/items").header("X-User-Id", "1").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/cart/items").with(com.kirana.auth.TestAuth.as("1")).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"productId": 1, "quantity": 1}
                                 """))
@@ -40,15 +40,15 @@ class CartControllerTest {
     }
 
     @Test
-    void missingUserHeaderIs400() throws Exception {
+    void noTokenIs401() throws Exception {
         mvc.perform(get("/cart"))
-                .andExpect(status().isBadRequest())
-                .andExpect(jsonPath("$.detail").value("Required header 'X-User-Id' is not present."));
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("UNAUTHENTICATED"));
     }
 
     @Test
     void quantityMustBePositive() throws Exception {
-        mvc.perform(post("/cart/items").header("X-User-Id", "1").header("Idempotency-Key", "k1")
+        mvc.perform(post("/cart/items").with(com.kirana.auth.TestAuth.as("1")).header("Idempotency-Key", "k1")
                         .contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"productId": 1, "quantity": 0}

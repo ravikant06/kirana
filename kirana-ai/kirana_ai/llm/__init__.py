@@ -16,6 +16,7 @@ from kirana_ai.llm.types import (
     LLMError,
     LLMResponse,
     Message,
+    TextDelta,
     Role,
     ToolCall,
     ToolResult,
@@ -30,6 +31,6 @@ from kirana_ai.llm import anthropic, gemini, openai  # noqa: E402,F401  (side-ef
 
 __all__ = [
     "CallRecord", "LLMAdapter", "LLMError", "LLMResponse", "Message", "Role",
-    "ToolCall", "ToolResult", "ToolSpec", "Usage",
+    "TextDelta", "ToolCall", "ToolResult", "ToolSpec", "Usage",
     "available", "get_adapter", "register",
 ]

@@ -90,7 +90,7 @@ class OutboxIntegrationTest {
         }
 
         List<Map<String, Object>> rows = jdbc.queryForList(
-                "SELECT event_id::text AS id, published_at FROM outbox WHERE message_key = ? ORDER BY outbox.id", Long.toString(orderId));
+                "SELECT event_id::text AS id, published_at FROM outbox WHERE topic = 'orders.v1' AND message_key = ? ORDER BY outbox.id", Long.toString(orderId));
         assertThat(rows).allSatisfy(r -> assertThat(r.get("published_at")).isNotNull());
 
         List<String[]> received = consume(Long.toString(orderId), 2);
@@ -105,7 +105,7 @@ class OutboxIntegrationTest {
     }
 
     private List<String> typesFor(long orderId) {
-        return jdbc.queryForList("SELECT event_type FROM outbox WHERE message_key = ? ORDER BY id", String.class,
+        return jdbc.queryForList("SELECT event_type FROM outbox WHERE topic = 'orders.v1' AND message_key = ? ORDER BY id", String.class,
                 Long.toString(orderId));
     }
 

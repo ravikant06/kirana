@@ -49,10 +49,10 @@ class RedisDownIntegrationTest {
         inventory.set(id, 100);
         long user = users.create(new UserRequest("Unlimited", "unlimited@test.com")).id();
         for (int i = 0; i < 25; i++) { // cart limit is 20 per 10 s when Redis is up
-            mvc.perform(post("/cart/items").header("X-User-Id", user).header("Idempotency-Key", java.util.UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
+            mvc.perform(post("/cart/items").with(com.kirana.auth.TestAuth.as(user)).header("Idempotency-Key", java.util.UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                             .content("{\"productId\": %d, \"quantity\": 1}".formatted(id)))
                     .andExpect(status().isOk());
         }
-        mvc.perform(post("/orders").header("X-User-Id", user).header("Idempotency-Key", java.util.UUID.randomUUID().toString())).andExpect(status().isCreated());
+        mvc.perform(post("/orders").with(com.kirana.auth.TestAuth.as(user)).header("Idempotency-Key", java.util.UUID.randomUUID().toString())).andExpect(status().isCreated());
     }
 }

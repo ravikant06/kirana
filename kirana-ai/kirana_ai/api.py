@@ -15,24 +15,30 @@ once. Streaming in Phase 3 revisits this.
 Errors are RFC 7807 ProblemDetail, the same shape Kirana's backend returns, so
 the frontend's Problem component shows either service's errors unchanged.
 """
+import json
 import logging
 import uuid
+from collections.abc import AsyncIterator, Iterator
+
+import anyio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import FastAPI, Header, Request, Response
+from fastapi import Depends, FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from kirana_ai import chat, config, kb
+from kirana_ai import actions, auth, chat, config, kb, policy
 from kirana_ai.db.models import DocType, Document
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.errors import UpstreamUnavailable
 from kirana_ai.llm import LLMError, get_adapter
 from kirana_ai.schemas import (
+    Approval,
+    ApprovalDecision,
     ChatReply,
     ChatRequest,
     Citation,
@@ -63,19 +69,37 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="Kirana AI", version="0.1.0", lifespan=lifespan)
 
-# X-User-Id identifies the shopper until login exists (AD12). Forgeable, exactly
-# like Kirana's own use of it; acceptable while tools read only public data.
-UserId = Annotated[int, Header(alias="X-User-Id", ge=1)]
-# Manage is an admin area with no login yet (Phase 5): the header, when present, is only
-# recorded as who uploaded, never used to allow or deny.
-OptionalUserId = Annotated[int | None, Header(alias="X-User-Id", ge=1)]
+# Phase 5: the caller is whoever Kirana's signed token says, verified on every request, and may
+# do what the token's permissions (`scope`) allow. X-User-Id is not read at all: once a tool can
+# read personal data, a header anyone can type is an identity anyone can claim.
+def shopper(authorization: Annotated[str | None, Header()] = None) -> auth.Caller:
+    return auth.from_header(authorization).require("chat")
+
+
+def kb_admin(authorization: Annotated[str | None, Header()] = None) -> auth.Caller:
+    return auth.from_header(authorization).require("kb:write")
+
+
+Caller = Annotated[auth.Caller, Depends(shopper)]
+
+
+def _turn_caller(caller: auth.Caller) -> policy.Caller:
+    """What the agent gets: permissions for the policy, and credentials instead of the raw token."""
+    return policy.Caller(user_id=caller.user_id, scopes=caller.scopes, credentials=auth.Credentials(caller.token))
+KbAdmin = Annotated[auth.Caller, Depends(kb_admin)]
 
 
 # --- routes ---------------------------------------------------------------------
 
 @app.post("/v1/chat", response_model=ChatReply)
-def post_chat(body: ChatRequest, user_id: UserId, response: Response) -> ChatReply:
-    result = chat.send(user_id, body.message, thread_id=body.thread_id)
+def post_chat(body: ChatRequest, caller: Caller, request: Request, response: Response):
+    if "text/event-stream" in request.headers.get("accept", ""):
+        # Ownership is checked here, before the stream starts: once it has, the 200 is sent
+        # and a 404 can no longer be returned.
+        turn = chat.prepare(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
+        return ClosingStreamingResponse(_closing(_sse(turn, request.url.path)), media_type="text/event-stream",
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+    result = chat.send(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
     usage = Usage(**result.usage)
     # Mirrors X-Query-Count: the Requests panel shows what each call cost.
     response.headers["X-AI-LLM-Calls"] = str(usage.llm_calls)
@@ -93,29 +117,114 @@ def post_chat(body: ChatRequest, user_id: UserId, response: Response) -> ChatRep
     )
 
 
+class ClosingStreamingResponse(StreamingResponse):
+    """
+    A StreamingResponse that always closes its body iterator, however the stream ends.
+
+    Found by experiment (Phase 3): with uvicorn (ASGI 2.4), Starlette does not listen for
+    disconnects; it notices when the next send() fails, and lets that error escape its
+    `async for` *without closing the iterator*. Our generators then stay suspended mid-turn:
+    the LLM call in flight is never recorded, and the provider's HTTP stream stays open,
+    until garbage collection, which the exception's reference cycles can delay indefinitely.
+    """
+    async def stream_response(self, send) -> None:
+        try:
+            await super().stream_response(send)
+        finally:
+            with anyio.CancelScope(shield=True):
+                await self.body_iterator.aclose()
+
+
+async def _closing(frames: Iterator[str]) -> AsyncIterator[str]:
+    """
+    Stream a sync generator from worker threads (AD16), and close it when we stop.
+
+    Closing raises GeneratorExit down the chain, each layer closing the next explicitly:
+    _sse -> chat.run -> agent -> llm.stream, which records the abandoned call -> the
+    provider's stream, which releases its HTTP connection.
+    """
+    done = object()
+    try:
+        while (frame := await anyio.to_thread.run_sync(next, frames, done)) is not done:
+            yield frame
+    finally:
+        with anyio.CancelScope(shield=True):
+            await anyio.to_thread.run_sync(frames.close)
+
+
+def _sse(turn: chat.PreparedTurn, path: str) -> Iterator[str]:
+    """
+    One chat turn as Server-Sent Events: start, status/step/token/reset as they happen,
+    then citation(s) and done. A failure mid-stream becomes an `error` event carrying a
+    ProblemDetail, because the HTTP status was already sent with the first byte.
+
+    A plain (sync) generator: FastAPI iterates it in its worker-thread pool (AD16).
+    """
+    def frame(event: str, data) -> str:
+        return f"event: {event}\ndata: {json.dumps(data, default=str, ensure_ascii=False)}\n\n"
+
+    yield frame("start", {"thread_id": str(turn.thread_id)})
+    events = chat.run(turn)
+    try:
+        for event in events:
+            if event.kind != "done":
+                yield frame(event.kind, event.data)
+                continue
+            r = event.data
+            for c in r.citations:
+                yield frame("citation", Citation(**c).model_dump())
+            yield frame("done", {"thread_id": str(r.thread_id), "message_id": str(r.message_id),
+                                 "reply": r.reply, "steps": r.steps,
+                                 "usage": Usage(**r.usage).model_dump(mode="json")})
+    except (LLMError, UpstreamUnavailable, OperationalError, PoolTimeout) as exc:
+        log.warning("Chat stream failed: %s", exc)
+        yield frame("error", problem_body(path, 503, "Assistant unavailable",
+                                          "The assistant could not answer right now. Please try again in a moment.",
+                                          code="UPSTREAM_UNAVAILABLE"))
+    except Exception:
+        log.exception("Chat stream failed unexpectedly")
+        yield frame("error", problem_body(path, 500, "Internal error", "Something went wrong on our side"))
+    finally:
+        events.close()      # explicitly: never leave closing to the garbage collector
+
+
 @app.get("/v1/threads", response_model=list[ThreadSummary])
-def get_threads(user_id: UserId) -> list[ThreadSummary]:
+def get_threads(caller: Caller) -> list[ThreadSummary]:
     return [ThreadSummary(id=t.id, title=t.title, updated_at=t.updated_at)
-            for t in chat.list_threads(user_id)]
+            for t in chat.list_threads(caller.user_id)]
 
 
 @app.get("/v1/threads/{thread_id}", response_model=ThreadDetail)
-def get_thread(thread_id: uuid.UUID, user_id: UserId) -> ThreadDetail:
-    thread, messages = chat.get_thread(user_id, thread_id)
+def get_thread(thread_id: uuid.UUID, caller: Caller) -> ThreadDetail:
+    thread, messages = chat.get_thread(caller.user_id, thread_id)
     return ThreadDetail(id=thread.id, title=thread.title, created_at=thread.created_at,
                         updated_at=thread.updated_at, messages=[_message(m) for m in messages])
 
 
 @app.delete("/v1/threads/{thread_id}", status_code=204)
-def delete_thread(thread_id: uuid.UUID, user_id: UserId) -> Response:
-    chat.delete_thread(user_id, thread_id)
+def delete_thread(thread_id: uuid.UUID, caller: Caller) -> Response:
+    chat.delete_thread(caller.user_id, thread_id)
     return Response(status_code=204)
+
+
+# --- approvals (Phase 6 M4) -----------------------------------------------------------------
+# The shopper's click. The body says only confirm or reject: what runs is the server's stored copy.
+
+@app.get("/v1/approvals/{approval_id}", response_model=Approval)
+def get_approval(approval_id: uuid.UUID, caller: Caller) -> Approval:
+    return Approval(**vars(actions.get(caller.user_id, approval_id)))
+
+
+@app.post("/v1/approvals/{approval_id}", response_model=Approval)
+def decide_approval(approval_id: uuid.UUID, body: ApprovalDecision, caller: Caller) -> Approval:
+    view = actions.decide(caller.user_id, auth.Credentials(caller.token), approval_id, body.decision)
+    return Approval(**vars(view))
 
 
 # --- knowledge base (Phase 2) --------------------------------------------------------
 
 @app.post("/v1/kb/documents/upload-url", response_model=KbUploadTicket)
-def kb_upload_url(body: KbUploadRequest, request: Request, user_id: OptionalUserId = None):
+def kb_upload_url(body: KbUploadRequest, request: Request, caller: KbAdmin):
     if body.size_bytes > config.KB_MAX_UPLOAD_BYTES:
         # Same answer the signed policy would give, but before the file leaves the browser.
         return problem(request, 400, "Validation failed", "One or more fields are invalid",
@@ -123,17 +232,17 @@ def kb_upload_url(body: KbUploadRequest, request: Request, user_id: OptionalUser
                                 "message": f"must be at most {config.KB_MAX_UPLOAD_BYTES} bytes"}])
     _, ticket = kb.create_upload(body.title, DocType(body.doc_type), body.file_name,
                                  body.content_type, body.size_bytes,
-                                 uploaded_by=f"shopper:{user_id}" if user_id else "admin")
+                                 uploaded_by=f"user:{caller.user_id}")
     return KbUploadTicket(**ticket)
 
 
 @app.get("/v1/kb/documents", response_model=list[KbDocument])
-def kb_documents() -> list[KbDocument]:
+def kb_documents(_admin: KbAdmin) -> list[KbDocument]:
     return [_document(d) for d in kb.list_documents()]
 
 
 @app.delete("/v1/kb/documents/{document_id}", status_code=204)
-def kb_delete(document_id: uuid.UUID) -> Response:
+def kb_delete(document_id: uuid.UUID, _admin: KbAdmin) -> Response:
     kb.delete_document(document_id)
     return Response(status_code=204)
 
@@ -159,9 +268,13 @@ def _message(row: MessageRow) -> MessageOut:
 
 # --- errors: everything becomes a ProblemDetail -----------------------------------
 
+def problem_body(path: str, status: int, title: str, detail: str, **extra) -> dict:
+    return {"type": "about:blank", "title": title, "status": status, "detail": detail,
+            "instance": path, **extra}
+
+
 def problem(request: Request, status: int, title: str, detail: str, **extra) -> JSONResponse:
-    body = {"type": "about:blank", "title": title, "status": status, "detail": detail,
-            "instance": request.url.path, **extra}
+    body = problem_body(request.url.path, status, title, detail, **extra)
     return JSONResponse(body, status_code=status, media_type="application/problem+json")
 
 
@@ -173,6 +286,31 @@ async def validation_failed(request: Request, exc: RequestValidationError) -> JS
                        "The request body is missing, is not valid JSON, or has a value of the wrong type")
     # 400, not FastAPI's default 422: the same status Kirana uses for invalid input.
     return problem(request, 400, "Validation failed", "One or more fields are invalid", errors=errors)
+
+
+@app.exception_handler(auth.InvalidToken)
+async def invalid_token(request: Request, exc: auth.InvalidToken) -> JSONResponse:
+    # The reason is safe to return (it describes the caller's own token) and helps the demo.
+    log.info("Rejected token on %s %s: %s", request.method, request.url.path, exc)
+    response = problem(request, 401, "Unauthorized", str(exc), code="UNAUTHENTICATED")
+    response.headers["WWW-Authenticate"] = 'Bearer error="invalid_token"'
+    return response
+
+
+@app.exception_handler(auth.Forbidden)
+async def forbidden(request: Request, exc: auth.Forbidden) -> JSONResponse:
+    return problem(request, 403, "Forbidden", str(exc), code="FORBIDDEN")
+
+
+@app.exception_handler(actions.ApprovalNotFound)
+async def approval_not_found(request: Request, _exc: actions.ApprovalNotFound) -> JSONResponse:
+    return problem(request, 404, "Approval not found", "No such approval for this shopper")
+
+
+@app.exception_handler(actions.ApprovalTampered)
+async def approval_tampered(request: Request, _exc: actions.ApprovalTampered) -> JSONResponse:
+    return problem(request, 409, "Approval refused", "This request was changed after it was created, so it will not run",
+                   code="APPROVAL_TAMPERED")
 
 
 @app.exception_handler(chat.ThreadNotFound)

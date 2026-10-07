@@ -7,6 +7,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Component;
+import com.kirana.auth.AuthUser;
 import org.springframework.web.servlet.HandlerInterceptor;
 
 /**
@@ -14,7 +15,8 @@ import org.springframework.web.servlet.HandlerInterceptor;
  * refused request costs one Redis call and no database work.
  *   POST /orders                     -> "orders" policy
  *   POST/PUT/DELETE /cart/items/...  -> "cart" policy
- * Requests without X-User-Id are left to the controller (it answers 400).
+ * Keyed by the signed-in user (AuthUser, from the token). Anonymous requests never get here: the
+ * permission check runs first and answers 401.
  * Limiter and settings are optional so web-slice tests (no Redis, no properties) still start.
  */
 @Component
@@ -33,18 +35,13 @@ public class RateLimitInterceptor implements HandlerInterceptor {
     @Override
     public boolean preHandle(HttpServletRequest request, HttpServletResponse response, Object handler) {
         String name = policyName(request);
-        String user = request.getHeader("X-User-Id");
+        AuthUser user = AuthUser.of(request);
         RateLimiter rl = limiter.getIfAvailable();
         RateLimitProperties settings = props.getIfAvailable();
         if (name == null || user == null || rl == null || settings == null) {
             return true;
         }
-        long userId;
-        try {
-            userId = Long.parseLong(user.trim());
-        } catch (NumberFormatException e) {
-            return true; // the controller rejects the header with 400
-        }
+        long userId = user.id();
         Policy policy = name.equals("orders") ? settings.orders() : settings.cart();
         RateLimiter.Decision d = rl.tryAcquire(CacheKeys.rateLimit(name, userId), policy.limit(), policy.window(),
                 System.currentTimeMillis());
