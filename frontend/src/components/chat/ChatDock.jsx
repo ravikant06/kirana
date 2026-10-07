@@ -444,6 +444,7 @@ function searchTarget(status) {
     const parts = [status.where?.category, status.where?.max_price && `under ₹${status.where.max_price}`].filter(Boolean)
     return `products${parts.length ? ` (${parts.join(', ')})` : ''}`
   }
+  if (status.tool === 'get_my_orders' || status.tool === 'get_order') return 'your orders'
   return status.where?.doc_type ? `${status.where.doc_type} documents` : 'store policies'
 }
 

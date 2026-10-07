@@ -20,11 +20,11 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import kirana_auth  # AI Phase 5: bearer tokens instead of X-User-Id
+
 
 def call(api, method, path, body=None, user=None, key=None):
-    headers = {"Content-Type": "application/json"}
-    if user:
-        headers["X-User-Id"] = str(user)
+    headers = {"Content-Type": "application/json", **kirana_auth.headers(api, user)}
     if key:
         headers["Idempotency-Key"] = key
     req = urllib.request.Request(api + path, method=method, headers=headers,
@@ -55,15 +55,13 @@ def main():
     api = args.api
 
     _, p, _ = None, None, None
-    req = urllib.request.Request(api + "/products", method="POST", headers={"Content-Type": "application/json"},
+    req = urllib.request.Request(api + "/products", method="POST", headers={"Content-Type": "application/json", **kirana_auth.headers(api)},
                                  data=json.dumps({"name": f"Bench tea {time.time_ns()}", "price": "10"}).encode())
     product = json.loads(urllib.request.urlopen(req).read())["id"]
     call(api, "PUT", f"/products/{product}/inventory", {"quantity": 100})
     shoppers = []
     for i in range(150):
-        req = urllib.request.Request(api + "/users", method="POST", headers={"Content-Type": "application/json"},
-                                     data=json.dumps({"name": f"B{i}", "email": f"bench-{time.time_ns()}-{i}@t.com"}).encode())
-        shoppers.append(json.loads(urllib.request.urlopen(req).read())["id"])
+        shoppers.append(kirana_auth.signup(api, f"B{i}", f"bench-{time.time_ns()}-{i}@t.com")["id"])
 
     for _ in range(10):  # warm up
         call(api, "POST", "/cart/items", {"productId": product, "quantity": 1}, shoppers[0], str(uuid.uuid4()))

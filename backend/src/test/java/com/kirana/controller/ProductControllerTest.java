@@ -35,8 +35,22 @@ class ProductControllerTest {
     ProductService products;
 
     @Test
+    void shopperCannotCreateProducts() throws Exception {
+        mvc.perform(post("/products").with(com.kirana.auth.TestAuth.as(7)).contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"name\": \"Tea\", \"price\": 10}"))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("FORBIDDEN"));
+    }
+
+    @Test
+    void anonymousCannotCreateProducts() throws Exception {
+        mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON).content("{\"name\": \"Tea\", \"price\": 10}"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void invalidBodyReturnsProblemDetailWithFieldErrors() throws Exception {
-        mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/products").with(com.kirana.auth.TestAuth.admin()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name": "", "price": "12.345"}
                                 """))
@@ -55,7 +69,7 @@ class ProductControllerTest {
         when(products.create(any())).thenReturn(new ProductDetail(7L, "Tea", null, 80.0, 0, List.of(),
                 Instant.EPOCH, Instant.EPOCH, 0, "Beverages"));
 
-        mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON)
+        mvc.perform(post("/products").with(com.kirana.auth.TestAuth.admin()).contentType(MediaType.APPLICATION_JSON)
                         .content("""
                                 {"name": "Tea", "price": 80}
                                 """))
@@ -66,7 +80,7 @@ class ProductControllerTest {
 
     @Test
     void malformedJsonIs400ProblemDetail() throws Exception {
-        mvc.perform(post("/products").contentType(MediaType.APPLICATION_JSON).content("{bad"))
+        mvc.perform(post("/products").with(com.kirana.auth.TestAuth.admin()).contentType(MediaType.APPLICATION_JSON).content("{bad"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.title").value("Malformed request"));
     }

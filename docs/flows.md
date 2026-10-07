@@ -33,7 +33,7 @@ flowchart LR
     GW["Payment gateway<br/>payment-mock :8090<br/>or Razorpay"]
     WH["warehouse-mock<br/>:8091"]
 
-    B -->|"REST + X-User-Id<br/>+ Idempotency-Key"| API
+    B -->|"REST + Bearer token<br/>+ Idempotency-Key"| API
     B -->|"pays on gateway page"| GW
     API --> SAGA
     SAGA --> PG
@@ -93,7 +93,7 @@ stateDiagram-v2
 
 ## 2. Place order (cart → order with stock held → payment window opens)
 
-`POST /orders`, headers `X-User-Id`, `Idempotency-Key`, body `{"paymentProvider":"mock"}`.
+`POST /orders`, headers `Authorization: Bearer <token>`, `Idempotency-Key`, body `{"paymentProvider":"mock"}`.
 
 ```mermaid
 sequenceDiagram

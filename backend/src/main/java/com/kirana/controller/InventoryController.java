@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import com.kirana.dto.AdjustInventoryRequest;
 import com.kirana.dto.InventoryResponse;
 import com.kirana.dto.SetInventoryRequest;
@@ -15,6 +17,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/products/{productId}/inventory")
+@RequiresPermission(Permission.CATALOG_WRITE)
 public class InventoryController {
 
     private final InventoryService inventory;

@@ -30,7 +30,7 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
 /**
  * The one place exceptions become HTTP responses, all as RFC 7807 ProblemDetail.
  * The parent class already maps Spring MVC's own errors (bad JSON, wrong types,
- * missing X-User-Id header, unknown URL); this class adds ours.
+ * missing header, unknown URL); this class adds ours.
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -38,6 +38,22 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
     public record FieldError(String field, String message) {
+    }
+
+    /** No valid token. The WWW-Authenticate header tells a client how to authenticate (RFC 6750). */
+    @ExceptionHandler(com.kirana.auth.UnauthenticatedException.class)
+    public ResponseEntity<ProblemDetail> unauthenticated(com.kirana.auth.UnauthenticatedException ex) {
+        ProblemDetail pd = problem(HttpStatus.UNAUTHORIZED, "Unauthorized", ex.getMessage());
+        pd.setProperty("code", "UNAUTHENTICATED");
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).header(HttpHeaders.WWW_AUTHENTICATE, "Bearer").body(pd);
+    }
+
+    /** Signed in, not allowed. Fine to say so: the endpoint's existence is no secret. */
+    @ExceptionHandler(com.kirana.auth.ForbiddenException.class)
+    public ProblemDetail forbidden(com.kirana.auth.ForbiddenException ex) {
+        ProblemDetail pd = problem(HttpStatus.FORBIDDEN, "Forbidden", ex.getMessage());
+        pd.setProperty("code", "FORBIDDEN");
+        return pd;
     }
 
     @ExceptionHandler(NotFoundException.class)

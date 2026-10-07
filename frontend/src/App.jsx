@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api, setUserId as setApiUser, subscribe } from './api.js'
+import { api, can, getSession, onSessionChange, signOut, subscribe } from './api.js'
+import Login from './pages/Login.jsx'
 import Inspector from './components/Inspector.jsx'
 import ChatDock from './components/chat/ChatDock.jsx'
 import Shop from './pages/Shop.jsx'
@@ -13,27 +14,10 @@ import {
   AlertIcon, BoxIcon, CartIcon, CheckIcon, ChevronDown, CodeIcon, GaugeIcon, HomeIcon, SearchIcon, StoreIcon, UserIcon, XIcon,
 } from './components/icons.jsx'
 
-function readSavedUser() {
-  try {
-    const v = localStorage.getItem('kirana.userId')
-    return v ? Number(v) : null
-  } catch {
-    return null
-  }
-}
-
-function readSavedUserName() {
-  try {
-    return localStorage.getItem('kirana.userName') || null
-  } catch {
-    return null
-  }
-}
-
 const initial = (name) => (name || '?').trim().slice(0, 1).toUpperCase()
 
-// The "account" menu: no login yet, so it picks which shopper's X-User-Id the app sends.
-function ShopperMenu({ userId, userName, options, query, setQuery, onChoose, onManage }) {
+// The account menu: who is signed in, their role, and Sign out.
+function AccountMenu({ user, onSignOut }) {
   const [open, setOpen] = useState(false)
   const ref = useRef()
 
@@ -52,53 +36,22 @@ function ShopperMenu({ userId, userName, options, query, setQuery, onChoose, onM
   return (
     <div className="acct" ref={ref}>
       <button className={`acct-btn ${open ? 'is-open' : ''}`} onClick={() => setOpen((o) => !o)} aria-expanded={open} aria-haspopup="dialog">
-        <span className="avatar">{userId ? initial(userName) : <UserIcon size={16} />}</span>
+        <span className="avatar">{initial(user.name)}</span>
         <span className="acct-text">
-          <small>{userId ? 'Shopping as' : 'Welcome'}</small>
-          <strong>{userId ? userName || `Shopper ${userId}` : 'Pick a shopper'}</strong>
+          <small>Signed in{user.role === 'ADMIN' ? ' · admin' : ''}</small>
+          <strong>{user.name}</strong>
         </span>
         <ChevronDown size={16} className="acct-caret" />
       </button>
       {open && (
-        <div className="acct-pop" role="dialog" aria-label="Switch shopper">
+        <div className="acct-pop" role="dialog" aria-label="Account">
           <div className="acct-pop-head">
-            <strong>Switch shopper</strong>
-            <span className="muted">No login yet: this sets the X-User-Id header.</span>
+            <strong>{user.name}</strong>
+            <span className="muted">{user.email}</span>
+            <span className={`role-badge role-${user.role?.toLowerCase()}`}>{user.role}</span>
           </div>
-          <label className="acct-search">
-            <SearchIcon size={16} />
-            <input
-              id="shopper-search"
-              type="search"
-              placeholder="Search by name or email"
-              aria-label="Find shopper by name or email"
-              value={query}
-              autoFocus
-              onChange={(e) => setQuery(e.target.value)}
-            />
-          </label>
-          <ul className="acct-list" role="listbox" aria-label="Shoppers">
-            {options.length === 0 && <li className="acct-none">{query ? 'No shopper matches' : 'No shoppers yet'}</li>}
-            {options.map((u) => (
-              <li key={u.id}>
-                <button
-                  role="option"
-                  aria-selected={u.id === userId}
-                  className={`acct-opt ${u.id === userId ? 'is-active' : ''}`}
-                  onClick={() => {
-                    onChoose(u)
-                    setOpen(false)
-                  }}
-                >
-                  <span className="avatar avatar-sm">{initial(u.name)}</span>
-                  <span className="acct-opt-name">{u.name}</span>
-                  {u.id === userId && <CheckIcon size={16} />}
-                </button>
-              </li>
-            ))}
-          </ul>
-          <button className="acct-foot" onClick={() => { setOpen(false); onManage() }}>
-            Add or manage shoppers
+          <button className="acct-foot" onClick={() => { setOpen(false); onSignOut() }}>
+            Sign out
           </button>
         </div>
       )}
@@ -108,11 +61,10 @@ function ShopperMenu({ userId, userName, options, query, setQuery, onChoose, onM
 
 export default function App() {
   const [view, setView] = useState({ name: 'shop' })
+  const [session, setSession] = useState(getSession)
   const [users, setUsers] = useState([])
-  const [userQuery, setUserQuery] = useState('')
-  const [userId, setUserId] = useState(readSavedUser)
-  // The chosen shopper may not be in the current search results, so remember their name too.
-  const [userName, setUserName] = useState(readSavedUserName)
+  const userId = session?.user?.id ?? null
+  const userName = session?.user?.name ?? null
   const [cartCount, setCartCount] = useState(0)
   // productId -> quantity, from the same GET /cart that feeds the count. Lets product cards show a stepper.
   const [cartQty, setCartQty] = useState(() => new Map())
@@ -125,9 +77,9 @@ export default function App() {
   const [search, setSearch] = useState('')
   const toastTimer = useRef()
 
-  setApiUser(userId)
-
   useEffect(() => subscribe((log) => setReqCount(log.length)), [])
+  // Signed out (button, expired token, Kirana restarted with a new key): back to the login page.
+  useEffect(() => onSessionChange(setSession), [])
 
   const notify = useCallback((message, kind = 'ok') => {
     clearTimeout(toastTimer.current)
@@ -135,41 +87,18 @@ export default function App() {
     toastTimer.current = setTimeout(() => setToast(null), 3500)
   }, [])
 
-  const chooseUser = useCallback((u) => {
-    setUserId(u ? u.id : null)
-    setUserName(u ? u.name : null)
-  }, [])
-
-  // GET /users is a bounded search (20 newest, or 20 matches), never the whole table.
-  const loadUsers = useCallback(async (selectId, q = '') => {
+  // Manage → Shoppers: a bounded search over GET /users (admins only).
+  const loadUsers = useCallback(async (_selectId, q = '') => {
+    if (!can('users:read')) return setUsers([])
     try {
-      const list = (await api.users.list(q)) || []
-      setUsers(list)
-      if (selectId) chooseUser(list.find((u) => u.id === selectId) || { id: selectId, name: `Shopper ${selectId}` })
-      else if (!readSavedUser() && list.length) chooseUser(list[0])
+      setUsers((await api.users.list(q)) || [])
     } catch {
       setUsers([])
     }
-  }, [chooseUser])
-
-  // Loads on mount (empty query), then searches as the person types, a quarter second after they stop.
+  }, [])
   useEffect(() => {
-    const t = setTimeout(() => loadUsers(undefined, userQuery), 250)
-    return () => clearTimeout(t)
-  }, [userQuery, loadUsers])
-
-  useEffect(() => {
-    try {
-      if (userId) localStorage.setItem('kirana.userId', String(userId))
-      if (userName) localStorage.setItem('kirana.userName', userName)
-    } catch {
-      /* storage unavailable, fine */
-    }
-  }, [userId, userName])
-
-  const shopperOptions = userId && !users.some((u) => u.id === userId)
-    ? [{ id: userId, name: userName || `Shopper ${userId}` }, ...users]
-    : users
+    if (view.name === 'manage') loadUsers()
+  }, [view.name, loadUsers, session])
 
   const refreshCart = useCallback(async () => {
     if (!userId) {
@@ -218,12 +147,18 @@ export default function App() {
     setSearch('')
   }
 
+  // Hiding is convenience only: Kirana and the AI service answer 403 without the permission.
+  const isAdmin = can('catalog:write')
   const navItems = [
     ['shop', 'Home', HomeIcon],
     ['orders', 'Orders', BoxIcon],
     ['cart', 'Cart', CartIcon],
-    ['manage', 'Manage', StoreIcon],
+    ...(isAdmin ? [['manage', 'Manage', StoreIcon]] : []),
   ]
+
+  if (!session) {
+    return <Login notify={notify} />
+  }
 
   return (
     <div className={`app ${inspectorOpen ? 'with-inspector' : ''}`}>
@@ -263,22 +198,16 @@ export default function App() {
           </form>
 
           <div className="topbar-right">
-            <ShopperMenu
-              userId={userId}
-              userName={userName}
-              options={shopperOptions}
-              query={userQuery}
-              setQuery={setUserQuery}
-              onChoose={chooseUser}
-              onManage={() => go('manage', { tab: 'shoppers' })}
-            />
+            <AccountMenu user={session.user} onSignOut={() => { signOut(); go('shop') }} />
             <nav className="topnav" aria-label="Main">
               <button className={`topnav-item ${activeTab === 'orders' ? 'is-active' : ''}`} onClick={() => go('orders')}>
                 <BoxIcon /> <span>Orders</span>
               </button>
-              <button className={`topnav-item ${activeTab === 'manage' ? 'is-active' : ''}`} onClick={() => go('manage')}>
-                <StoreIcon /> <span>Manage</span>
-              </button>
+              {isAdmin && (
+                <button className={`topnav-item ${activeTab === 'manage' ? 'is-active' : ''}`} onClick={() => go('manage')}>
+                  <StoreIcon /> <span>Manage</span>
+                </button>
+              )}
               <button className={`topnav-item topnav-cart ${activeTab === 'cart' ? 'is-active' : ''}`} onClick={() => go('cart')}>
                 <span className="cart-ico">
                   <CartIcon />
@@ -288,13 +217,15 @@ export default function App() {
               </button>
             </nav>
             <div className="devtools" role="group" aria-label="Developer tools">
-              <button
-                className={`req-toggle ${labOpen ? 'is-on' : ''}`}
-                onClick={() => setLabOpen(true)}
-                title="Resilience lab: circuit breakers, bulkhead, fault injection"
-              >
-                <GaugeIcon size={16} /> <span className="req-label">Lab</span>
-              </button>
+              {can('system') && (
+                <button
+                  className={`req-toggle ${labOpen ? 'is-on' : ''}`}
+                  onClick={() => setLabOpen(true)}
+                  title="Resilience lab: circuit breakers, bulkhead, fault injection"
+                >
+                  <GaugeIcon size={16} /> <span className="req-label">Lab</span>
+                </button>
+              )}
               <button
                 className={`req-toggle ${inspectorOpen ? 'is-on' : ''}`}
                 onClick={() => setInspectorOpen((o) => !o)}
@@ -335,8 +266,8 @@ export default function App() {
           <Cart userId={userId} onCartChanged={refreshCart} onOrdered={(id) => go('orders', { highlight: id })} notify={notify} goShop={() => go('shop')} />
         )}
         {view.name === 'orders' && <Orders userId={userId} highlight={view.highlight} notify={notify} goShop={() => go('shop')} />}
-        {view.name === 'manage' && (
-          <Manage key={view.tab || 'catalog'} initialTab={view.tab} notify={notify} users={users} onUsersChanged={loadUsers} userId={userId} onChooseUser={chooseUser} />
+        {view.name === 'manage' && isAdmin && (
+          <Manage key={view.tab || 'catalog'} initialTab={view.tab} notify={notify} users={users} onUsersChanged={loadUsers} />
         )}
       </main>
 

@@ -23,13 +23,27 @@ def _client() -> httpx.Client:
                         headers={"Accept": "application/json"})
 
 
-def _get(path: str, **params):
+class SessionExpired(Exception):
+    """Kirana refused the shopper's token (it expired during the turn)."""
+
+
+class NotPermitted(Exception):
+    """Kirana answered 403: this account may not do that. Permanent, unlike an outage: never retry."""
+
+
+def _get(path: str, token: str | None = None, **params):
+    # The shopper's own token, forwarded as-is (Phase 5): Kirana decides whose data this is.
+    headers = {"Authorization": f"Bearer {token}"} if token else None
     try:
-        r = _client().get(path, params=params)
+        r = _client().get(path, params=params, headers=headers)
     except httpx.HTTPError as exc:
         raise UpstreamUnavailable("kirana", f"{path}: {type(exc).__name__}: {exc}") from exc
     if r.status_code == 404:
         return None
+    if r.status_code == 401 and token:
+        raise SessionExpired()
+    if r.status_code == 403:
+        raise NotPermitted()
     if r.status_code >= 400:
         raise UpstreamUnavailable("kirana", f"{path} answered {r.status_code}: {r.text[:200]}")
     return r.json()
@@ -60,3 +74,13 @@ def live(product_ids: list[int]) -> dict[int, dict]:
         return {}
     rows = _get("/products/batch", ids=",".join(str(i) for i in product_ids[:50])) or []
     return {row["id"]: row for row in rows}
+
+
+def my_orders(token: str) -> list[dict]:
+    """The signed-in shopper's orders, newest first. Kirana picks the user from the token."""
+    return _get("/orders", token=token) or []
+
+
+def my_order(token: str, order_id: int) -> dict | None:
+    """One order, or None: missing and someone else's look the same (Kirana answers 404 for both)."""
+    return _get(f"/orders/{order_id}", token=token)

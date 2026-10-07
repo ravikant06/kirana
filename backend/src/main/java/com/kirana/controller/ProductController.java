@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import java.net.URI;
 import java.util.List;
 
@@ -50,17 +52,20 @@ public class ProductController {
         return products.get(id);
     }
 
+    @RequiresPermission(Permission.CATALOG_WRITE)
     @PostMapping
     public ResponseEntity<ProductDetail> create(@Valid @RequestBody ProductRequest req) {
         ProductDetail created = products.create(req);
         return ResponseEntity.created(URI.create("/products/" + created.id())).body(created);
     }
 
+    @RequiresPermission(Permission.CATALOG_WRITE)
     @PutMapping("/{id}")
     public ProductDetail update(@PathVariable Long id, @Valid @RequestBody ProductRequest req) {
         return products.update(id, req);
     }
 
+    @RequiresPermission(Permission.CATALOG_WRITE)
     @DeleteMapping("/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void delete(@PathVariable Long id) {

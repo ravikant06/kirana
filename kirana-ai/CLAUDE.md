@@ -55,7 +55,8 @@ Python 3.11, venv in `.venv`, `pip install -e ".[dev]"`. Qdrant runs from Kirana
   (`get_adapter()`), embeddings through `embeddings.py`.
 - **No frameworks that hide the mechanics** (no LangChain etc.). Hand-written loops, so
   every step can be traced and explained.
-- **Scope and identity are injected by the server, never tool parameters.**
+- **Scope and identity are injected by the server, never tool parameters.** The shopper's verified
+  token rides in the turn (`PreparedTurn.user_token`), never in tool arguments, prompts or logs.
 - **Embed descriptions, fetch live facts.** Price, stock and order status never go in Qdrant.
 - **The AI service never reads Kirana's tables.** Kirana data comes over REST only.
 - **No SystemExit in the request path** (it ends a server, not a request): raise LLMError or
@@ -78,7 +79,7 @@ adapter, `agent.answer_stream`, `chat.prepare` + `chat.run`), relevance floor on
 (`RELEVANCE_FLOOR`, from `eval.run_floor`), answer evals (`eval.run_answers`, Gemini judge,
 `--grade`), unverified citations flagged. Ravi's Phase 3 runs still open (baseline, grading, thinking level).
 **Phase 4 built:** `search_products` tool (`products.py`: hybrid → live hydration from Kirana via `kirana.py`; the reranker is built but off, AD22), `kirana_products` index from `catalog.v1` events (`catalog.py`, group `kirana-ai-catalog`) plus `cli index-products`, product cards in chat, evals `eval.run_products` and `eval.run_routing`. Shared Kafka loop in `consumer.py`.
-`docs/concepts-learned.md` covers Phases 0–4. Ravi runs the Phase 3 evals at the very end, with every phase's results. **Next: Phase 5**, once AD7 is decided and the plan approved.
+`docs/concepts-learned.md` covers Phases 0–4. Ravi runs the Phase 3 evals at the very end, with every phase's results. **Phase 5 built (slim):** `auth.py` verifies Kirana's RS256 token on every route (JWKS, `aud` kirana-ai); `X-User-Id` is gone; order tools `get_my_orders` / `get_order` forward the token, have no identity parameter, and are offered only to signed-in turns (`agent.tools_for`). Kirana: password login, roles as permission bundles in the token's `scope`, JWKS (D72, D73); the AI checks `chat` and `kb:write`. Next: Phase 6 planning with Ravi.
 
 Only the current phase is in scope. Gaps listed in the plan for later phases (no auth, no
 actions, no budgets or timeouts…) are deliberate: those phases fix them.

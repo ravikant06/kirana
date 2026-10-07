@@ -401,6 +401,27 @@ persistence and evicts), and makes cart and checkout depend on Redis: down → 5
 closed on purpose; failing open would run requests unprotected). Kept behind
 `kirana.idempotency.store=redis` for the experiments.
 
+**D72. A dev login with RS256 tokens, checked by one filter (AI Phase 5).** The AI assistant's
+first personal-data tool ("my orders") made the forgeable `X-User-Id` a real leak. Kept to what
+the AI track needs: `POST /auth/login {userId}` issues an RS256 JWT (Nimbus), `/.well-known/jwks.json`
+publishes the public key, and `BearerTokenFilter` verifies algorithm, kid, signature, issuer,
+audience and expiry, then overwrites `X-User-Id` with `sub`, so no controller, the rate limiter
+nor idempotency changed. RS256, not HS256: the AI service verifies with the public key and can't
+mint tokens. Costs: no passwords or roles, no Spring Security, the key lives in memory (restart
+signs everyone out), and requests without a token still use `X-User-Id` while
+`kirana.auth.allow-user-header=true`.
+
+**D73. Passwords, roles as permission bundles, and the token as the only identity.** (AI Phase 5,
+replaces D72's dev login and X-User-Id fallback) `POST /auth/login {email, password}` checks a
+bcrypt hash (spring-security-crypto only; an unknown email costs the same bcrypt check, so the
+form can't reveal which emails exist). `users.role` is SHOPPER or ADMIN (V10); a role is a bundle of
+permissions (`entity.Role`), sent in the token's `scope` claim, and code checks permissions, never
+role names: `@RequiresPermission` on controllers (401 no token, 403 missing permission) and
+`@CurrentUser` as the only source of the caller's id. X-User-Id is removed; the rush simulator and
+scripts sign up and sign in like any client. Sign-up is public and always SHOPPER. The caller is
+read from the token alone (no DB read per request), so a role change applies at the next sign-in.
+Costs: no Spring Security, no refresh tokens or revocation (1 h lifetime), key in memory.
+
 ## Parked
 
 - Inventory reservation (on hand vs reserved) for async payment and flash sales, Stages 6–7.

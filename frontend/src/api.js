@@ -6,10 +6,58 @@
 
 let log = []
 const listeners = new Set()
-let currentUserId = null
+// AI Phase 5: sign-in. POST /auth/login (email + password) returns an RS256 token with the user's
+// role and permissions. The session lives in sessionStorage (gone when the tab closes) and every
+// call to Kirana and to the AI service carries it as "Authorization: Bearer". There is no other
+// way to say who you are: the X-User-Id header of Stages 1-7 is gone.
+const SESSION_KEY = 'kirana.session'
+const sessionListeners = new Set()
 
-export function setUserId(id) {
-  currentUserId = id
+function readSession() {
+  try {
+    const s = JSON.parse(sessionStorage.getItem(SESSION_KEY))
+    return s && new Date(s.expiresAt).getTime() > Date.now() ? s : null
+  } catch {
+    return null
+  }
+}
+
+let session = readSession()
+
+function setSession(next) {
+  session = next
+  try {
+    if (next) sessionStorage.setItem(SESSION_KEY, JSON.stringify(next))
+    else sessionStorage.removeItem(SESSION_KEY)
+  } catch { /* storage unavailable: this tab only */ }
+  sessionListeners.forEach((fn) => fn(session))
+}
+
+export const getSession = () => session
+export const can = (permission) => !!session?.permissions?.includes(permission)
+
+export function onSessionChange(fn) {
+  sessionListeners.add(fn)
+  return () => sessionListeners.delete(fn)
+}
+
+export async function signIn(email, password) {
+  const r = await requestOnce('POST', '/auth/login', { email, password }, { anonymous: true })
+  setSession(r)
+  return r
+}
+
+export function signOut() {
+  setSession(null)
+}
+
+// The token's claims, for the Requests panel (decoded only, never trusted here: the servers verify).
+export function decodeToken(token) {
+  try {
+    return JSON.parse(atob(token.split('.')[1].replace(/-/g, '+').replace(/_/g, '/')))
+  } catch {
+    return null
+  }
 }
 
 export function subscribe(fn) {
@@ -75,7 +123,8 @@ async function request(method, path, body, opts = {}) {
   }
 }
 
-// opts.userId: act as a different shopper for this call (the rush simulator uses it).
+// opts.token: send this token instead of the session's (the rush simulator's buyers have their own).
+// opts.anonymous: send no token at all (sign-in, sign-up).
 // opts.quiet:  leave it out of the Requests panel (background polling).
 // opts.meta:   never throw; return { ok, status, data, queries, ms } instead.
 // opts.service: 'ai' sends it to the AI service (/ai → kirana-ai on :8000) instead of Spring Boot.
@@ -84,8 +133,10 @@ async function requestOnce(method, path, body, opts = {}) {
   const ai = opts.service === 'ai'
   const headers = { Accept: 'application/json' }
   if (body !== undefined) headers['Content-Type'] = 'application/json'
-  const userId = opts.userId ?? currentUserId
-  if (userId) headers['X-User-Id'] = String(userId)
+  const token = opts.anonymous ? null : opts.token ?? session?.accessToken ?? null
+  if (token) headers.Authorization = `Bearer ${token}`
+  const claims = token ? decodeToken(token) : null
+  const userId = claims ? Number(claims.sub) : null
   if (opts.idempotencyKey) headers['Idempotency-Key'] = opts.idempotencyKey
   const log = opts.quiet ? () => {} : record
 
@@ -95,6 +146,8 @@ async function requestOnce(method, path, body, opts = {}) {
     path: ai ? '/ai' + path : path,
     service: ai ? 'ai' : 'backend',
     userId,
+    auth: token ? 'token' : null,
+    claims,
     requestBody: body,
     idempotencyKey: opts.idempotencyKey,
     attempt: opts.attempt ?? 1,
@@ -153,6 +206,9 @@ async function requestOnce(method, path, body, opts = {}) {
     aiUsage,
     responseBody: data,
   })
+
+  // The session's token was refused (expired, or Kirana restarted with a new key): sign in again.
+  if (res.status === 401 && token && token === session?.accessToken) setSession(null)
 
   if (opts.meta) {
     return { ok: res.ok, status: res.status, data, queries: queries === null ? null : Number(queries), ms, retryAfter }
@@ -223,8 +279,11 @@ export async function uploadToStorage(ticket, file) {
 const q = encodeURIComponent
 
 export const api = {
+  auth: {
+    signUp: (body) => request('POST', '/users', body, { anonymous: true }),
+  },
   users: {
-    // Bounded search: newest shoppers first, filtered by name or email when q is given.
+    // Admins only (users:read). Bounded search: newest shoppers first, filtered by name or email when q is given.
     list: (q = '', limit = 20) => request('GET', `/users?limit=${limit}${q ? `&q=${q && encodeURIComponent(q)}` : ''}`),
     create: (body) => request('POST', '/users', body),
   },
@@ -262,10 +321,16 @@ export const api = {
   },
   // The rush simulator: set up throwaway shoppers quietly, then check out as each of them.
   rush: {
-    createShopper: (name, email) => request('POST', '/users', { name, email }, { quiet: true }),
-    addToCart: (userId, productId) =>
-      request('POST', '/cart/items', { productId, quantity: 1 }, { userId, quiet: true, idempotencyKey: newKey() }),
-    checkout: (userId) => request('POST', '/orders', undefined, { userId, meta: true, idempotencyKey: newKey() }),
+    // Each buyer signs up and signs in like a real shopper, then acts with their own token.
+    createShopper: async (name, email) => {
+      const password = `rush-${crypto.randomUUID()}`
+      await request('POST', '/users', { name, email, password }, { quiet: true, anonymous: true })
+      const r = await requestOnce('POST', '/auth/login', { email, password }, { anonymous: true, quiet: true })
+      return { ...r.user, token: r.accessToken }
+    },
+    addToCart: (token, productId) =>
+      request('POST', '/cart/items', { productId, quantity: 1 }, { token, quiet: true, idempotencyKey: newKey() }),
+    checkout: (token) => request('POST', '/orders', undefined, { token, meta: true, idempotencyKey: newKey() }),
   },
   // Stage 5 Resilience lab
   system: {
@@ -289,10 +354,10 @@ export const api = {
     list: () => request('GET', '/orders'),
     get: (id) => request('GET', `/orders/${q(id)}`),
   },
-  // The AI assistant (kirana-ai). Same X-User-Id, same ProblemDetail errors, different service.
+  // The AI assistant (kirana-ai). Same ProblemDetail errors, different service; always the token (AI Phase 5).
   ai: {
     // userId is passed explicitly: the dock knows whose chat it shows, and a hot reload of this
-    // module resets currentUserId to null while the dock still holds a shopper.
+    // module must not lose track of whose thread the dock shows.
     chat: (userId, message, threadId) =>
       request('POST', '/v1/chat', threadId ? { message, thread_id: threadId } : { message }, { service: 'ai', userId }),
     threads: (userId) => request('GET', '/v1/threads', undefined, { service: 'ai', userId }),
@@ -317,7 +382,9 @@ export const api = {
 // the 200, because the stream had already started) rejects with an ApiError like any request.
 export async function streamChat(userId, message, threadId, onEvent, signal) {
   const body = threadId ? { message, thread_id: threadId } : { message }
+  const token = session?.accessToken ?? null
   const entry = { id: crypto.randomUUID(), method: 'POST', path: '/ai/v1/chat', service: 'ai', userId,
+    auth: token ? 'token' : null, claims: token ? decodeToken(token) : null,
     requestBody: body, at: new Date(), streamed: true }
   const started = performance.now()
   // Every SSE event with its arrival time: the Requests panel shows this as a timeline.
@@ -334,7 +401,8 @@ export async function streamChat(userId, message, threadId, onEvent, signal) {
   try {
     res = await fetch('/ai/v1/chat', {
       method: 'POST',
-      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json', 'X-User-Id': String(userId) },
+      headers: { Accept: 'text/event-stream', 'Content-Type': 'application/json',
+        ...(token ? { Authorization: `Bearer ${token}` } : {}) },
       body: JSON.stringify(body),
       signal,
     })
@@ -349,6 +417,7 @@ export async function streamChat(userId, message, threadId, onEvent, signal) {
     const text = await res.text()
     let problem
     try { problem = JSON.parse(text) } catch { problem = { status: res.status, detail: text || res.statusText } }
+    if (res.status === 401 && token === session?.accessToken) setSession(null)
     finish(res.status, problem)
     throw new ApiError(res.status, problem)
   }

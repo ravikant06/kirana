@@ -82,8 +82,15 @@ export default function Inspector({ open, onClose }) {
               {expanded === e.id && (
                 <div className="req-detail">
                   <div className="req-meta">
-                    {e.at.toLocaleTimeString()} {e.userId ? `as user ${e.userId}` : 'with no X-User-Id'}
+                    {e.at.toLocaleTimeString()} {e.userId ? `as user ${e.userId}` : 'anonymous'}{e.auth === 'token' ? ' · Bearer token' : e.auth === 'header' ? ' · X-User-Id' : ''}
                   </div>
+                  {e.claims && (
+                    <div className="req-meta">
+                      Token claims (what the server verifies, then trusts): sub <code>{e.claims.sub}</code>, aud{' '}
+                      <code>{[].concat(e.claims.aud).join(', ')}</code>, expires{' '}
+                      {new Date(e.claims.exp * 1000).toLocaleTimeString()}.
+                    </div>
+                  )}
                   {e.queries != null && (
                     <div className="req-meta">
                       Backend ran {e.queries} SQL {e.queries === 1 ? 'statement' : 'statements'}, {e.dbMs} ms inside the

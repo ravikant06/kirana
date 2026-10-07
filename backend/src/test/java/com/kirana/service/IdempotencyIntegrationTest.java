@@ -245,7 +245,7 @@ class IdempotencyIntegrationTest {
 
     private MockHttpServletResponse post(long user, String key, String path, String body) throws Exception {
         var req = org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post(path)
-                .header("X-User-Id", user).contentType(MediaType.APPLICATION_JSON);
+                .with(com.kirana.auth.TestAuth.as(user)).contentType(MediaType.APPLICATION_JSON);
         if (key != null) {
             req.header(IdempotentRequests.HEADER, key);
         }

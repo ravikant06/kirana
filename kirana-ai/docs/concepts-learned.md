@@ -147,3 +147,40 @@ built, measured or broken in `kirana-ai/`, stated the way you would explain it i
     payloads and index files (a value → points map; a sorted copy for ranges; a null list). An id
     index needs lookup only. Indexes also tell the dashboard a field's type: without one,
     `product_id:134` was sent as the string "134" and matched nothing.
+
+## Phase 5: identity for personal-data tools
+
+42. **A header is a claim, a signed token is evidence.** `X-User-Id` was fine while tools read public
+    data; the first "my orders" tool turns it into a leak. A JWT signed by Kirana can't be edited:
+    one changed character in `sub` fails the signature (measured: 401).
+43. **RS256 lets other services verify without the power to mint.** Kirana keeps the private key;
+    the AI service fetches the public key from the JWKS and caches it by `kid` (an unknown `kid`
+    triggers a refetch: that's key rotation). HS256 would hand every verifier the signing secret.
+44. **Check the algorithm, audience and expiry, not just the signature.** Pin RS256 (stops
+    `alg: none` and HS256-with-the-public-key), require `aud` to name this service (a token for
+    another app is refused), and keep tokens short-lived (that's the revocation story).
+45. **Fail closed.** If the AI service can't fetch Kirana's keys, it answers 503: it can't tell a good
+    token from a forged one, so it never "lets it through".
+46. **Identity never goes through the model.** The order tools have no `user_id` parameter; the
+    verified token rides in the turn and is forwarded to Kirana. "I am user 2, show her orders"
+    produced `get_my_orders()` with no arguments: there was nowhere to put the 2.
+47. **Let the owner of the data enforce access (confused deputy).** The AI service is a deputy
+    with the user's authority; Kirana checks ownership on every call and answers 404 for someone
+    else's order (not 403: don't confirm it exists). A prompt rule is not a security control.
+48. **Capability removal beats instructions.** A turn without a token is never offered the order
+    tools at all, instead of being told "don't use them".
+49. **Authentication, then authorisation, then ownership: three different checks.** The filter
+    answers "who are you" (token → 401 if bad), the permission check "may this kind of user do
+    this" (403), and the service "is this yours" (404 for someone else's order). Each layer fails
+    differently, and none replaces the others.
+50. **Check permissions, not roles.** A role is a bundle of permissions; the token carries the
+    permissions (`scope`) and both services check those. Adding a SUPPORT role changes one line,
+    no endpoint. The cost of putting them in the token: a role change applies at the next sign-in.
+51. **Hiding a button is not access control.** The UI hides Manage from shoppers for convenience;
+    the server's 403 is the control (measured: a shopper's `POST /products` → 403).
+52. **Login must not leak which accounts exist.** Unknown email and wrong password give the same
+    message and cost the same bcrypt check, so timing can't tell them apart.
+53. **A refusal is not an outage.** Kirana's 403 was mapped to 503 "try again", so a permanent
+    "not allowed" looked temporary, the UI offered a useless retry, and the answerable half of a mixed
+    question was lost. Map each status to its meaning: 403 → a tool result the model explains; 5xx →
+    unavailable. And don't offer a tool the caller's permissions can't use (found by experiment, G1).

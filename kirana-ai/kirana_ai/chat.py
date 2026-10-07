@@ -61,6 +61,10 @@ class PreparedTurn:
     thread_id: uuid.UUID
     text: str
     history: list[Message]
+    # The shopper's verified token, for the order tools (Phase 5). Held for this turn only:
+    # never saved, never logged, never shown to the model.
+    user_token: str | None = field(default=None, repr=False)
+    user_scopes: frozenset[str] = frozenset()
 
 
 @dataclass(frozen=True)
@@ -78,15 +82,18 @@ def send(
     text: str,
     thread_id: uuid.UUID | None = None,
     llm: LLMAdapter | None = None,
+    user_token: str | None = None,
+    user_scopes: frozenset[str] = frozenset(),
 ) -> TurnResult:
     """One whole turn, returned at the end (the JSON API, the CLI, the tests)."""
-    for event in run(prepare(user_id, text, thread_id), llm):
+    for event in run(prepare(user_id, text, thread_id, user_token, user_scopes), llm):
         if event.kind == "done":
             return event.data
     raise RuntimeError("turn ended without a result")
 
 
-def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None) -> PreparedTurn:
+def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None,
+            user_token: str | None = None, user_scopes: frozenset[str] = frozenset()) -> PreparedTurn:
     """
     Step 1, a short transaction: thread, ownership, history, the shopper's message.
 
@@ -102,7 +109,8 @@ def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None) -> Prep
             thread = _owned(session, user_id, thread_id)
         history = load_history(session, thread.id, config.HISTORY_TURNS)
         session.add(MessageRow(thread_id=thread.id, role=RowRole.USER, content=text))
-        return PreparedTurn(thread_id=thread.id, text=text, history=history)
+        return PreparedTurn(thread_id=thread.id, text=text, history=history, user_token=user_token,
+                            user_scopes=frozenset(user_scopes))
 
 
 def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent]:
@@ -122,7 +130,8 @@ def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent
     started = time.perf_counter()
     first_token_ms = None
     result = None
-    events = agent.answer_stream(turn.text, history=turn.history, llm=llm)
+    events = agent.answer_stream(turn.text, history=turn.history, llm=llm, user_token=turn.user_token,
+                                 user_scopes=turn.user_scopes)
     try:
         for event in events:
             if event.kind == "done":

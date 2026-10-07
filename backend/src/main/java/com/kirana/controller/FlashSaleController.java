@@ -1,5 +1,7 @@
 package com.kirana.controller;
 
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import java.util.List;
 
 import com.kirana.dto.FlashSaleResponse;
@@ -33,11 +35,13 @@ public class FlashSaleController {
         return flashSales.status(productId);
     }
 
+    @RequiresPermission(Permission.CATALOG_WRITE)
     @PostMapping("/products/{productId}/flash-sale")
     public FlashSaleResponse arm(@PathVariable Long productId) {
         return flashSales.arm(productId);
     }
 
+    @RequiresPermission(Permission.CATALOG_WRITE)
     @DeleteMapping("/products/{productId}/flash-sale")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void disarm(@PathVariable Long productId) {

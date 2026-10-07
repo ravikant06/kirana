@@ -21,14 +21,14 @@ import urllib.error
 import urllib.request
 import uuid
 
+import kirana_auth  # AI Phase 5: bearer tokens instead of X-User-Id
+
 TOXIPROXY = "http://localhost:8474"
 PROXY = "kirana-api"
 
 
 def call(base, method, path, body=None, user=None, key=None, timeout=10):
-    headers = {"Content-Type": "application/json"}
-    if user:
-        headers["X-User-Id"] = str(user)
+    headers = {"Content-Type": "application/json", **kirana_auth.headers(base, user)}
     if key:
         headers["Idempotency-Key"] = key
     req = urllib.request.Request(base + path, method=method, headers=headers,
@@ -85,7 +85,7 @@ def main():
     api = args.api
     toxic(False)
 
-    _, u = call(api, "POST", "/users", {"name": "Retry", "email": f"retry-{time.time_ns()}@test.com"})
+    u = kirana_auth.signup(api, "Retry", f"retry-{time.time_ns()}@test.com")
     user = u["id"]
     _, p = call(api, "POST", "/products", {"name": f"Retry tea {time.time_ns()}", "price": "50"})
     call(api, "PUT", f"/products/{p['id']}/inventory", {"quantity": 10})

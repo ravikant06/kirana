@@ -12,6 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import text
 
+from conftest import admin_bearer, bearer
 from kirana_ai import api, config, kb, storage
 
 UPLOAD = {"title": "Returns — ₹ refunds", "doc_type": "policy", "file_name": "Returns Policy (v2).pdf",
@@ -22,7 +23,8 @@ UPLOAD = {"title": "Returns — ₹ refunds", "doc_type": "policy", "file_name":
 def client(ai_db):
     with ai_db.begin() as conn:
         conn.execute(text("TRUNCATE documents"))
-    return TestClient(api.app, raise_server_exceptions=False)
+    # Manage is admin-only (Phase 5): every call here carries an admin token unless it says otherwise.
+    return TestClient(api.app, raise_server_exceptions=False, headers=admin_bearer(1))
 
 
 def _signed_conditions(ticket: dict) -> list:
@@ -57,13 +59,13 @@ def test_ticket_pins_key_type_size_and_metadata(client):
 
 def test_ticket_creates_a_pending_document(client):
     doc_id = client.post("/v1/kb/documents/upload-url", json=UPLOAD,
-                         headers={"X-User-Id": "7"}).json()["document_id"]
+                         headers=admin_bearer(7)).json()["document_id"]
 
     (doc,) = client.get("/v1/kb/documents").json()
     assert doc["id"] == doc_id
     assert doc["status"] == "pending"
     assert doc["title"] == "Returns — ₹ refunds"
-    assert doc["uploaded_by"] == "shopper:7"
+    assert doc["uploaded_by"] == "user:7"
 
 
 @pytest.mark.parametrize("change, field", [
@@ -132,3 +134,10 @@ def test_unknown_document_is_404(client):
 ])
 def test_file_names_are_made_safe_for_keys(name, safe):
     assert kb.safe_file_name(name) == safe
+
+
+def test_kb_admin_needs_the_kb_write_permission(ai_db):
+    anonymous = TestClient(api.app, raise_server_exceptions=False)
+    assert anonymous.get("/v1/kb/documents").status_code == 401
+    r = anonymous.post("/v1/kb/documents/upload-url", json=UPLOAD, headers=bearer(7))   # a shopper
+    assert r.status_code == 403 and r.json()["code"] == "FORBIDDEN"

@@ -22,6 +22,8 @@ import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
 
+import kirana_auth  # AI Phase 5: bearer tokens instead of X-User-Id
+
 CONTAINER = "kirana-postgres-1"
 REPEAT = 5
 BULK_USER_EMAIL = "bulk-user-777@kirana.test"
@@ -38,8 +40,8 @@ def psql(sql):
 
 def http(api, path, user=None):
     req = urllib.request.Request(api + path)
-    if user:
-        req.add_header("X-User-Id", str(user))
+    for k, v in (kirana_auth.headers(api, user) if user else {}).items():
+        req.add_header(k, v)
     start = time.perf_counter()
     with urllib.request.urlopen(req) as res:
         res.read()
@@ -103,6 +105,7 @@ def main():
     args = ap.parse_args()
 
     user = int(psql(f"select id from users where email = '{BULK_USER_EMAIL}'"))
+    kirana_auth.login(args.api, BULK_USER_EMAIL, kirana_auth.DEMO_PASSWORD)   # seeded users have the demo password
     order = int(psql(f"select id from orders where user_id = {user} order by created_at desc, id desc limit 1"))
     live = int(psql("select count(*) from products where deleted_at is null"))
     deep_page = live // PAGE_SIZE - 1

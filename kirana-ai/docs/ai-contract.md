@@ -1,4 +1,4 @@
-# ai-contract.md: Kirana ⇄ Kirana AI (v0.5)
+# ai-contract.md: Kirana ⇄ Kirana AI (v0.6)
 
 The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every change.
 **(Pn)** = added in phase n of `AI-PLAN.md`. Build only what the current phase needs.
@@ -20,7 +20,7 @@ The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every chan
 | Phase | Browser → AI | AI → Kirana |
 |---|---|---|
 | P1–P4 | `X-User-Id` (used **only** to scope threads; forgeable, like Kirana today) | none: tools call only public endpoints |
-| P5+ | `Authorization: Bearer <Kirana JWT>` (RS256; the AI verifies it via Kirana's JWKS) | the same header, forwarded unchanged |
+| P5+ ✅ | `Authorization: Bearer <Kirana JWT>` on every route (RS256; verified against Kirana's `/.well-known/jwks.json`: `iss` = kirana, `aud` ∋ kirana-ai, `exp`). Permissions from the `scope` claim: chat and threads need `chat`, `/v1/kb/**` needs `kb:write` (403 otherwise). `X-User-Id` is not read | the same header, forwarded unchanged by the order tools |
 
 The request body and tool arguments **never** contain a user id.
 
@@ -46,7 +46,7 @@ The request body and tool arguments **never** contain a user id.
     Thread        = { id, title, created_at, updated_at,
                       messages: [{ id, role, content, citations, steps, created_at }] }
 
-Status codes: 200 · 204 (delete) · 400 (validation, missing `X-User-Id`) · 404 (no such thread
+Status codes: 200 · 204 (delete) · 400 (validation) · 401 `UNAUTHENTICATED` (no, bad or expired token) · 403 `FORBIDDEN` (missing permission) · 404 (no such thread
 *for this shopper*: missing and someone else's look the same) · 503 `UPSTREAM_UNAVAILABLE`
 (LLM, Qdrant, embeddings or Postgres down — title `Assistant unavailable` or `Database busy`; the
 underlying message is logged, never returned) · 500.
@@ -97,8 +97,7 @@ The browser posts every entry of `form_fields`, then the file **last**, to `uplo
 (`{document_id}/{safe file name}`), `Content-Type`, the four `x-amz-meta-*` fields and the
 signature; the signed policy pins all of them, so changing any one makes MinIO answer 403.
 The title travels URL-encoded in `x-amz-meta-title`. There is no confirm call: MinIO's event
-is the confirmation. `X-User-Id` is optional here (recorded as `uploaded_by` only); Manage has
-no login until P5. A delete always removes the file; a `pending` document is deleted at once,
+is the confirmation. Every KB route needs a token with `kb:write` (admins); the uploader is recorded as `uploaded_by`. A delete always removes the file; a `pending` document is deleted at once,
 anything else becomes `deleting` until the worker has removed its chunks.
 
 ## 5. Events into the AI worker (Kafka)
@@ -148,7 +147,7 @@ of truth if anything is ever lost.
 |---|---|---|
 | P4 | `GET /products/batch?ids=` → `[ProductSummary]` (new) | Product search hydration |
 | P4 | `GET /products?page=&size=` (exists) | `make index-products` |
-| P5 | `GET /orders`, `GET /orders/{id}` (exist; user from the token; 404 if foreign) | Order questions |
+| P5 ✅ | `GET /orders`, `GET /orders/{id}` (user from the forwarded token; 404 if foreign) | `get_my_orders(status?)`, `get_order(order_id)`: offered only when the turn has a token; no identity parameter |
 | P6 | `POST /orders/{id}/cancel` (exists since Stage 5), `Idempotency-Key` = approval id | Cancel after approval |
 | P6 | `POST /cart/items` (exists), one call per line, `Idempotency-Key` = approval id + `:` + product id | Cart builder after approval |
 

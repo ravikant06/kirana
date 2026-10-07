@@ -23,14 +23,14 @@ import uuid
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
+import kirana_auth  # AI Phase 5: bearer tokens instead of X-User-Id
+
 MOCK_ADMIN = "http://localhost:8090/admin/mode"
 REDIS_CONTAINER = "kirana-redis-1"
 
 
 def call(api, method, path, body=None, user=None, timeout=60, key=None):
-    headers = {"Content-Type": "application/json"}
-    if user:
-        headers["X-User-Id"] = str(user)
+    headers = {"Content-Type": "application/json", **kirana_auth.headers(api, user)}
     if key:
         headers["Idempotency-Key"] = key  # Stage 7: required on cart adds, checkout, pay, cancel
     req = urllib.request.Request(api + path, method=method, headers=headers,
@@ -67,7 +67,7 @@ def summary(latencies):
 def checkout_scenario(api, name, product, n=20, concurrency=10):
     buyers = []
     for i in range(n):
-        _, _, u = call(api, "POST", "/users", {"name": f"R{i}", "email": f"res-{name}-{time.time_ns()}-{i}@test.com"})
+        u = kirana_auth.signup(api, f"R{i}", f"res-{name}-{time.time_ns()}-{i}@test.com")
         call(api, "POST", "/cart/items", {"productId": product, "quantity": 1}, user=u["id"], key=str(uuid.uuid4()))
         buyers.append(u["id"])
     with ThreadPoolExecutor(concurrency) as pool:

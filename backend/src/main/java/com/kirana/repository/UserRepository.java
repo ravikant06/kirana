@@ -1,6 +1,7 @@
 package com.kirana.repository;
 
 import java.util.List;
+import java.util.Optional;
 
 import com.kirana.entity.User;
 import org.springframework.data.domain.Limit;
@@ -10,6 +11,9 @@ import org.springframework.data.jpa.repository.Query;
 public interface UserRepository extends JpaRepository<User, Long> {
 
     List<User> findByOrderByIdDesc(Limit limit);
+
+    /** lower(email) = lower(?): served by the uq_users_email_lower index. */
+    Optional<User> findByEmailIgnoreCase(String email);
 
     /**
      * Substring match on name or email. A leading % cannot use a B-tree index, so this scans

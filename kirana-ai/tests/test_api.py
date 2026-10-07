@@ -10,7 +10,7 @@ import uuid
 import pytest
 from fastapi.testclient import TestClient
 
-from conftest import FakeAdapter
+from conftest import FakeAdapter, bearer
 from kirana_ai import agent, api, chat
 from kirana_ai.errors import UpstreamUnavailable
 from kirana_ai.llm import LLMError, LLMResponse, ToolCall, Usage
@@ -43,7 +43,7 @@ def client(ai_db, llm_script, monkeypatch):
 
 def _chat(client, user=7, **body):
     return client.post("/v1/chat", json={"message": "Can I return rice?", **body},
-                       headers={"X-User-Id": str(user)})
+                       headers=bearer(user))
 
 
 def test_chat_answers_and_reports_usage(client, llm_script):
@@ -85,19 +85,18 @@ def test_follow_up_continues_the_thread(client, llm_script):
     r = _chat(client, thread_id=thread_id, message="and if it's sealed?")
 
     assert r.status_code == 200 and r.json()["thread_id"] == thread_id
-    detail = client.get(f"/v1/threads/{thread_id}", headers={"X-User-Id": "7"}).json()
+    detail = client.get(f"/v1/threads/{thread_id}", headers=bearer(7)).json()
     assert [m["role"] for m in detail["messages"]] == ["user", "assistant", "user", "assistant"]
     assert detail["messages"][1]["citations"][0]["source"] == "policy-returns.md"
 
 
-def test_missing_user_header_is_a_400_problem(client):
+def test_no_token_is_a_401_problem(client):
     r = client.post("/v1/chat", json={"message": "hi"})
 
-    assert r.status_code == 400
+    assert r.status_code == 401
     assert r.headers["content-type"] == "application/problem+json"
     problem = r.json()
-    assert problem["title"] == "Validation failed" and problem["instance"] == "/v1/chat"
-    assert problem["errors"][0]["field"] == "X-User-Id"
+    assert problem["code"] == "UNAUTHENTICATED" and problem["instance"] == "/v1/chat"
 
 
 @pytest.mark.parametrize("body, field", [
@@ -107,14 +106,14 @@ def test_missing_user_header_is_a_400_problem(client):
     ({"message": "hi", "user_id": 8}, "user_id"),      # unknown fields are rejected, not ignored
 ])
 def test_invalid_body_lists_the_field(client, body, field):
-    r = client.post("/v1/chat", json=body, headers={"X-User-Id": "7"})
+    r = client.post("/v1/chat", json=body, headers=bearer(7))
 
     assert r.status_code == 400
     assert [e["field"] for e in r.json()["errors"]] == [field]
 
 
 def test_malformed_json_is_a_400(client):
-    r = client.post("/v1/chat", content="{not json", headers={"X-User-Id": "7",
+    r = client.post("/v1/chat", content="{not json", headers={**bearer(7),
                                                                "Content-Type": "application/json"})
     assert r.status_code == 400 and r.json()["title"] == "Malformed request"
 
@@ -122,14 +121,14 @@ def test_malformed_json_is_a_400(client):
 def test_someone_elses_thread_is_404_everywhere(client, llm_script):
     llm_script.append([ANSWER])
     thread_id = _chat(client, user=7).json()["thread_id"]
-    other = {"X-User-Id": "8"}
+    other = bearer(8)
 
     assert client.get(f"/v1/threads/{thread_id}", headers=other).status_code == 404
     assert client.delete(f"/v1/threads/{thread_id}", headers=other).status_code == 404
     r = client.post("/v1/chat", json={"message": "x", "thread_id": thread_id}, headers=other)
     assert r.status_code == 404 and r.json()["title"] == "Thread not found"
     # ...and it is still there for its owner.
-    assert client.get(f"/v1/threads/{thread_id}", headers={"X-User-Id": "7"}).status_code == 200
+    assert client.get(f"/v1/threads/{thread_id}", headers=bearer(7)).status_code == 200
 
 
 def test_llm_failure_is_503_without_the_provider_message(client, llm_script):
@@ -182,7 +181,7 @@ def test_list_and_delete_threads(client, llm_script):
     llm_script += [[ANSWER], [ANSWER]]
     first = _chat(client, message="first").json()["thread_id"]
     second = _chat(client, message="second").json()["thread_id"]
-    me = {"X-User-Id": "7"}
+    me = bearer(7)
 
     listed = client.get("/v1/threads", headers=me).json()
     assert [t["id"] for t in listed] == [second, first]
@@ -194,7 +193,7 @@ def test_list_and_delete_threads(client, llm_script):
 
 
 def test_unknown_thread_and_route_are_problems(client):
-    me = {"X-User-Id": "7"}
+    me = bearer(7)
     assert client.get(f"/v1/threads/{uuid.uuid4()}", headers=me).status_code == 404
     r = client.get("/v1/nope", headers=me)
     assert r.status_code == 404 and r.headers["content-type"] == "application/problem+json"
@@ -217,7 +216,7 @@ def _sse_events(r) -> list[tuple[str, dict]]:
 
 def _stream(client, user=7, **body):
     return client.post("/v1/chat", json={"message": "Can I return rice?", **body},
-                       headers={"X-User-Id": str(user), "Accept": "text/event-stream"})
+                       headers={**bearer(user), "Accept": "text/event-stream"})
 
 
 def test_stream_sends_status_tokens_citations_then_done(client, llm_script):
@@ -237,7 +236,7 @@ def test_stream_sends_status_tokens_citations_then_done(client, llm_script):
     assert text == done["reply"] == ANSWER.text
     assert done["usage"]["llm_calls"] == 2 and done["usage"]["first_token_ms"] is not None
     # and it was saved, exactly like the JSON path
-    detail = client.get(f"/v1/threads/{done['thread_id']}", headers={"X-User-Id": "7"}).json()
+    detail = client.get(f"/v1/threads/{done['thread_id']}", headers=bearer(7)).json()
     assert [m["role"] for m in detail["messages"]] == ["user", "assistant"]
 
 

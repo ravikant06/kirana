@@ -43,7 +43,7 @@ class RedisDownIdempotencyIntegrationTest {
         long tea = products.create(new ProductRequest("NoRedis tea " + System.nanoTime(), null, "10")).id();
         inventory.set(tea, 5);
 
-        MockHttpServletResponse r = mvc.perform(MockMvcRequestBuilders.post("/cart/items").header("X-User-Id", user)
+        MockHttpServletResponse r = mvc.perform(MockMvcRequestBuilders.post("/cart/items").with(com.kirana.auth.TestAuth.as(user))
                         .header("Idempotency-Key", UUID.randomUUID().toString()).contentType(MediaType.APPLICATION_JSON)
                         .content("{\"productId\": %d, \"quantity\": 1}".formatted(tea)))
                 .andReturn().getResponse();

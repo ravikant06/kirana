@@ -53,6 +53,10 @@ KAFKA_PARTITIONS = int(os.getenv("KAFKA_PARTITIONS", "3"))
 # --- Kirana's REST API (the AI service reads Kirana data only through it) ---
 KIRANA_API_URL = os.getenv("KIRANA_API_URL", "http://localhost:8080")
 KIRANA_TIMEOUT_SECONDS = float(os.getenv("KIRANA_TIMEOUT_SECONDS", "5"))
+# Phase 5: shoppers sign in with Kirana's RS256 tokens; we verify them with its public keys.
+KIRANA_JWKS_URL = os.getenv("KIRANA_JWKS_URL", KIRANA_API_URL + "/.well-known/jwks.json")
+TOKEN_ISSUER = os.getenv("TOKEN_ISSUER", "kirana")
+TOKEN_AUDIENCE = os.getenv("TOKEN_AUDIENCE", "kirana-ai")
 
 # --- Product search (Phase 4) ---
 PRODUCTS_COLLECTION = os.getenv("PRODUCTS_COLLECTION", "kirana_products")

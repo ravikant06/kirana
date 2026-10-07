@@ -22,6 +22,7 @@ Commons licences (CC BY / CC BY-SA) require attribution: see credits.json, writt
 import argparse
 import json
 import mimetypes
+import os
 import sys
 import time
 import urllib.error
@@ -43,10 +44,26 @@ SHOPPERS = [
 ]
 
 
+_admin_token: str | None = None
+
+
+def _admin_header() -> dict:
+    """AI Phase 5: product and user admin calls need an admin token (user 1, the demo password)."""
+    global _admin_token
+    if _admin_token is None:
+        req = urllib.request.Request(API + "/auth/login", method="POST", headers={"Content-Type": "application/json"},
+                                     data=json.dumps({"email": os.getenv("KIRANA_ADMIN_EMAIL", "kumar.ravee101@gmail.com"),
+                                                      "password": os.getenv("KIRANA_ADMIN_PASSWORD", "kirana123")}).encode())
+        with urllib.request.urlopen(req, timeout=30) as r:
+            _admin_token = json.loads(r.read())["accessToken"]
+    return {"Authorization": f"Bearer {_admin_token}"}
+
+
 def call(method: str, path: str, body=None) -> dict | None:
     data = json.dumps(body).encode() if body is not None else None
     req = urllib.request.Request(API + path, data=data, method=method,
-                                 headers={"Content-Type": "application/json", "Accept": "application/json"})
+                                 headers={"Content-Type": "application/json", "Accept": "application/json",
+                                          **_admin_header()})
     try:
         with urllib.request.urlopen(req, timeout=30) as r:
             text = r.read().decode()
@@ -170,7 +187,7 @@ def main() -> None:
         first, last = name.lower().split(" ", 1)
         email = f"{first}.{last.replace(' ', '')}@example.com"
         if email not in existing:
-            call("POST", "/users", {"name": name, "email": email})
+            call("POST", "/users", {"name": name, "email": email, "password": "kirana123"})   # the demo password
     print(f"shoppers: {len(call('GET', '/users?limit=50'))} in total")
 
     for i, p in enumerate(catalog, 1):

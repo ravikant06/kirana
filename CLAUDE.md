@@ -64,7 +64,12 @@ Each package has a `package-info.java` stating its rules. Follow them.
   `ProblemDetail` from one `@RestControllerAdvice`, with an `errors: [{field, message}]`
   array on validation failures. Paged responses use our own DTO:
   `{ content, page, size, totalElements, totalPages }`.
-- **Users:** no auth yet. The shopper comes from the `X-User-Id` header.
+- **Users and access (AI Phase 5, D72-D73):** sign in with `POST /auth/login {email, password}`
+  (bcrypt) → RS256 JWT with `role` and `scope` (permissions). Controllers get the caller only via
+  `@CurrentUser Long userId`; protected endpoints carry `@RequiresPermission(Permission.X)`
+  (401 no token, 403 missing permission). Roles are permission bundles (`entity.Role`): check
+  permissions, never role names. There is no X-User-Id. Tests sign in with `TestAuth.as(id)` /
+  `TestAuth.admin()`; scripts with `infra/perf/kirana_auth.py`. Demo password `kirana123`.
 - **Transactions:** `@Transactional` belongs on service methods. `open-in-view` is off.
 - **Images (D7):** three-step presigned **POST policy** flow: request policy, browser
   uploads to MinIO, confirm. The policy fixes the key, requires `image/*`, and caps

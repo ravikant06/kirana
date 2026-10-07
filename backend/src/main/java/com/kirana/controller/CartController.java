@@ -1,5 +1,8 @@
 package com.kirana.controller;
 
+import com.kirana.auth.CurrentUser;
+import com.kirana.auth.Permission;
+import com.kirana.auth.RequiresPermission;
 import com.kirana.idempotency.IdempotentRequests;
 import com.kirana.dto.AddCartItemRequest;
 import com.kirana.dto.CartResponse;
@@ -19,6 +22,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/cart")
+@RequiresPermission(Permission.SHOP)
 public class CartController {
 
     private final CartService carts;
@@ -30,13 +34,13 @@ public class CartController {
     }
 
     @GetMapping
-    public CartResponse get(@RequestHeader(Headers.USER_ID) Long userId) {
+    public CartResponse get(@CurrentUser Long userId) {
         return carts.get(userId);
     }
 
     /** Stage 7: adds to the quantity, so a retry must not run twice: Idempotency-Key required. */
     @PostMapping("/items")
-    public ResponseEntity<?> add(@RequestHeader(Headers.USER_ID) Long userId,
+    public ResponseEntity<?> add(@CurrentUser Long userId,
                                  @RequestHeader(name = IdempotentRequests.HEADER, required = false) String key,
                                  @Valid @RequestBody AddCartItemRequest req) {
         return idempotency.execute(userId, key, "POST /cart/items", req,
@@ -44,13 +48,13 @@ public class CartController {
     }
 
     @PutMapping("/items/{productId}")
-    public CartResponse update(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long productId,
+    public CartResponse update(@CurrentUser Long userId, @PathVariable Long productId,
                                @Valid @RequestBody UpdateCartItemRequest req) {
         return carts.update(userId, productId, req.quantity());
     }
 
     @DeleteMapping("/items/{productId}")
-    public CartResponse remove(@RequestHeader(Headers.USER_ID) Long userId, @PathVariable Long productId) {
+    public CartResponse remove(@CurrentUser Long userId, @PathVariable Long productId) {
         return carts.remove(userId, productId);
     }
 }
