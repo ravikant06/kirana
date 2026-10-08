@@ -24,14 +24,15 @@ import anyio
 from contextlib import asynccontextmanager
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, Header, Request, Response
+from fastapi import BackgroundTasks, Depends, FastAPI, Header, Request, Response
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse, StreamingResponse
 from sqlalchemy.exc import OperationalError
 from sqlalchemy.exc import TimeoutError as PoolTimeout
+from starlette.background import BackgroundTask
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from kirana_ai import actions, auth, chat, config, kb, policy
+from kirana_ai import actions, auth, chat, config, kb, memory, policy
 from kirana_ai.db.models import DocType, Document
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.errors import UpstreamUnavailable
@@ -39,6 +40,8 @@ from kirana_ai.llm import LLMError, get_adapter
 from kirana_ai.schemas import (
     Approval,
     ApprovalDecision,
+    MemoryOut,
+    MemoryPatch,
     ChatReply,
     ChatRequest,
     Citation,
@@ -92,14 +95,17 @@ KbAdmin = Annotated[auth.Caller, Depends(kb_admin)]
 # --- routes ---------------------------------------------------------------------
 
 @app.post("/v1/chat", response_model=ChatReply)
-def post_chat(body: ChatRequest, caller: Caller, request: Request, response: Response):
+def post_chat(body: ChatRequest, caller: Caller, request: Request, response: Response, background: BackgroundTasks):
     if "text/event-stream" in request.headers.get("accept", ""):
         # Ownership is checked here, before the stream starts: once it has, the 200 is sent
         # and a 404 can no longer be returned.
         turn = chat.prepare(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
+        # Phase 7: the summary is written after the last byte was sent: the shopper never waits for it.
         return ClosingStreamingResponse(_closing(_sse(turn, request.url.path)), media_type="text/event-stream",
-                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+                                 headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+                                 background=BackgroundTask(chat.after_turn, turn.thread_id))
     result = chat.send(caller.user_id, body.message, thread_id=body.thread_id, caller=_turn_caller(caller))
+    background.add_task(chat.after_turn, result.thread_id)
     usage = Usage(**result.usage)
     # Mirrors X-Query-Count: the Requests panel shows what each call cost.
     response.headers["X-AI-LLM-Calls"] = str(usage.llm_calls)
@@ -114,6 +120,7 @@ def post_chat(body: ChatRequest, caller: Caller, request: Request, response: Res
         citations=[Citation(**c) for c in result.citations],
         steps=[Step(**s) for s in result.steps],
         usage=usage,
+        product_ids=result.product_ids,
     )
 
 
@@ -174,7 +181,7 @@ def _sse(turn: chat.PreparedTurn, path: str) -> Iterator[str]:
             for c in r.citations:
                 yield frame("citation", Citation(**c).model_dump())
             yield frame("done", {"thread_id": str(r.thread_id), "message_id": str(r.message_id),
-                                 "reply": r.reply, "steps": r.steps,
+                                 "reply": r.reply, "steps": r.steps, "product_ids": r.product_ids,
                                  "usage": Usage(**r.usage).model_dump(mode="json")})
     except (LLMError, UpstreamUnavailable, OperationalError, PoolTimeout) as exc:
         log.warning("Chat stream failed: %s", exc)
@@ -204,6 +211,26 @@ def get_thread(thread_id: uuid.UUID, caller: Caller) -> ThreadDetail:
 @app.delete("/v1/threads/{thread_id}", status_code=204)
 def delete_thread(thread_id: uuid.UUID, caller: Caller) -> Response:
     chat.delete_thread(caller.user_id, thread_id)
+    return Response(status_code=204)
+
+
+# --- long-term memory (Phase 7 M4) ------------------------------------------------------------
+# Only the shopper's own memories, ever. Saving happens through an approval card (remember_preference);
+# here the shopper can see, pin and delete what is remembered.
+
+@app.get("/v1/memories", response_model=list[MemoryOut])
+def list_memories(caller: Caller) -> list[MemoryOut]:
+    return [MemoryOut(**vars(m)) for m in memory.list_for(caller.user_id)]
+
+
+@app.patch("/v1/memories/{memory_id}", response_model=MemoryOut)
+def pin_memory(memory_id: uuid.UUID, body: MemoryPatch, caller: Caller) -> MemoryOut:
+    return MemoryOut(**vars(memory.set_pinned(caller.user_id, memory_id, body.pinned)))
+
+
+@app.delete("/v1/memories/{memory_id}", status_code=204)
+def delete_memory(memory_id: uuid.UUID, caller: Caller) -> Response:
+    memory.delete(caller.user_id, memory_id)
     return Response(status_code=204)
 
 
@@ -263,7 +290,8 @@ def health() -> dict:
 def _message(row: MessageRow) -> MessageOut:
     return MessageOut(id=row.id, role=row.role.value, content=row.content,
                       citations=[Citation(**c) for c in row.citations],
-                      steps=[Step(**s) for s in row.tool_steps], created_at=row.created_at)
+                      steps=[Step(**s) for s in row.tool_steps], product_ids=row.product_ids or [],
+                      created_at=row.created_at)
 
 
 # --- errors: everything becomes a ProblemDetail -----------------------------------
@@ -300,6 +328,11 @@ async def invalid_token(request: Request, exc: auth.InvalidToken) -> JSONRespons
 @app.exception_handler(auth.Forbidden)
 async def forbidden(request: Request, exc: auth.Forbidden) -> JSONResponse:
     return problem(request, 403, "Forbidden", str(exc), code="FORBIDDEN")
+
+
+@app.exception_handler(memory.MemoryNotFound)
+async def memory_not_found(request: Request, _exc: memory.MemoryNotFound) -> JSONResponse:
+    return problem(request, 404, "Memory not found", "No such memory for this shopper")
 
 
 @app.exception_handler(actions.ApprovalNotFound)

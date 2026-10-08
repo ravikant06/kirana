@@ -65,7 +65,16 @@ class AnthropicAdapter(LLMAdapter):
                         ],
                     }
                 )
-        return out
+        # Consecutive user turns (the Phase 7 context blocks, a tool result then a question)
+        # become one message with several content blocks.
+        merged: list[dict] = []
+        for m in out:
+            if merged and merged[-1]["role"] == m["role"]:
+                blocks = lambda c: [{"type": "text", "text": c}] if isinstance(c, str) else list(c)
+                merged[-1] = {"role": m["role"], "content": blocks(merged[-1]["content"]) + blocks(m["content"])}
+            else:
+                merged.append(m)
+        return merged
 
     @staticmethod
     def _to_tools(tools: Sequence[ToolSpec]) -> list[dict]:
@@ -102,7 +111,8 @@ class AnthropicAdapter(LLMAdapter):
         text = "".join(b.text for b in final.content if b.type == "text") or None
         yield LLMResponse(text=None if calls else text, tool_calls=calls,
                           usage=Usage(input_tokens=final.usage.input_tokens,
-                                      output_tokens=final.usage.output_tokens))
+                                      output_tokens=final.usage.output_tokens,
+                                      cached_input_tokens=getattr(final.usage, "cache_read_input_tokens", None)))
 
     def _complete(
         self,
@@ -133,6 +143,7 @@ class AnthropicAdapter(LLMAdapter):
         )
         text = next((b.text for b in response.content if b.type == "text"), None)
         usage = Usage(input_tokens=response.usage.input_tokens,
-                      output_tokens=response.usage.output_tokens)
+                      output_tokens=response.usage.output_tokens,
+                      cached_input_tokens=getattr(response.usage, "cache_read_input_tokens", None))
         return LLMResponse(text=None if calls else text, tool_calls=calls,
                            usage=usage, raw=response)

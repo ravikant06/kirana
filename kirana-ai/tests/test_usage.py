@@ -100,3 +100,43 @@ def test_judge_verdict_parsing_tolerates_fences_and_garbage():
     assert (v["answered"], v["correct"], v["faithful"]) == (True, False, True)
     bad = parse_verdict("I think it is fine")
     assert bad["answered"] is None and "unparseable" in bad["reason"]
+
+
+# --- Phase 7 M1: what the prompt is made of, and the cache ------------------------------------
+
+def test_each_call_records_tokens_per_block_scaled_to_the_reported_total():
+    from dataclasses import replace
+    from kirana_ai.llm import ToolResult, ToolSpec
+    seen = []
+    llm = FakeAdapter([LLMResponse(text="ok", usage=Usage(1000, 10))])
+    llm.add_listener(seen.append)
+    messages = [replace(Message.user("an earlier question " * 20), block="history"),
+                Message.tool(ToolResult(id="1", name="search_docs", content={"results": ["x" * 400]})),
+                replace(Message.user("the new question"), block="message")]
+    llm.complete(messages, tools=[ToolSpec("t", "a tool", {"type": "object"})], system="be helpful " * 30)
+    blocks = seen[0].context
+    assert set(blocks) == {"system", "tools", "history", "tool_rounds", "message"}
+    assert abs(sum(blocks.values()) - 1000) <= len(blocks)          # adds up to what the provider billed
+    assert blocks["tool_rounds"] > blocks["message"]
+
+
+def test_cached_input_is_priced_at_the_cached_rate_only_when_known():
+    record = CallRecord(provider="x", model="m", ok=True, latency_ms=1,
+                        usage=Usage(input_tokens=1_000_000, output_tokens=0, cached_input_tokens=800_000))
+    full = Price(Decimal("1.50"), Decimal("9.00"))
+    discounted = Price(Decimal("1.50"), Decimal("9.00"), cached_input_per_mtok=Decimal("0.375"))
+    assert cost_of(record, {"m": full}) == Decimal("1.500000")          # no known discount: never underestimate
+    assert cost_of(record, {"m": discounted}) == Decimal("0.600000")    # 200k x 1.50 + 800k x 0.375
+
+
+def test_recorder_stores_cached_tokens_and_the_breakdown(ai_db):
+    import uuid
+    from sqlalchemy import text
+    from kirana_ai.usage import CallRecorder
+    recorder = CallRecorder(None, uuid.uuid4(), prices={})
+    recorder(CallRecord(provider="fake", model="m", ok=True, latency_ms=5,
+                        usage=Usage(100, 5, cached_input_tokens=60), context={"system": 40, "history": 60}))
+    with ai_db.begin() as conn:
+        row = conn.execute(text("select cached_tokens, context from llm_calls")).one()
+    assert row.cached_tokens == 60 and row.context == {"system": 40, "history": 60}
+    assert recorder.summary()["cached_input_tokens"] == 60

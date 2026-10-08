@@ -36,6 +36,9 @@ _PER_MTOK = Decimal(1_000_000)
 class Price:
     input_per_mtok: Decimal
     output_per_mtok: Decimal
+    # Phase 7: what a cached input token costs. None = no discount known, so cached tokens are
+    # priced as ordinary input (an overestimate, never an underestimate).
+    cached_input_per_mtok: Decimal | None = None
 
 
 @cache
@@ -48,8 +51,10 @@ def load_prices(path: Path = PRICING_FILE) -> dict[str, Price]:
         if entry.get("input_per_mtok") is None or entry.get("output_per_mtok") is None:
             continue
         # str() first: Decimal(0.3) would carry the float's binary error.
+        cached = entry.get("cached_input_per_mtok")
         prices[model] = Price(Decimal(str(entry["input_per_mtok"])),
-                              Decimal(str(entry["output_per_mtok"])))
+                              Decimal(str(entry["output_per_mtok"])),
+                              None if cached is None else Decimal(str(cached)))
     return prices
 
 
@@ -59,7 +64,9 @@ def cost_of(record: CallRecord, prices: dict[str, Price]) -> Decimal | None:
     usage = record.usage
     if price is None or usage is None or usage.input_tokens is None or usage.output_tokens is None:
         return None
-    cost = (usage.input_tokens * price.input_per_mtok
+    cached = min(usage.cached_input_tokens or 0, usage.input_tokens) if price.cached_input_per_mtok is not None else 0
+    cost = ((usage.input_tokens - cached) * price.input_per_mtok
+            + cached * (price.cached_input_per_mtok or 0)
             + usage.output_tokens * price.output_per_mtok) / _PER_MTOK
     return cost.quantize(Decimal("0.000001"))
 
@@ -91,6 +98,8 @@ class CallRecorder:
                 latency_ms=record.latency_ms,
                 cost_usd=cost,
                 error=record.error,
+                cached_tokens=usage.cached_input_tokens if usage else None,
+                context=record.context,
             ))
 
     def summary(self) -> dict:
@@ -100,6 +109,7 @@ class CallRecorder:
             "llm_calls": len(self.calls),
             "input_tokens": sum((r.usage.input_tokens or 0) for r, _ in self.calls if r.usage),
             "output_tokens": sum((r.usage.output_tokens or 0) for r, _ in self.calls if r.usage),
+            "cached_input_tokens": sum((r.usage.cached_input_tokens or 0) for r, _ in self.calls if r.usage),
             "latency_ms": sum(r.latency_ms for r, _ in self.calls),
             "cost_usd": None if not costs or None in costs else sum(costs, Decimal(0)),
         }

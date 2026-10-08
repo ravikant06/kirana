@@ -274,3 +274,13 @@
 .approval-actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 .approval-expiry { font-size: 0.75rem; color: var(--muted); margin-left: auto; }
 .approval-message { margin: 0; font-size: 0.85rem; }
+
+/* ---- Phase 7: what the assistant remembers ---- */
+.memory-note { margin: 4px 4px 10px; font-size: 0.8rem; color: var(--muted); }
+.memory-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+.memory-item { display: grid; grid-template-columns: 1fr auto auto auto; gap: 8px; align-items: center;
+  padding: 10px 12px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); }
+.memory-item.is-pinned { border-color: var(--marigold); background: var(--marigold-wash); }
+.memory-text { font-weight: 600; min-width: 0; overflow-wrap: anywhere; }
+.memory-kind { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.memory-pin.is-on { color: var(--marigold-deep); }

@@ -70,7 +70,7 @@ def ai_db(pg, monkeypatch):
     db.engine.cache_clear()
     db._session_factory.cache_clear()
     with pg.begin() as conn:
-        conn.execute(text("TRUNCATE threads, messages, llm_calls, tool_decisions, pending_actions"))
+        conn.execute(text("TRUNCATE threads, messages, llm_calls, tool_decisions, pending_actions, memories"))
     yield pg
     db.engine().dispose()
     db.engine.cache_clear()

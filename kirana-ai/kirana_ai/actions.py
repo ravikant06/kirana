@@ -31,7 +31,7 @@ from datetime import datetime, timedelta, timezone
 
 from sqlalchemy import select, update, func
 
-from kirana_ai import config, kirana
+from kirana_ai import config, kirana, memory
 from kirana_ai.db import session_scope
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.db.models import PendingAction, Role as RowRole, Thread
@@ -39,7 +39,9 @@ from kirana_ai.errors import UpstreamUnavailable
 
 log = logging.getLogger("kirana_ai.actions")
 
-WRITE_SCOPES = {"cancel_order": ("orders:write",), "add_to_cart": ("cart:write", "cart:read")}
+# The Kirana scopes an action's write token needs. Saving a memory writes only our own table: no token.
+WRITE_SCOPES = {"cancel_order": ("orders:write",), "add_to_cart": ("cart:write", "cart:read"),
+                "remember_preference": ()}
 FINAL = {"done", "failed", "rejected", "expired"}
 
 
@@ -83,6 +85,8 @@ def propose(caller, tool: str, args: dict) -> tuple[dict, dict | None]:
     try:
         if tool == "cancel_order":
             prepared = _prepare_cancel(caller, int(args["order_id"]))
+        elif tool == "remember_preference":
+            prepared = _prepare_memory(caller, args)
         else:
             prepared = _prepare_cart(args["items"])
     except kirana.NotPermitted:
@@ -121,6 +125,30 @@ def _prepare_cancel(caller, order_id: int) -> dict:
     lines = [f"{i.get('quantity')} × {i.get('productName')}" for i in order.get("items") or []]
     return {"arguments": {"order_id": order_id},
             "summary": f"Cancel order #{order_id} (₹{order.get('total'):g})", "lines": lines}
+
+
+def _prepare_memory(caller, args: dict) -> dict:
+    """
+    The card shows exactly what would be saved, and what it would replace; the shopper can reject it.
+
+    `replaces` (an update, not an add): the model names a saved memory by its text; code resolves
+    it to one of THIS shopper's active memories, and stores its id in the action. The model can
+    point at a memory, but only the click removes it, and never someone else's.
+    """
+    text = " ".join(args["text"].split())
+    kind = args.get("kind") or "preference"
+    arguments = {"text": text, "kind": kind}
+    replaces = (args.get("replaces") or "").strip()
+    if not replaces:
+        return {"arguments": arguments, "summary": "Save to your memory",
+                "lines": [f"“{text}”", "Used in your future chats. You can delete it any time."]}
+    old = memory.find_active(caller.user_id, replaces)
+    if old is None:
+        return {"error": f"No saved memory reads '{replaces}'. Use the exact text from the saved memories, "
+                         "or propose without replaces.", "count": 0}
+    arguments["replaces_id"] = str(old.id)
+    return {"arguments": arguments, "summary": "Update your memory",
+            "lines": [f"Replace “{old.text}”", f"with “{text}”", "Used in your future chats. You can delete it any time."]}
 
 
 def _prepare_cart(items: list[dict]) -> dict:
@@ -175,8 +203,17 @@ def decide(user_id: int, credentials, action_id: uuid.UUID, decision: str) -> Ap
 
     # Step 2, no transaction held: exchange for a write token, then act at Kirana, idempotently.
     try:
-        token = credentials.token(*WRITE_SCOPES[tool])
-        status, message, result = _execute(tool, arguments, token, str(action_id))
+        if tool == "remember_preference":
+            replaces = uuid.UUID(arguments["replaces_id"]) if arguments.get("replaces_id") else None
+            saved, replaced = memory.save(user_id, arguments["text"], arguments.get("kind", "preference"),
+                                          source_thread=thread_id, approval_id=action_id, replaces=replaces,
+                                          with_replaced=True)
+            message = (f"Updated your memory: “{saved.text}” (replaces “{replaced}”)." if replaced
+                       else f"Saved to your memory: “{saved.text}”.")
+            status, result = "done", {"memory_id": str(saved.id)}
+        else:
+            token = credentials.token(*WRITE_SCOPES[tool])
+            status, message, result = _execute(tool, arguments, token, str(action_id))
     except kirana.NotPermitted:
         status, message, result = "failed", "Your account is not allowed to do that.", None
     except kirana.SessionExpired:

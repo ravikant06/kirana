@@ -26,6 +26,7 @@ from typing import Any
 
 from sqlalchemy import (
     BigInteger,
+    Boolean,
     CheckConstraint,
     DateTime,
     Enum,
@@ -87,6 +88,12 @@ class Thread(Base):
     id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
     user_id: Mapped[int] = mapped_column(BigInteger)
     title: Mapped[str] = mapped_column(String(200))
+    # Phase 7 short-term memory. summary: turns older than the window, compressed by an LLM;
+    # summary_through: the last message folded into it. facts: ids the conversation refers to,
+    # written by code from tool steps ({"products_shown": [...], "orders_mentioned": [...], ...}).
+    summary: Mapped[str | None] = mapped_column(Text)
+    summary_through: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    facts: Mapped[dict[str, Any]] = mapped_column(JSONB, server_default="{}")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
@@ -118,6 +125,8 @@ class Message(Base):
     # Shown in the UI, never resent to the LLM (AD11: history is text only).
     citations: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
     tool_steps: Mapped[list[dict[str, Any]]] = mapped_column(JSONB, server_default="[]")
+    # Phase 7: the products shown as cards with this answer (the ones it names), in order.
+    product_ids: Mapped[list[int]] = mapped_column(JSONB, server_default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     thread: Mapped[Thread] = relationship(back_populates="messages", lazy="raise")
@@ -151,6 +160,10 @@ class LlmCall(Base):
     # NULL means the model is missing from pricing.yaml, not that the call was free.
     cost_usd: Mapped[Decimal | None] = mapped_column(Numeric(12, 6))
     error: Mapped[str | None] = mapped_column(Text)
+    # Phase 7 M1: input tokens served from the provider's prompt cache, and an estimate of the
+    # input tokens per prompt block ({"system": 900, "tools": 800, "history": 700, ...}).
+    cached_tokens: Mapped[int | None] = mapped_column(Integer)
+    context: Mapped[dict[str, Any] | None] = mapped_column(JSONB)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
 
     __table_args__ = (
@@ -275,4 +288,34 @@ class PendingAction(Base):
         CheckConstraint("status IN ('pending', 'executing', 'done', 'failed', 'rejected', 'expired')",
                         name="status"),
         Index("ix_pending_actions_user_id_created_at", "user_id", "created_at"),
+    )
+
+
+class Memory(Base):
+    """
+    Phase 7 M4: long-term memory, the source of truth. One durable fact about a shopper, saved only
+    after the shopper confirmed a "Save to your memory?" card. Qdrant `user_memories` is a derived
+    index of these rows; every search hit is re-checked here, so a deleted memory is never used.
+    """
+    __tablename__ = "memories"
+
+    id: Mapped[uuid.UUID] = mapped_column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4)
+    user_id: Mapped[int] = mapped_column(BigInteger)
+    text: Mapped[str] = mapped_column(String(300))
+    kind: Mapped[str] = mapped_column(String(20))
+    pinned: Mapped[bool] = mapped_column(Boolean, server_default="false")
+    status: Mapped[str] = mapped_column(String(20))
+    source_thread: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    approval_id: Mapped[uuid.UUID | None] = mapped_column(UUID(as_uuid=True))
+    confirmed_at: Mapped[datetime] = mapped_column(DateTime(timezone=True))
+    expires_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), server_default=func.now())
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+    __table_args__ = (
+        CheckConstraint("kind IN ('preference', 'fact')", name="kind"),
+        CheckConstraint("status IN ('active', 'deleted')", name="status"),
+        Index("ix_memories_user_id_status", "user_id", "status"),
     )

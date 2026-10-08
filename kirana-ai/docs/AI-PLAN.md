@@ -663,20 +663,74 @@ idempotent actions end to end, the "rule of two", security evals.
 
 ---
 
-### Phase 7: Memory and context engineering (1–2 sessions)
+### Phase 7: Memory and context engineering ← current (branch `ai-phase-7`)
 
-**Build**
-- A token budget per turn: system + tools + history + retrieved chunks, measured and logged.
-- Keep the last K turns verbatim and **summarise** older turns into a rolling summary (stored per thread).
-- Thread facts (`last_order_id`, `last_product_ids`) so "cancel that one" resolves without the LLM guessing.
-- *(Optional)* Long-term preferences ("I'm vegetarian"), saved only after the user agrees, visible and deletable.
-- Prompt caching (provider-side) for the stable prefix; measure the cost difference.
+**Problems in today's code:** only the last 10 turns are resent, so turn 11 forgets turn 1 (P1);
+history is text only, so "the second one" is guessed from wording (P2); the prompt grows with no
+measurement of what it's made of (P3); the same system prompt and tool specs are paid for on every
+call (P4); anything remembered is an injection channel (P5, memory poisoning).
 
-**Kirana needs:** nothing (optional: a "memories" view in the chat panel).
+**Decisions (Ravi took every recommendation, 2026-10-07):** AD33–AD40.
 
-**Try this:** a 50-turn chat with and without summarising. Predict tokens at turn 50, then measure from `ai.llm_calls`.
+**Design**
 
-**You learn:** context window as a budget, summarisation loss, short- vs long-term memory, prompt caching.
+| Memory | Stored in | Loaded into the prompt |
+|---|---|---|
+| Short-term: raw turns | `ai.messages` (exists) | the last 6 turns, verbatim |
+| Short-term: summary of older turns | `ai.threads.summary`, `summary_through` (new columns) | always, as "Earlier in this chat" (data) |
+| Short-term: thread facts (ids shown) | `ai.threads.facts` JSONB (new column), written by code from tool steps | always, as "Referenced in this chat" |
+| Long-term: memories | `ai.memories` (new table, source of truth) + Qdrant `user_memories` (derived index) | pinned profile always; the rest all if within ~300 tokens, else top-k by relevance, each re-checked in Postgres |
+| Measurement | `ai.llm_calls.context` (tokens per block), `cached_tokens` (new columns) | — |
+
+Prompt order, stable first so the provider's prompt cache can hit: system → tools → saved memories →
+summary → thread facts → recent turns → new message.
+
+Progress (2026-10-07, all built as Ravi asked; experiments to run): ✅ M1 measure the context · ✅ M2 rolling
+summary · ✅ M3 thread facts · ✅ M4 long-term memory with consent · ✅ M5 prompt order + cached tokens + explicit cache
+switch · ✅ M6 experiments as `eval/run_context.py` and `eval/run_memory.py`. Live smoke test: "Vegetarian" saved via
+the card, then a new thread searched "vegetarian dinner" (memories block 37 tokens); "add the second one" → card for
+the second product shown (#45). First measurement: ~90% of an early call is the fixed prefix; cached tokens 0.
+
+**Milestones**
+
+1. **M1 Measure the context.** Every LLM call records an estimate of its tokens per block (system,
+   tools, history, message, tool rounds; later summary, facts, memories), scaled to the provider's
+   reported input tokens, plus cached input tokens. `eval/run_context.py` runs a scripted 30-turn
+   chat and prints tokens per turn: the baseline the rest of the phase is measured against.
+2. **M2 Rolling summary.** Last 6 turns verbatim; older turns folded into a per-thread summary after the
+   answer is sent (code decides when: over the window or over the history budget; Gemini with thinking
+   `minimal` writes it, incrementally). The summary is marked as data in the prompt.
+3. **M3 Thread facts.** Products shown, orders mentioned and the last approval, taken by code from tool
+   steps, sent as a short numbered block so "the second one" resolves to a real id.
+4. **M4 Long-term memory with consent.** Tool `remember_preference(text)`: policy treats it as a write,
+   so it becomes a "Save to your memory?" card (Phase 6 machinery). Confirmed memories go to
+   `ai.memories` + Qdrant `user_memories`. Loaded per the budget rule; every search hit re-checked in
+   Postgres (active, this user, not expired). List and delete in the chat panel.
+5. **M5 Prompt caching.** Stable prefix first; cached tokens recorded and priced at the cached rate when
+   `pricing.yaml` has one; measured on the 30-turn script (Gemini implicit caching first).
+6. **M6 Experiments + attacks.** Recall at turn 25 of something said at turn 2 (truncation vs summary);
+   "cancel the second one" accuracy with and without facts; memory poisoning via a KB document and via chat.
+
+**Found in the senior review (fixed, with tests):** history ignored the summary, so turns folded to meet the
+token budget were sent twice (summarised and verbatim) and the budget saved nothing; memory de-duplication used
+ILIKE, so `%` / `_` in a shopper's text matched other memories; the context eval left out the summary calls'
+cost. **Found by Ravi testing (fixed, with tests):** (1) "remember I'm non-vegetarian" with "Vegetarian" saved left both
+active: memory could only ADD. `remember_preference` now takes `replaces` (a saved memory's text, resolved by code to
+one of the shopper's own active memories); the card reads "Replace X with Y" and the click swaps them in one
+transaction. (2) "Two foods for dinner" showed 13 cards (a sunscreen among them): cards were every product any search
+returned. Now: the products the answer names, in its order (else the last useful search's top 3), stored on the
+message (`ai.messages.product_ids`, migration 0007); thread facts use the same list, so "the second one" is the second
+card shown. (3) The model kept searching for chicken the catalogue doesn't have: the prompt now says to say so and
+offer the closest items. Live re-run: 13 → 2 cards, 4 → 3 searches.
+**Known gap:** deleting a memory removes it from long-term memory, but a thread's summary or messages may
+still mention it; a full "forget" (rewrite or drop affected summaries) is a privacy feature for Phase 8.
+
+**Try this (predict first):** tokens at turn 30 before and after the summary; what the summary loses;
+the cached share of input on the 2nd and 3rd call of a turn; whether a document can get a memory saved.
+
+**You learn:** the context window as a budget; short- vs long-term memory and their stores; summarisation
+as lossy compression; structured state over remembered text; prompt caching and prefix stability;
+memory poisoning, consent and provenance.
 
 ---
 
@@ -848,6 +902,14 @@ Open (proposed default first):
 | ~~AD30~~ | Narrowing the AI's credential (closes AD26) | **Settled:** split `shop` into `orders:read` / `orders:write` / `cart:write`; Kirana token exchange issues short-lived, reduced-scope tokens with an `act` claim | forward the full token, rely on policy alone |
 | ~~AD31~~ | Pending approvals | **Settled:** table `ai.pending_actions`: exact arguments, single use, 5-minute expiry | signed approval token (stateless, hard to make single-use) |
 | ~~AD32~~ | Phase 6 order | **Settled:** M1 policy → M2 security eval → M3 narrowed tokens → M4 cancel → M5 cart → M6 attacks | actions first |
+| ~~AD33~~ | History window | **Settled:** last 6 turns verbatim + rolling summary of older turns | keep 10, forget older |
+| ~~AD34~~ | When to summarise | **Settled:** after the answer is sent; code decides when (window / token budget) | before the turn |
+| ~~AD35~~ | Summary model | **Settled:** same Gemini, thinking `minimal` | a separate smaller model |
+| ~~AD36~~ | Long-term memory | **Settled:** yes, only via a "Save to your memory?" approval card; visible and deletable | none |
+| ~~AD37~~ | Thread facts | **Settled:** derived by code from tool steps | LLM extraction |
+| ~~AD38~~ | Prompt caching | **Settled:** Gemini implicit caching first; measure; explicit caches only if hits are poor | explicit `cachedContents` |
+| ~~AD39~~ | Long-term memory vectors | **Settled:** Qdrant `user_memories`, every hit re-checked in Postgres `ai.memories` (source of truth) | pgvector in Postgres |
+| ~~AD40~~ | Load all memories or search | **Settled:** a token budget (~300): all if they fit, else pinned + most relevant | a fixed count |
 | AD10 | Default LLM | Gemini (as now) for generation and embeddings; Claude as the fallback in Phase 11 | Claude or OpenAI primary |
 
 ---

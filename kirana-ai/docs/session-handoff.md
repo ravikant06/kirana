@@ -140,12 +140,18 @@ openjdk 25. For manual Maven runs, set
 
 ## 10. Pending work, in order
 
-1. Phases 3–5 are merged to `main` (local; push only when Ravi says). Work continues on `ai-phase-6`.
-2. **Phase 6 is planned and approved** (AI-PLAN §4, AD28–AD32). Next: **M1 tool policy layer**, then
-   M2 security eval, M3 narrowed tokens, M4 cancel with approval, M5 cart with approval, M6 attacks.
-   One milestone at a time, reported to Ravi before the next.
-3. **Deferred by Ravi to the very end:** the Phase 3 runs (answer-eval baseline, `--grade`
-   calibration, thinking-level comparison → AD20).
+1. Phases 3–6 are merged to `main` on GitHub. Local `main` has one more commit (`59a1e97`: Kafka
+   persistence, the worker creating its topics). Branch `ai-phase-7` is built from it.
+2. **Phase 7 is built, not committed** (Ravi: commit everything together after he tests). Migrations
+   0005 and 0006 are applied locally; the AI API runs the new code. Ravi will test and run the
+   experiments: `eval/run_context.py` (baseline tokens per turn), `eval/run_memory.py` (recall,
+   references, poisoning). Predictions first.
+3. Open: the cached-token price for `pricing.yaml` (left unset: priced as normal input until filled);
+   whether to turn on `GEMINI_EXPLICIT_CACHE` after measuring implicit caching (0 cached tokens so far).
+4. Cleanup: three poisoned KB documents from the injection experiment are still in the live knowledge
+   base ("Policy injection", "Refund Procedure", "Free Delivery Week"). The injection file moved from
+   `kb/seed/` to `eval/attacks/`.
+5. **Deferred by Ravi to the very end:** the Phase 3 runs (answer-eval baseline, `--grade`, AD20).
 
 ## 11. Known gotchas
 

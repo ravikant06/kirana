@@ -122,7 +122,21 @@ BM25_B = float(os.getenv("BM25_B", "0.75"))
 # --- RAG knobs ---
 # Conversation turns (user + assistant pairs) resent to the model on each turn.
 # 0 turns history off, for the "is it really stateless?" experiment.
-HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "10"))
+HISTORY_TURNS = int(os.getenv("HISTORY_TURNS", "6"))        # Phase 7 (AD33): older turns live in the summary
+# --- Phase 7: memory and context ---
+# Summarise when the verbatim history would exceed this many tokens (estimated), or when turns
+# fall out of the window: code decides when, an LLM writes the summary (AD34, AD35).
+HISTORY_BUDGET_TOKENS = int(os.getenv("HISTORY_BUDGET_TOKENS", "3000"))
+SUMMARY_THINKING = os.getenv("SUMMARY_THINKING", "minimal")
+# Switches for the Phase 7 experiments (eval/run_memory.py): turn a memory layer off to measure it.
+SUMMARY_ENABLED = os.getenv("SUMMARY_ENABLED", "true").lower() in {"1", "true", "yes"}
+FACTS_ENABLED = os.getenv("FACTS_ENABLED", "true").lower() in {"1", "true", "yes"}
+# Long-term memory (AD36, AD39, AD40): all memories if they fit this budget, else pinned + most relevant.
+MEMORY_BUDGET_TOKENS = int(os.getenv("MEMORY_BUDGET_TOKENS", "300"))
+MEMORY_TOP_K = int(os.getenv("MEMORY_TOP_K", "5"))
+MEMORIES_COLLECTION = os.getenv("MEMORIES_COLLECTION", "user_memories")
+# Prompt caching (AD38): implicit (automatic) first. true = keep system + tools in an explicit cache object.
+GEMINI_EXPLICIT_CACHE = os.getenv("GEMINI_EXPLICIT_CACHE", "false").lower() in {"1", "true", "yes"}
 TOP_K = int(os.getenv("TOP_K", "4"))
 # Chunks whose dense cosine similarity to the query is below this are dropped before the
 # model sees them; if none survive, the model is told nothing relevant was found and must

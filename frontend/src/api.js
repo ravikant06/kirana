@@ -363,6 +363,10 @@ export const api = {
     threads: (userId) => request('GET', '/v1/threads', undefined, { service: 'ai', userId }),
     thread: (userId, id) => request('GET', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
     deleteThread: (userId, id) => request('DELETE', `/v1/threads/${q(id)}`, undefined, { service: 'ai', userId }),
+    // Phase 7: what the shopper asked the assistant to remember (saved only through a confirm card).
+    memories: () => request('GET', '/v1/memories', undefined, { service: 'ai' }),
+    pinMemory: (id, pinned) => request('PATCH', `/v1/memories/${q(id)}`, { pinned }, { service: 'ai' }),
+    deleteMemory: (id) => request('DELETE', `/v1/memories/${q(id)}`, undefined, { service: 'ai' }),
     // Phase 6: actions the assistant proposed. The body is only the decision; the server runs its own copy.
     approval: (id) => request('GET', `/v1/approvals/${q(id)}`, undefined, { service: 'ai', quiet: true }),
     decide: (id, decision) => request('POST', `/v1/approvals/${q(id)}`, { decision }, { service: 'ai' }),

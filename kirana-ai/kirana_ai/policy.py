@@ -108,6 +108,18 @@ def _cart_items(args: dict) -> str | None:
     return None
 
 
+def _memory_text(args: dict) -> str | None:
+    text = args.get("text")
+    if not isinstance(text, str) or not 2 <= len(text.strip()) <= 200:
+        return "text must be 2 to 200 characters"
+    if args.get("kind") not in (None, "", "preference", "fact"):
+        return "kind must be preference or fact"
+    replaces = args.get("replaces")
+    if replaces not in (None, "") and (not isinstance(replaces, str) or len(replaces) > 300):
+        return "replaces must be the text of a saved memory"
+    return None
+
+
 @dataclass(frozen=True)
 class Rule:
     tool: str
@@ -125,6 +137,8 @@ RULES: dict[str, Rule] = {r.tool: r for r in (
     Rule("get_order", "orders:read", Risk.READ_PERSONAL, 5, _positive_int("order_id")),
     Rule("cancel_order", "orders:write", Risk.WRITE, 1, _positive_int("order_id")),
     Rule("add_to_cart", "cart:write", Risk.WRITE, 1, _cart_items),
+    # Phase 7: saving to long-term memory is a write too: proposed by the model, confirmed by a click.
+    Rule("remember_preference", "chat", Risk.WRITE, 2, _memory_text),
 )}
 
 

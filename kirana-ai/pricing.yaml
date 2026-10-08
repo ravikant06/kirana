@@ -16,3 +16,6 @@ models:
   gemini-3.5-flash:
     input_per_mtok: 1.50
     output_per_mtok: 9.00    # includes thinking tokens
+    # Phase 7: price of an input token served from the prompt cache. Left unset on purpose: copy it
+    # from the pricing page. Unset = cached tokens are priced as ordinary input (never underestimated).
+    # cached_input_per_mtok: 0.0

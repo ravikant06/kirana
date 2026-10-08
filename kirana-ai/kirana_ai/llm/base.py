@@ -37,6 +37,9 @@ class LLMAdapter(ABC):
         self.model = model
         self.api_key = api_key
         self._listeners: list[CallListener] = []
+        # Per-adapter override of the reasoning effort (Phase 7: summaries run with "minimal").
+        # None = the provider default from config. Only adapters that support it read it.
+        self.thinking: str | None = None
 
     def add_listener(self, listener: CallListener) -> None:
         """
@@ -77,7 +80,9 @@ class LLMAdapter(ABC):
                                     latency_ms=_ms_since(start), error=str(exc)))
             raise
         self._notify(CallRecord(provider=self.provider, model=self.model, ok=True,
-                                latency_ms=_ms_since(start), usage=reply.usage))
+                                latency_ms=_ms_since(start), usage=reply.usage,
+                                context=context_breakdown(messages, tools, system,
+                                                          reply.usage.input_tokens if reply.usage else None)))
         return reply
 
     def stream(
@@ -115,13 +120,17 @@ class LLMAdapter(ABC):
             self._notify(CallRecord(provider=self.provider, model=self.model, ok=False,
                                     latency_ms=_ms_since(start),
                                     usage=final.usage if final else None,
-                                    error="stream abandoned by the client"))
+                                    error="stream abandoned by the client",
+                                    context=context_breakdown(messages, tools, system, None)))
             raise
         if trace.is_on() and final is not None:
             trace.result(f"{len(final.tool_calls)} tool call(s)" if final.wants_tools else "text answer",
                          _ms_since(start) / 1000)
+        usage = final.usage if final else None
         self._notify(CallRecord(provider=self.provider, model=self.model, ok=True,
-                                latency_ms=_ms_since(start), usage=final.usage if final else None))
+                                latency_ms=_ms_since(start), usage=usage,
+                                context=context_breakdown(messages, tools, system,
+                                                          usage.input_tokens if usage else None)))
 
     def _stream(
         self,
@@ -268,3 +277,27 @@ class LLMAdapter(ABC):
 
 def _ms_since(start: float) -> int:
     return int((time.perf_counter() - start) * 1000)
+
+
+def context_breakdown(messages: Sequence[Message], tools: Sequence[ToolSpec], system: str | None,
+                      input_tokens: int | None) -> dict[str, int]:
+    """
+    Estimated input tokens per block of the prompt (Phase 7 M1): where a call's tokens go.
+
+    Counted in characters, then scaled so the blocks add up to the input tokens the provider
+    reported. A real tokenizer per provider would be exact but costs a call or a dependency;
+    for "which block is growing", proportions are what matter. Without a reported total,
+    ~4 characters per token.
+    """
+    chars: dict[str, int] = {"system": len(system or ""),
+                             "tools": sum(len(json.dumps([t.name, t.description, t.parameters])) for t in tools)}
+    for m in messages:
+        size = len(m.text or "")
+        size += sum(len(c.name) + len(json.dumps(c.arguments, default=str)) for c in m.tool_calls)
+        if m.tool_result is not None:
+            size += len(json.dumps(m.tool_result.content, default=str))
+        block = m.block or ("tool_rounds" if (m.tool_calls or m.tool_result is not None) else "message")
+        chars[block] = chars.get(block, 0) + size
+    total = sum(chars.values()) or 1
+    scale = input_tokens / total if input_tokens else 0.25
+    return {block: round(n * scale) for block, n in chars.items() if n}

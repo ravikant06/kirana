@@ -209,3 +209,44 @@ built, measured or broken in `kirana-ai/`, stated the way you would explain it i
     all replay the first outcome.
 61. **The confirmation comes from the API, not the model.** "Done: order #102 is cancelled" is written
     from Kirana's answer, so the assistant can never claim an action that didn't happen.
+
+## Phase 7: memory and context engineering
+
+62. **An LLM is stateless; memory is what the application puts in the prompt.** Every call resends
+    what it needs. Provider-side conversation state and prompt caching change who stores it and what
+    it costs, not the fact that the model re-reads it.
+63. **The context window is a budget.** Each call records its input tokens per block (system, tools,
+    memories, summary, facts, history, tool rounds). First measurement: at the start of a chat ~90% of
+    every call is the fixed prefix (system prompt + tool specs), paid again on every call of a turn.
+64. **Short-term memory: a window plus a summary.** The last 6 turns verbatim; older turns folded into a
+    rolling summary after the answer is sent. Code decides when (turns outside the window, or history
+    over a token budget) and which (whole turns, oldest first); the LLM only writes the text, with
+    thinking minimal, incrementally (old summary + new turns). An optimistic update stops two turns
+    from overwriting each other's summary.
+65. **Structured state beats remembered text for ids.** Thread facts (products shown, orders mentioned,
+    the last proposed action) are written by code from tool steps. "Add the second one" became a card
+    for the right product (#45, measured live) because the id came from the facts, not from the model
+    re-reading its own wording.
+66. **Long-term memory: consent and provenance.** Saving is a write: the model proposes
+    `remember_preference`, the policy turns it into a "Save to your memory?" card, and only the click
+    saves it, with the approval id as provenance. The shopper can list, pin and delete memories.
+67. **Two stores, one truth.** Postgres `ai.memories` is the source of truth; Qdrant `user_memories` only
+    finds candidates, and every hit is re-checked in Postgres, so a deleted memory can never reach the
+    prompt even if the index is stale. `reindex-memories` repairs the index.
+68. **Load all, or search, by budget.** If a shopper's memories fit ~300 tokens, all go in: no embedding
+    call (~600 ms), nothing missed. Beyond that: pinned + the most relevant to this message.
+69. **Prompt order for caching: stable first.** System → tools → memories → summary → facts → recent turns
+    → question. Providers cache the longest unchanged beginning, so memories never go inside the system
+    prompt (that would make the prefix different for every user). Explicit cache objects are behind a
+    switch, with a fallback when the prefix is below the provider's minimum.
+70. **Memory is an injection channel.** Anything persisted is replayed into future prompts, so memories
+    come only from the shopper's own words, confirmed by a click, and every context block is labelled as
+    data, not instructions.
+71. **Memory needs UPDATE, not only ADD.** "I'm non-vegetarian" after "Vegetarian" left two contradicting
+    memories, and the next answer hedged between them. A write must say what it replaces (Mem0's ADD /
+    UPDATE / DELETE); here the model names the old memory, code resolves it to the shopper's own row, and
+    the click swaps them atomically.
+72. **What the UI shows should follow what the answer says.** Showing every retrieved product (13 cards
+    for "two foods") disagreed with the reply. Cards are now the retrieved products the answer names:
+    still pure tool data (a name no search returned can't become a card), and the same list feeds
+    "the second one".

@@ -1,4 +1,4 @@
-# ai-contract.md: Kirana ⇄ Kirana AI (v0.7)
+# ai-contract.md: Kirana ⇄ Kirana AI (v0.9)
 
 The one and only copy (`kirana/kirana-ai/docs/`). Bump the version on every change.
 **(Pn)** = added in phase n of `AI-PLAN.md`. Build only what the current phase needs.
@@ -36,21 +36,28 @@ The request body and tool arguments **never** contain a user id.
 | P1 | `DELETE /v1/threads/{id}` | → 204 |
 | P6 ✅ | `GET /v1/approvals/{approval_id}` | → `Approval` (404 if not the caller's) |
 | P6 ✅ | `POST /v1/approvals/{approval_id}` | `{decision: "confirm" \| "reject"}` → `Approval`. Runs the server's stored copy; a repeat returns the first outcome; 409 `APPROVAL_TAMPERED` if the stored row no longer matches its seal |
+| P7 ✅ | `GET /v1/memories` | → `[Memory]`: the caller's long-term memories, pinned first |
+| P7 ✅ | `PATCH /v1/memories/{id}` | `{pinned: bool}` → `Memory` (404 if not the caller's) |
+| P7 ✅ | `DELETE /v1/memories/{id}` | → 204; from then on never used (404 if not the caller's) |
 | P9 | `POST /v1/messages/{message_id}/feedback` | `{rating: "up" \| "down", comment?}` → 204 |
 
     ChatRequest   = { thread_id?, message }          // message 1–2000 chars after trimming; unknown fields → 400
-    ChatReply     = { thread_id, message_id, reply, citations: [Citation], steps: [Step], usage: Usage }
-    Usage         = { llm_calls, input_tokens, output_tokens, latency_ms,
+    ChatReply     = { thread_id, message_id, reply, citations: [Citation], steps: [Step], usage: Usage,
+                      product_ids: [int] }      // P7: the cards to show: the products the answer names, in order
+    Usage         = { llm_calls, input_tokens, output_tokens, latency_ms, cached_input_tokens,   // P7: from the prompt cache
                       cost_usd }                      // decimal string "0.004170", or null = unknown price
     Citation      = { source, doc_id, title?, pages: [int] }   // pages: PDFs only (P2)
     Step          = { tool, query, where, count,     // one tool call: filters the model chose, hits returned
                       decision, reason, denied_by?,  // P6: the policy's allow|deny|approval, why, and who refused
                       approval? }                    // P6: the card, when an action awaits confirmation
     Approval      = { id, tool, summary, lines: [str], status, message?, expires_at }
+    Memory        = { id, text, kind: "preference"|"fact", pinned, created_at }   // P7
+    Step (P7)     += products?: [{id, name}]  (search_products: what was shown, in order)
+                  += orders?: [{id, status}]  (order tools)  — the source of the thread's facts
                     // status: pending | executing | done | failed | rejected | expired
     ThreadSummary = { id, title, updated_at }
     Thread        = { id, title, created_at, updated_at,
-                      messages: [{ id, role, content, citations, steps, created_at }] }
+                      messages: [{ id, role, content, citations, steps, product_ids, created_at }] }
 
 Status codes: 200 · 204 (delete) · 400 (validation) · 401 `UNAUTHENTICATED` (no, bad or expired token) · 403 `FORBIDDEN` (missing permission) · 404 (no such thread
 *for this shopper*: missing and someone else's look the same) · 503 `UPSTREAM_UNAVAILABLE`
@@ -74,10 +81,11 @@ a stream reader (the request is a POST); `streamChat()` in Kirana's `api.js` par
 | `token` | `{text}` | append to the live answer |
 | `reset` | `{}` | discard streamed text: it was a preamble to tool calls, not the answer |
 | `citation` | `Citation` | source chip; sent just before `done` |
-| `done` | `{thread_id, message_id, reply, steps, usage}` | finalise; `usage` adds `first_token_ms`, `unverified_sources` |
+| `done` | `{thread_id, message_id, reply, steps, usage, product_ids}` | finalise; `usage` adds `first_token_ms`, `unverified_sources` |
 | `error` | `ProblemDetail` (`status`, `code`) | show it with Retry: the HTTP status was already 200 when it failed |
 | `products` (P4) | `{product_ids: [..]}` | fetch cards from Kirana |
 | `approval_required` (P6 ✅) | `{approval_id, tool, summary, lines, expires_at}` | Confirm / Reject card (built from the server's copy) |
+| (P7) | `approval_required` also for `remember_preference`: "Save to your memory", or "Update your memory" (Replace X with Y) when it replaces a saved one | Confirm saves it (and removes the replaced one) |
 
 Closing the stream abandons the turn: the LLM call in flight is recorded in `llm_calls` as
 "stream abandoned by the client" (it may still be billed), and no answer is saved.

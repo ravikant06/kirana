@@ -51,6 +51,8 @@ class Usage(BaseModel):
     input_tokens: int
     output_tokens: int
     latency_ms: int
+    # Phase 7: of input_tokens, how many the provider served from its prompt cache.
+    cached_input_tokens: int = 0
     # Streaming only: time from the start of the agent to the first answer token.
     first_token_ms: int | None = None
     # Sources named in the reply that were not retrieved this turn: never shown as citations.
@@ -66,6 +68,7 @@ class ChatReply(BaseModel):
     citations: list[Citation]
     steps: list[Step]
     usage: Usage
+    product_ids: list[int] = Field(default_factory=list)   # Phase 7: the cards shown with this answer
 
 
 class ThreadSummary(BaseModel):
@@ -80,6 +83,7 @@ class MessageOut(BaseModel):
     content: str
     citations: list[Citation]
     steps: list[Step]
+    product_ids: list[int] = Field(default_factory=list)   # Phase 7: the cards shown with this answer
     created_at: datetime
 
 
@@ -147,3 +151,17 @@ class Approval(BaseModel):
     status: str                  # pending, executing, done, failed, rejected, expired
     message: str | None = None
     expires_at: datetime
+
+
+class MemoryOut(BaseModel):
+    """Something the shopper asked the assistant to remember (Phase 7)."""
+    id: uuid.UUID
+    text: str
+    kind: str
+    pinned: bool             # always loaded into the prompt, even when there are many
+    created_at: datetime
+
+
+class MemoryPatch(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    pinned: bool

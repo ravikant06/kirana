@@ -102,8 +102,10 @@ class OpenAIAdapter(LLMAdapter):
         try:
             for chunk in self._client.chat.completions.create(**kwargs):
                 if chunk.usage is not None:
+                    details = getattr(chunk.usage, "prompt_tokens_details", None)
                     usage = Usage(input_tokens=chunk.usage.prompt_tokens,
-                                  output_tokens=chunk.usage.completion_tokens)
+                                  output_tokens=chunk.usage.completion_tokens,
+                                  cached_input_tokens=getattr(details, "cached_tokens", None))
                 if not chunk.choices:
                     continue
                 delta = chunk.choices[0].delta

@@ -63,6 +63,7 @@ def _chat(user_id: int, thread_id: uuid_mod.UUID | None) -> None:
             break
         try:
             result = chat.send(user_id, question, thread_id=thread_id, llm=llm)
+            chat.after_turn(result.thread_id)          # Phase 7: summary, if turns fell out of the window
         except chat.ThreadNotFound:
             print(f"No thread {thread_id} for shopper {user_id}.")
             return
@@ -123,6 +124,7 @@ def _main() -> None:
     sub = parser.add_subparsers(dest="command", required=True)
 
     sub.add_parser("index-products", help="snapshot: index every live product from Kirana's API")
+    sub.add_parser("reindex-memories", help="make Qdrant user_memories match ai.memories (Phase 7)")
     sub.add_parser("seed-kb", help="upload kb/seed/* into MinIO; the worker indexes them")
     sub.add_parser("redrive", help=f"replay {config.KB_DLT} onto {config.KB_TOPIC}")
     p_reindex = sub.add_parser("reindex", help="make Qdrant and ai.documents match the files in MinIO")
@@ -153,6 +155,10 @@ def _main() -> None:
 
     if args.command == "threads":
         _threads(args.user)
+        return
+    if args.command == "reindex-memories":
+        from kirana_ai import memory
+        print(memory.reindex())
         return
     if args.command == "index-products":
         from kirana_ai import catalog

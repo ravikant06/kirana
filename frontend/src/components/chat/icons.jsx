@@ -43,3 +43,11 @@ export const Chevron = (p) => (
 export const Back = (p) => (
   <svg {...base} {...p}><path d="M15 6l-6 6 6 6" /></svg>
 )
+
+// Phase 7: long-term memory (a bookmark-like "saved" mark) and pinning.
+export const Memory = (p) => (
+  <svg {...base} {...p}><path d="M12 3a6 6 0 0 0-6 6c0 2.2 1.2 3.6 2.4 4.8.8.8 1.6 1.6 1.6 2.7V18h4v-1.5c0-1.1.8-1.9 1.6-2.7C16.8 12.6 18 11.2 18 9a6 6 0 0 0-6-6Z"/><path d="M10 21h4"/></svg>
+)
+export const Pin = (p) => (
+  <svg {...base} width="16" height="16" {...p}><path d="M12 17v5"/><path d="M9 3h6l-1 6 3 3v2H7v-2l3-3-1-6Z"/></svg>
+)

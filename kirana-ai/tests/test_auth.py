@@ -100,7 +100,8 @@ def _agent_turn(monkeypatch, tool_call, caller):
 def test_order_tools_exist_only_for_a_caller_with_orders_read():
     public = {"search_products", "search_docs", "list_documents"}
     assert {t.name for t in policy.tools_for(policy.ANONYMOUS, agent.SPECS)} == public
-    assert {t.name for t in policy.tools_for(caller_with(CHAT_ONLY), agent.SPECS)} == public   # G1
+    # G1: a chat-only account gets no order tools (it may still save its own preferences)
+    assert {t.name for t in policy.tools_for(caller_with(CHAT_ONLY), agent.SPECS)} == public | {"remember_preference"}
     assert {"get_my_orders", "get_order", "cancel_order", "add_to_cart"} <= \
         {t.name for t in policy.tools_for(caller_with(), agent.SPECS)}
 

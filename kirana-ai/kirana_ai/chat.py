@@ -28,7 +28,7 @@ from decimal import Decimal
 from sqlalchemy import func, select, update
 from sqlalchemy.orm import Session
 
-from kirana_ai import agent, config, policy
+from kirana_ai import agent, config, context, memory, policy
 from kirana_ai.db import session_scope
 from kirana_ai.db.models import Message as MessageRow
 from kirana_ai.db.models import Role as RowRole
@@ -53,6 +53,8 @@ class TurnResult:
     citations: list[dict]
     steps: list[dict]
     usage: dict = field(default_factory=dict)
+    # Phase 7 (2A): the product cards shown with this answer, chosen by context.cards_for.
+    product_ids: list[int] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -64,6 +66,8 @@ class PreparedTurn:
     # Who the turn acts for (Phase 6): permissions for the policy layer, and credentials that hand
     # out narrowed tokens. Held for this turn only: never saved, never logged, never shown to the model.
     caller: policy.Caller = field(default_factory=policy.Caller, repr=False)
+    # Phase 7: the context blocks before the history (saved memories, summary, thread facts).
+    context: list[Message] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -97,6 +101,10 @@ def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None,
 
     Separate from run() so the streaming API can reject a foreign thread with a plain
     404 *before* it starts a 200 event stream: once streaming starts, the status is sent.
+
+    Phase 7: also the thread's summary and facts (short-term memory), and, after the
+    transaction, the shopper's saved memories (long-term; a search may call the embedding
+    API, which must never happen while a transaction is open).
     """
     with session_scope() as session:
         if thread_id is None:
@@ -105,10 +113,15 @@ def prepare(user_id: int, text: str, thread_id: uuid.UUID | None = None,
             session.flush()                       # INSERT now: the id default is applied at flush
         else:
             thread = _owned(session, user_id, thread_id)
-        history = load_history(session, thread.id, config.HISTORY_TURNS)
+        covered = thread.summary_through if config.SUMMARY_ENABLED else None
+        history = load_history(session, thread.id, config.HISTORY_TURNS, after=covered)
+        summary, facts, thread_id = thread.summary, dict(thread.facts or {}), thread.id
         session.add(MessageRow(thread_id=thread.id, role=RowRole.USER, content=text))
-        return PreparedTurn(thread_id=thread.id, text=text, history=history,
-                            caller=caller or policy.Caller(user_id=user_id))
+    recall = memory.for_prompt(user_id, text)
+    return PreparedTurn(thread_id=thread_id, text=text, history=history,
+                        caller=caller or policy.Caller(user_id=user_id),
+                        context=context.blocks(recall, summary if config.SUMMARY_ENABLED else None,
+                                               facts if config.FACTS_ENABLED else {}))
 
 
 def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent]:
@@ -130,7 +143,7 @@ def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent
     result = None
     turn.caller.thread_id, turn.caller.turn_id = turn.thread_id, turn_id
     events = agent.answer_stream(turn.text, history=turn.history, llm=llm, caller=turn.caller,
-                                 decisions=policy.record_to_db)
+                                 decisions=policy.record_to_db, context=turn.context)
     try:
         for event in events:
             if event.kind == "done":
@@ -146,6 +159,7 @@ def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent
         events.close()
         llm.remove_listener(recorder)
     chunks, reply, steps = result["chunks"], result["answer"], result["steps"]
+    cards = context.cards_for(reply, steps)
     citations = citations_for(chunks, reply)
     unverified = unverified_sources(chunks, reply)
     if unverified:
@@ -154,30 +168,55 @@ def run(turn: PreparedTurn, llm: LLMAdapter | None = None) -> Iterator[TurnEvent
     # --- 3. short transaction: the answer
     with session_scope() as session:
         session.add(MessageRow(id=turn_id, thread_id=turn.thread_id, role=RowRole.ASSISTANT,
-                               content=reply, citations=citations, tool_steps=steps))
-        session.execute(update(Thread).where(Thread.id == turn.thread_id)
-                        .values(updated_at=func.now()))
+                               content=reply, citations=citations, tool_steps=steps,
+                               product_ids=[c["id"] for c in cards]))
+        # Phase 7 M3: the facts move on with this turn's tool steps, in the same transaction
+        # as the answer that produced them. Locked: two turns of one thread can't lose an update.
+        thread = session.execute(select(Thread).where(Thread.id == turn.thread_id).with_for_update()).scalar_one()
+        thread.facts = context.facts_after(thread.facts or {}, steps, cards)
+        thread.updated_at = func.now()
 
     usage = {**recorder.summary(), "first_token_ms": first_token_ms,
              "unverified_sources": unverified}
     yield TurnEvent("done", TurnResult(thread_id=turn.thread_id, message_id=turn_id, reply=reply,
-                                       citations=citations, steps=steps, usage=usage))
+                                       citations=citations, steps=steps, usage=usage, product_ids=[c["id"] for c in cards]))
 
 
-def load_history(session: Session, thread_id: uuid.UUID, turns: int) -> list[Message]:
+def after_turn(thread_id: uuid.UUID, llm: LLMAdapter | None = None) -> None:
+    """
+    Work that runs after the shopper has the answer (Phase 7, AD34): fold turns that fell out of
+    the window into the thread's summary. A failure here only delays the summary to the next turn;
+    it never reaches the shopper.
+    """
+    if not config.SUMMARY_ENABLED:
+        return
+    try:
+        context.summarise(thread_id, llm)
+    except Exception:   # noqa: BLE001
+        log.exception("summary for thread %s failed; the next turn will retry", thread_id)
+
+
+def load_history(session: Session, thread_id: uuid.UUID, turns: int,
+                 after: uuid.UUID | None = None) -> list[Message]:
     """
     The last `turns` complete exchanges, oldest first, as plain text (AD11).
 
     Only user -> assistant pairs are kept. A shopper message whose turn failed
     has no answer; sending it would put two user messages in a row, and the
     model would answer the failed question again.
+
+    `after` (Phase 7): the last message the thread's summary covers. Only later turns are sent,
+    so nothing reaches the model twice (once summarised, once verbatim) and folding turns to
+    meet the token budget actually shrinks the prompt.
     """
     if turns <= 0:
         return []
+    query = select(MessageRow.role, MessageRow.content).where(MessageRow.thread_id == thread_id)
+    if after is not None:
+        covered = select(MessageRow.created_at).where(MessageRow.id == after).scalar_subquery()
+        query = query.where(MessageRow.created_at > covered)
     rows = session.execute(
-        select(MessageRow.role, MessageRow.content)
-        .where(MessageRow.thread_id == thread_id)
-        .order_by(MessageRow.created_at.desc())
+        query.order_by(MessageRow.created_at.desc())
         .limit(turns * 2 + 1)                   # +1: room for one unanswered message
     ).all()
 

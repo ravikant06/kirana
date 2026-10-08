@@ -324,3 +324,16 @@ def test_closing_a_turn_mid_answer_records_the_abandoned_call(ai_db, llm_script)
         answers = conn.execute(sql("SELECT count(*) FROM messages WHERE role = 'assistant'")).scalar()
     assert [tuple(r) for r in rows] == [("ok", None), ("error", "stream abandoned by the client")]
     assert answers == 0                               # a half answer is never saved
+
+
+
+def test_the_summary_runs_after_the_answer_not_before(client, llm_script, monkeypatch):
+    """Phase 7: the shopper never waits for the summary. JSON and streaming both schedule it after."""
+    ran = []
+    monkeypatch.setattr(chat, "after_turn", lambda thread_id, llm=None: ran.append(thread_id))
+    llm_script.append([SEARCH, ANSWER])
+    r = _chat(client)
+    assert r.status_code == 200 and ran == [uuid.UUID(r.json()["thread_id"])]
+    llm_script.append([SEARCH, ANSWER])
+    assert "event: done" in _stream(client).text          # TestClient reads the whole stream
+    assert len(ran) == 2

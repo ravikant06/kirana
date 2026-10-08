@@ -61,6 +61,9 @@ class Message:
     text: str | None = None
     tool_calls: tuple[ToolCall, ...] = field(default_factory=tuple)
     tool_result: ToolResult | None = None
+    # Which part of the context this message belongs to (Phase 7): "history", "message",
+    # "summary", "facts", "memories"... Only for measuring the prompt; never sent to a provider.
+    block: str | None = None
 
     @staticmethod
     def user(text: str) -> "Message":
@@ -86,6 +89,8 @@ class Usage:
     """
     input_tokens: int | None = None
     output_tokens: int | None = None
+    # Of input_tokens, how many the provider served from its prompt cache (Phase 7). None = not reported.
+    cached_input_tokens: int | None = None
 
 
 @dataclass(frozen=True)
@@ -128,3 +133,5 @@ class CallRecord:
     latency_ms: int
     usage: Usage | None = None
     error: str | None = None
+    # Estimated input tokens per context block (Phase 7 M1), e.g. {"system": 900, "history": 700}.
+    context: dict[str, int] | None = None

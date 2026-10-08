@@ -47,6 +47,10 @@ python -m eval.run_answers --save-baseline      # answer quality, judged by Gemi
 python -m eval.run_answers --grade 20           # hand-grade; agreement with the judge
 python -m eval.run_products                     # product search: hybrid vs reranked
 python -m eval.run_routing                      # does the agent pick the right tool?
+python -m eval.run_security --runs 1            # Phase 6: attacks, zero tolerance (~₹3)
+python -m eval.run_context                      # Phase 7: tokens per turn, by prompt block (~₹50)
+python -m eval.run_memory                       # Phase 7: recall, "the second one", memory poisoning (~₹35)
+python -m kirana_ai.cli reindex-memories        # Phase 7: rebuild Qdrant user_memories from ai.memories
 pytest                                          # no API key needed; DB tests need Docker
 ```
 

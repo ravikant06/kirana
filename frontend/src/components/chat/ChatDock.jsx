@@ -4,7 +4,7 @@ import Problem from '../Problem.jsx'
 import Markdown, { withoutSourcesLine } from './Markdown.jsx'
 import ProductCards from './ProductCards.jsx'
 import ApprovalCard from './ApprovalCard.jsx'
-import { Back, Chevron, Close, Doc, Expand, History, Plus, Search, Send, Shrink, Sparkle, Trash } from './icons.jsx'
+import { Back, Chevron, Close, Doc, Expand, History, Memory, Pin, Plus, Search, Send, Shrink, Sparkle, Trash } from './icons.jsx'
 import './chat.css'
 
 // The "Ask Kirana" assistant: a floating launcher and a chat panel, talking to
@@ -52,17 +52,20 @@ function ago(iso) {
 }
 
 // API message -> what the UI renders.
-// Product cards of a saved answer come from its steps: search_products recorded the ids it showed.
-const productIdsOf = (steps) => [...new Set((steps || []).flatMap((s) => s.product_ids || []))]
+// Product cards of an answer: the products it names, chosen on the server (Phase 7). Messages
+// saved before that carry no list, so they fall back to every product their searches returned.
+const productIdsOf = (steps, chosen) => (chosen?.length
+  ? chosen
+  : [...new Set((steps || []).flatMap((s) => s.product_ids || []))])
 // Phase 6: actions waiting for the shopper, recorded on the step that proposed them.
 const approvalsOf = (steps) => (steps || []).filter((s) => s.approval).map((s) => s.approval)
 const fromApi = (m) => ({ id: m.id, role: m.role, content: m.content, citations: m.citations || [],
-  steps: m.steps || [], productIds: productIdsOf(m.steps) })
+  steps: m.steps || [], productIds: productIdsOf(m.steps, m.product_ids) })
 
 export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduct, onCartChanged, notify }) {
   const [open, setOpen] = useState(false)
   const [expanded, setExpanded] = useState(false)
-  const [view, setView] = useState('chat') // 'chat' | 'threads'
+  const [view, setView] = useState('chat') // 'chat' | 'threads' | 'memories'
   const [threadId, setThreadId] = useState(null)
   const [messages, setMessages] = useState([])
   const [pending, setPending] = useState(null) // { startedAt } while a turn runs
@@ -160,7 +163,7 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
       if (mine !== epoch.current) return
       setMessages((ms) => [...ms, {
         id: r.message_id, role: 'assistant', content: r.reply,
-        citations, steps: r.steps, usage: r.usage, fresh: true, productIds: productIdsOf(r.steps),
+        citations, steps: r.steps, usage: r.usage, fresh: true, productIds: productIdsOf(r.steps, r.product_ids),
       }])
       setThreads(null) // the list's order and titles changed
     } catch (error) {
@@ -258,23 +261,26 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
       {open && (
         <section className={`chat-panel ${expanded ? 'is-expanded' : ''}`} aria-label="Kirana assistant">
           <header className="chat-head">
-            {view === 'threads' ? (
+            {view !== 'chat' ? (
               <button className="chat-icon-btn" onClick={() => setView('chat')} aria-label="Back to chat"><Back /></button>
             ) : (
               <span className="chat-avatar" aria-hidden><Sparkle width={18} height={18} /></span>
             )}
             <div className="chat-head-text">
-              <h2>{view === 'threads' ? 'Your conversations' : 'Kirana Assistant'}</h2>
+              <h2>{view === 'threads' ? 'Your conversations' : view === 'memories' ? 'What I remember' : 'Kirana Assistant'}</h2>
               <p>
                 {view === 'threads'
                   ? userName ? `Chats of ${userName}` : 'Pick a shopper first'
-                  : <><span className="chat-online" /> Answers with sources</>}
+                  : view === 'memories'
+                    ? 'Used in every chat. Saved only when you confirm.'
+                    : <><span className="chat-online" /> Answers with sources</>}
               </p>
             </div>
             <div className="chat-head-actions">
               {view === 'chat' && userId && (
                 <>
                   <button className="chat-icon-btn" onClick={showThreads} aria-label="Past conversations" title="Past conversations"><History /></button>
+                  <button className="chat-icon-btn" onClick={() => setView('memories')} aria-label="What I remember" title="What I remember"><Memory /></button>
                   <button className="chat-icon-btn" onClick={() => openThread(null)} aria-label="New chat" title="New chat"><Plus /></button>
                 </>
               )}
@@ -298,6 +304,8 @@ export default function ChatDock({ userId, userName, inspectorOpen, onOpenProduc
             ) : view === 'threads' ? (
               <ThreadList threads={threads} current={threadId} onOpen={openThread} onDelete={removeThread}
                           onNew={() => openThread(null)} />
+            ) : view === 'memories' ? (
+              <MemoryList notify={notify} />
             ) : empty ? (
               <div className="chat-welcome">
                 <span className="chat-welcome-mark"><Sparkle width={28} height={28} /></span>
@@ -518,5 +526,60 @@ function ThreadList({ threads, current, onOpen, onDelete, onNew }) {
         </ul>
       )}
     </div>
+  )
+}
+
+// Phase 7: long-term memory, as the shopper sees it. Everything here was saved through a
+// "Save to your memory?" card the shopper confirmed; deleting one stops it being used at once.
+function MemoryList({ notify }) {
+  const [items, setItems] = useState(null)
+  const [error, setError] = useState(null)
+
+  useEffect(() => {
+    let alive = true
+    api.ai.memories().then((m) => alive && setItems(m)).catch((e) => alive && setError(e))
+    return () => { alive = false }
+  }, [])
+
+  const pin = async (m) => {
+    try {
+      const updated = await api.ai.pinMemory(m.id, !m.pinned)
+      setItems((xs) => xs.map((x) => (x.id === m.id ? updated : x)))
+    } catch (e) { notify?.(e.message, 'error') }
+  }
+  const remove = async (m) => {
+    try {
+      await api.ai.deleteMemory(m.id)
+      setItems((xs) => xs.filter((x) => x.id !== m.id))
+      notify?.('Forgotten')
+    } catch (e) { notify?.(e.message, 'error') }
+  }
+
+  if (error) return <div className="chat-inline-problem"><Problem error={error} compact /></div>
+  if (!items) return <p className="memory-note">Loading…</p>
+  if (items.length === 0) {
+    return (
+      <div className="chat-welcome">
+        <span className="chat-welcome-mark"><Memory width={28} height={28} /></span>
+        <h3>Nothing saved yet</h3>
+        <p>Tell me something lasting, like “I'm vegetarian” or “we're a family of 4”, and I'll offer to remember it. Nothing is saved without your click.</p>
+      </div>
+    )
+  }
+  return (
+    <>
+      <p className="memory-note">Pinned memories are always used; others when they're relevant to your question.</p>
+      <ul className="memory-list">
+        {items.map((m) => (
+          <li key={m.id} className={`memory-item ${m.pinned ? 'is-pinned' : ''}`}>
+            <span className="memory-text">{m.text}</span>
+            <span className="memory-kind">{m.kind}</span>
+            <button className={`chat-icon-btn memory-pin ${m.pinned ? 'is-on' : ''}`} onClick={() => pin(m)}
+                    aria-pressed={m.pinned} aria-label={m.pinned ? 'Unpin' : 'Pin'} title={m.pinned ? 'Unpin' : 'Pin: always use'}><Pin /></button>
+            <button className="chat-icon-btn" onClick={() => remove(m)} aria-label="Forget" title="Forget"><Trash width={16} height={16} /></button>
+          </li>
+        ))}
+      </ul>
+    </>
   )
 }
